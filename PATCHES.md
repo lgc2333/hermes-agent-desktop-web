@@ -99,6 +99,19 @@ git subtree merge --prefix=vendor/hermes-desktop $NEW_FILTERED --squash
 > 注：CORS 的 Access-Control-Allow-Headers 回显是 M3 实测发现——credentials:'include'
 > 的跨源 fetch 预检不接受 `*` 通配符（Chrome 151），必须回显 access-control-request-headers。
 
+### 4.4 非 vendor 配套（M4 批，打磨与部署）
+
+| 文件 | 改动 | 原因 |
+|------|------|------|
+| apps/proxy/Dockerfile | 新增：多阶段（node:22-alpine 构建 SPA → denoland/deno:alpine 源码直跑代理，WEB_DIST/HOST/PORT env 注入） | M4 compose 编排的 webui 容器（PLAN §6.2；deno 零依赖镜像保持小巧） |
+| docker-compose.yml（根） | 新增：hermes（上游 hermes-agent 镜像，command gateway run + HERMES_DASHBOARD=1 起 API 载点，0.0.0.0:9119 仅映射宿主 loopback，必配 HERMES_DASHBOARD_BASIC_AUTH_USERNAME/PASSWORD）+ webui（build apps/proxy/Dockerfile，HERMES_DEFAULT_GATEWAY_URL=http://hermes:9119 运行时下发，PROXY_PASSPHRASE 强校验） | M4：双容器编排落地 + 默认 URL 下发链路（PLAN §6.2；auth gate 是上游 2026-06 硬化：非 loopback 绑定强制 provider，--insecure 已失效） |
+| .dockerignore（根） | 新增：排除 node_modules/temp/research/docs 等 | compose 构建上下文瘦身 |
+| docs/deploy.md | 新增：compose 部署指南（拓扑/前置/启动/认证模型/默认 URL 链路/安全清单/运维/已知限制） | M4 部署文档（PLAN §7）；如实登记 loopback redirect_uri 限制与纯公网 OAuth 限制 |
+| apps/web/src/web.css | 新增：响应式覆盖层（≤640px 状态栏 overflow-x:auto 替代 clip，触屏滚动条隐藏） | M4 响应式：移动端 390px 下状态栏 "Gateway"/"backend" 被截断（实测），覆盖层不触碰 vendor |
+| apps/web/src/main.tsx | import './web.css'（桥安装前） | 挂响应式覆盖层 |
+| apps/web/src/bridge/gateway.test.ts | 新增 1 用例：代理重启后 OAuth 会话查询如实回未连接（cookie 在但内存 token set 已清） | M4 错误/重连态固化（tdd：先写测试，行为由 M3 实现已满足） |
+| temp/m4-acceptance.md + temp/m4/ | 验收记录 + CDP 脚本（响应式探测/状态栏验证/断连观察/重连闭环/OAuth 会话丢失） | M4 浏览器验收（headless Chrome 9224） |
+
 
 
 ## 5. 同步后必做

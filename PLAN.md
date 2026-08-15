@@ -157,7 +157,7 @@ webui 容器 (proxy) ── /api/proxy/meta ──> { defaultGatewayUrl, require
 - **M1 换桥**：WebCapabilityAdapter 三类实现（浏览器等价 / 走代理 RPC / 布尔门空实现）、入口替换、导航布尔门；对 mock 后端跑通聊天全流程
 - **M2 代理 + token 模式**：静态托管、REST/WS 转发、目标切换、手填 token 连接真 `hermes serve`，验证流式/审批/会话恢复
 - **M3 OAuth + 配置 API**：native PKCE 客户端、httpOnly cookie、设置页（连接 + 目标 gateway）
-- **M4 打磨与部署**：响应式顺手、错误/重连态、compose 编排落地（hermes + webui + 默认 URL 下发）、部署文档、PATCHES.md 完整登记
+- **M4 打磨与部署** ✅：响应式顺手（web.css 覆盖层）、错误/重连态（实测验收 + 单测固化）、compose 编排落地（apps/proxy/Dockerfile + 根 docker-compose.yml，hermes 用 gateway run + HERMES_DASHBOARD=1 作 API 载点）、部署文档（docs/deploy.md，含 auth gate 与 loopback redirect_uri 限制）、PATCHES.md 完整登记（§4.4）；验收见 temp/m4-acceptance.md
 
 ## 8. 验证方式
 

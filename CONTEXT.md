@@ -77,9 +77,17 @@ _Avoid_: 重启、刷新
 ## 部署
 
 **Hermes container**:
-跑 gateway（上游镜像 + `hermes serve`）的容器；不映射端口到宿主机，仅 compose 内网可达。
+跑 gateway 的容器（compose 中为上游镜像 + `gateway run` + `HERMES_DASHBOARD=1`，s6 监督 dashboard 作 API 载点）；9119 仅映射宿主 loopback（OAuth 授权弹窗需要浏览器可达 `/auth/native/authorize`），webui 是浏览器唯一入口。
 _Avoid_: 后端容器（与 Proxy 混淆）
+
+**Dashboard auth gate**:
+上游 dashboard 的非 loopback 绑定强制启用的认证闸门（2026-06 硬化后 `--insecure` 失效）；必须注册 auth provider（内置 basic auth 或 OAuth）否则启动失败。API 面认证走 native OAuth Bearer + ws-ticket，与 gate 的页面登录相互独立。
+_Avoid_: 登录流程（特指页面 cookie 登录）、代理 passphrase（保护转发面的另一层）
 
 **Default gateway**:
 部署时由环境变量提供、经代理 meta 端点运行时下发的预填 gateway URL；前端连接表单自动预填，用户可改。
 _Avoid_: 默认配置（太泛）
+
+**Loopback redirect_uri**:
+上游 `/auth/native/authorize` 只接受 127.0.0.1/::1 字面量 redirect_uri（RFC 8252 §7.3，安全边界、无放宽渠道）；因此 OAuth 登录要求浏览器与代理同机或经 SSH 隧道回连 loopback。详见 docs/deploy.md §4.3。
+_Avoid_: localhost（上游明确拒绝）、"可配置的允许列表"（不存在）
