@@ -2,7 +2,8 @@
 .gitignore
 node_modules
 **/node_modules
-**/*.tmpdir *_/.package.json._
+**/*.tmpdir
+**/.package.json.*
 temp
 research
 docs
