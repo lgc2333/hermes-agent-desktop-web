@@ -1,7 +1,7 @@
 # PATCHES.md — Vendor Patch & Sync Register
 
-> 本文件登记所有对 vendor 目录的原位改动、subtree 基准与同步流程。
-> 原则（AGENTS.md 规则「vendor 纪律」）：vendor 内原位修改收敛到最少文件；能新加文件就不改旧文件。
+本文件登记所有对 vendor 目录的原位改动、subtree 基准与同步流程。
+原则（AGENTS.md 规则「vendor 纪律」）：vendor 内原位修改收敛到最少文件；能新加文件就不改旧文件。
 
 ## 1. Subtree 基准（Baseline）
 

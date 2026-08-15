@@ -41,9 +41,6 @@ describe('buildWebBridge / installWebBridge', () => {
   it('denied members return safe empty shapes instead of undefined', async () => {
     const bridge = buildWebBridge()
 
-    expect(await bridge.readDir('/')).toEqual({ entries: [] })
-    expect(await bridge.git!.repoStatus('/repo')).toBeNull()
-    expect(await bridge.git!.worktreeList('/repo')).toEqual([])
     expect(await bridge.petOverlay.open({} as never)).toEqual({ ok: false })
     expect(await bridge.openSessionWindow('s1')).toMatchObject({ ok: false })
     expect(await bridge.quickEntry.getSettings()).toMatchObject({ enabled: false })
@@ -75,5 +72,8 @@ describe('buildWebBridge / installWebBridge', () => {
     expect(typeof bridge.openExternal).toBe('function')
     expect(await bridge.fetchLinkTitle('http://127.0.0.1:1/nope')).toBe('')
     expect(bridge.getPathForFile({} as File)).toBe('')
+    // 无 Battery API 的测试环境：恒 AC。
+    expect(await bridge.getOnBattery!()).toBe(false)
+    expect(typeof bridge.onBatteryChanged!(() => undefined)).toBe('function')
   })
 })

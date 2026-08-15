@@ -19,6 +19,7 @@ pnpm --filter @hermes-web/web dev:remote       # vite + proxy，无 mock（连�
 pnpm --filter @hermes-web/web dev:web          # 仅 vite（直连模式）
 pnpm --filter @hermes-web/web test             # vitest（桥单测，apps/web）
 pnpm typecheck                                 # apps/web 类型检查（typecheck.mjs）
+pnpm format                                    # 格式化
 pnpm build                                     # 生产构建 → apps/web/dist
 cd apps/proxy && deno task test                # 代理单测（deno test，42+ 用例）
 deno run --allow-net --allow-read --allow-env apps/proxy/src/main.ts   # 手动起代理

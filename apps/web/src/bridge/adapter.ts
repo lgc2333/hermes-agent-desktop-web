@@ -111,6 +111,14 @@ export function buildWebBridge(options: WebBridgeOptions = {}): Bridge {
     revealLogs: () => denied.revealLogs(),
     getRecentLogs: async () => browser.getRecentLogs(),
 
+    // ── fs / git REST 面（类 2，ADR-0010：remote 模式有后端端点）────────────
+    readDir: (path) => gateway.readDir(path),
+    readFileText: (path) => gateway.readFileText(path),
+    writeTextFile: (path, content) => gateway.writeTextFile(path, content),
+    readFileDataUrl: (path) => gateway.readFileDataUrl(path),
+    gitRoot: (path) => gateway.gitRoot(path),
+    git: gateway.git,
+
     // ── 布尔门空实现（类 3）────────────────────────────────────────────────
     openSessionWindow: (sessionId) => denied.openSessionWindow(sessionId),
     openSessionInTerminal: (sessionId, opts) =>
@@ -122,24 +130,19 @@ export function buildWebBridge(options: WebBridgeOptions = {}): Bridge {
     hud: denied.hud,
     quickEntry: denied.quickEntry,
     requestMicrophoneAccess: () => denied.requestMicrophoneAccess(),
-    readFileDataUrl: (path) => denied.readFileDataUrl(path),
-    readFileText: (path) => denied.readFileText(path),
-    saveImageFromUrl: (url) => denied.saveImageFromUrl(url),
+    saveImageFromUrl: (url) => browser.saveImageFromUrl(url),
     saveImageBuffer: (data, ext) => denied.saveImageBuffer(data, ext),
     saveClipboardImage: () => denied.saveClipboardImage(),
     normalizePreviewTarget: (target) => denied.normalizePreviewTarget(target),
     watchPreviewFile: (url) => denied.watchPreviewFile(url),
     stopPreviewFileWatch: (id) => denied.stopPreviewFileWatch(id),
-    readDir: (path) => denied.readDir(path),
-    gitRoot: (path) => denied.gitRoot(path),
     revealPath: (path) => denied.revealPath(path),
     openDir: (path) => denied.openDir(path),
     desktopPluginsRoot: () => denied.desktopPluginsRoot(),
     agentPluginsRoot: () => denied.agentPluginsRoot(),
     renamePath: (path, newName) => denied.renamePath(path, newName),
-    writeTextFile: (path, content) => denied.writeTextFile(path, content),
-    trashPath: (path) => denied.trashPath(path),
-    git: denied.git,
+    // trashPath 摘除（global.d.ts 可选）：浏览器无回收站语义，渲染层
+    // desktop-fs.trashDesktopPath 已有 !desktop.trashPath 兜底抛错。
     terminal: denied.terminal,
     sanitizeWorkspaceCwd: (cwd) => denied.sanitizeWorkspaceCwd(cwd),
     settings: denied.settings,
@@ -158,8 +161,8 @@ export function buildWebBridge(options: WebBridgeOptions = {}): Bridge {
     signalDeepLinkReady: () => denied.signalDeepLinkReady(),
     onFocusSession: denied.onFocusSession,
     onNotificationAction: denied.onNotificationAction,
-    getOnBattery: () => denied.getOnBattery(),
-    onBatteryChanged: denied.onBatteryChanged,
+    getOnBattery: () => browser.getOnBattery(),
+    onBatteryChanged: browser.onBatteryChanged,
     setActiveWork: (payload) => denied.setActiveWork(payload),
     setTitleBarTheme: (payload) => denied.setTitleBarTheme(payload),
     setNativeTheme: (mode) => denied.setNativeTheme(mode),

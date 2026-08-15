@@ -59,8 +59,12 @@ _Avoid_: 薄代理（口语）、网关（错误）
 _Avoid_: 上游源码（口语）、node_modules（实现细节）
 
 **Capability bridge**:
-渲染层访问机器/原生能力的窄类型接口（桌面端为 window.hermesDesktop）；Web 端由 WebCapabilityAdapter 提供同签名实现，能力按可用性分三类：浏览器原生可用、经 gateway 转发、被布尔门关闭（桌面独有）。
+渲染层访问机器/原生能力的窄类型接口（桌面端为 window.hermesDesktop）；Web 端由 WebCapabilityAdapter 提供同签名实现，能力按可用性分三类：**browser**（浏览器原生等价）、**gateway**（经代理 RPC 转发）、**denied**（布尔门空实现）。
 _Avoid_: 桥（太短）、preload（实现细节）
+
+**Denied capability**:
+桥面三分法中的拒绝类：布尔门空实现，返回"空但合法"形状或显式 reject。判定标准（ADR-0010）：仅当浏览器环境不可实现 **且** remote gateway 不支持（无对应 REST 端点）才可归入；例外需产品范围决策（如语音，ADR-0009）。
+_Avoid_: 不支持的能力（与"未实现"混淆）
 
 **布尔门（feature gate）**:
 用字面 `if (false)` 关闭功能入口而保留其代码的做法，刻意不做可配置开关系统；被关闭的功能处于 dormant 状态。

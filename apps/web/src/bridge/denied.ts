@@ -1,9 +1,12 @@
 /**
  * Class 3 — 布尔门空实现（denied bridge）。
  *
- * 覆盖 global.d.ts 全部 77 个桥成员的桌面原生面（voice / 终端 / 文件 /
- * 窗口 / git / preview / pet / hud / updates / 主题市场 / cloud / ssh …），
- * 保证渲染层任何调用都不拿到 undefined（可选链安全），且返回形状合法：
+ * 覆盖 global.d.ts 桥成员的桌面原生面（voice / 终端 / 窗口 / preview /
+ * pet / hud / updates / 主题市场 / 安装 …），保证渲染层任何调用都不拿到
+ * undefined（可选链安全），且返回形状合法：
+ * 判定标准（ADR-0010）：仅当浏览器环境不可实现 **且** remote gateway 不
+ * 支持（无对应 REST 端点）才归入本类；fs/git 面已按 REST 移入 gateway.ts，
+ * saveImageFromUrl / 电池已按浏览器等价移入 browser.ts。
  *   - 查询面返回"空但合法"（[] / null / { ok:false } …），UI 呈现空态；
  *   - 会破坏状态的调用显式 reject（Error 消息 = 能力不可用），让调用方走
  *     既有错误路径，而不是拿假数据渲染。
@@ -23,18 +26,8 @@ import type {
   DesktopUpdateProgress,
   DesktopUpdateStatus,
   HermesActiveWork,
-  HermesGitBaseBranch,
-  HermesGitBranch,
-  HermesGitWorktree,
   HermesPreviewTarget,
   HermesPreviewWatch,
-  HermesReadDirResult,
-  HermesReadFileTextResult,
-  HermesRepoStatus,
-  HermesRepoPullRequests,
-  HermesReviewList,
-  HermesReviewScope,
-  HermesReviewShipInfo,
   HermesTitleBarTheme,
 } from '@/global'
 import type { WakeIndicatorState } from '@/lib/wake-indicator'
@@ -189,19 +182,7 @@ export class DeniedAdapter {
     return false
   }
 
-  // ── 文件系统 ─────────────────────────────────────────────────────────────
-
-  async readFileDataUrl(_filePath: string): Promise<string> {
-    throw UNAVAILABLE('local file reading')
-  }
-
-  async readFileText(_filePath: string): Promise<HermesReadFileTextResult> {
-    throw UNAVAILABLE('local file reading')
-  }
-
-  async saveImageFromUrl(_url: string): Promise<boolean> {
-    return false
-  }
+  // ── 文件系统（仅剩余本地磁盘面；fs/git REST 面在 gateway.ts）────────────
 
   async saveImageBuffer(
     _data: ArrayBuffer | Uint8Array,
@@ -226,10 +207,6 @@ export class DeniedAdapter {
 
   async stopPreviewFileWatch(_id: string): Promise<boolean> {
     return true
-  }
-
-  async readDir(_path: string): Promise<HermesReadDirResult> {
-    return { entries: [] }
   }
 
   async revealLogs(): Promise<{ error?: string; ok: boolean; path: string }> {
@@ -280,112 +257,6 @@ export class DeniedAdapter {
     throw UNAVAILABLE('file renaming')
   }
 
-  async writeTextFile(_path: string, _content: string): Promise<{ path: string }> {
-    throw UNAVAILABLE('file writing')
-  }
-
-  async trashPath(_path: string): Promise<boolean> {
-    return false
-  }
-
-  async gitRoot(_path: string): Promise<string | null> {
-    return null
-  }
-
-  // ── git 工作树 / review ──────────────────────────────────────────────────
-
-  git = {
-    async worktreeList(_repoPath: string): Promise<HermesGitWorktree[]> {
-      return []
-    },
-    async worktreeAdd(
-      _repoPath: string,
-    ): Promise<{ branch: string; path: string; repoRoot: string }> {
-      throw UNAVAILABLE('git worktrees')
-    },
-    async worktreeRemove(
-      _repoPath: string,
-      _worktreePath: string,
-    ): Promise<{ removed: string }> {
-      throw UNAVAILABLE('git worktrees')
-    },
-    async branchSwitch(
-      _repoPath: string,
-      _branch: string,
-    ): Promise<{ branch: string }> {
-      throw UNAVAILABLE('git branches')
-    },
-    async branchList(_repoPath: string): Promise<HermesGitBranch[]> {
-      return []
-    },
-    async baseBranchList(_repoPath: string): Promise<HermesGitBaseBranch[]> {
-      return []
-    },
-    async repoStatus(_repoPath: string): Promise<HermesRepoStatus | null> {
-      // 与桌面"非 repo / 远端后端"一致：null 表示无法探测。
-      return null
-    },
-    async fileDiff(_repoPath: string, _filePath: string): Promise<string> {
-      return ''
-    },
-    review: {
-      async list(
-        _repoPath: string,
-        _scope: HermesReviewScope,
-      ): Promise<HermesReviewList> {
-        return { files: [], base: null }
-      },
-      async diff(_repoPath: string, _filePath: string): Promise<string> {
-        return ''
-      },
-      async stage(): Promise<{ ok: boolean }> {
-        return { ok: false }
-      },
-      async unstage(): Promise<{ ok: boolean }> {
-        return { ok: false }
-      },
-      async revert(): Promise<{ ok: boolean }> {
-        return { ok: false }
-      },
-      async revParse(): Promise<string | null> {
-        return null
-      },
-      async commit(
-        _repoPath: string,
-        _message: string,
-        _push: boolean,
-      ): Promise<{ ok: boolean }> {
-        return { ok: false }
-      },
-      async commitContext(
-        _repoPath: string,
-      ): Promise<{ diff: string; recent: string }> {
-        return { diff: '', recent: '' }
-      },
-      async push(): Promise<{ ok: boolean }> {
-        return { ok: false }
-      },
-      async shipInfo(_repoPath: string): Promise<HermesReviewShipInfo> {
-        return { ghReady: false, pr: null }
-      },
-      async prList(
-        _repoPath: string,
-        _branches: string[],
-      ): Promise<HermesRepoPullRequests> {
-        return { ghReady: false, prs: [] }
-      },
-      async fetchPrComment(_repoPath: string, _url: string) {
-        return null
-      },
-      async createPr(_repoPath: string): Promise<{ url: string }> {
-        throw UNAVAILABLE('pull requests')
-      },
-    },
-    async scanRepos(_roots: string[]): Promise<{ label: string; root: string }[]> {
-      return []
-    },
-  }
-
   // ── 终端 ─────────────────────────────────────────────────────────────────
 
   terminal = {
@@ -422,12 +293,6 @@ export class DeniedAdapter {
   async signalDeepLinkReady(): Promise<{ ok: boolean }> {
     return { ok: true }
   }
-
-  async getOnBattery(): Promise<boolean> {
-    return false
-  }
-
-  onBatteryChanged = noopUnsub
 
   // ── 主题 / 外观 / 系统 ───────────────────────────────────────────────────
 

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { GatewayAdapter, toHermesConnection, webApi } from './gateway'
-import { loadRegistry } from './registry'
+import { GatewayAdapter, toHermesConnection, webApi } from './index'
+import { loadRegistry } from '../registry'
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -420,14 +420,12 @@ describe('M3 OAuth (proxy mode)', () => {
 
   it('getConnectionConfig prefills default gateway from /api/proxy/meta (untouched registry)', async () => {
     const adapter = new GatewayAdapter()
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        jsonResponse(200, {
-          defaultGatewayUrl: 'http://hermes:9119',
-          requiresPassphrase: true,
-        }),
-      )
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      jsonResponse(200, {
+        defaultGatewayUrl: 'http://hermes:9119',
+        requiresPassphrase: true,
+      }),
+    )
     vi.stubGlobal('fetch', fetchMock)
 
     const config = await adapter.getConnectionConfig()
@@ -445,17 +443,15 @@ describe('M3 OAuth (proxy mode)', () => {
       remoteUrl: 'http://127.0.0.1:9119',
       remoteAuthMode: 'oauth',
     })
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValue(
-        jsonResponse(200, {
-          connected: true,
-          provider: 'nous',
-          userId: 'u1',
-          expiresAt: 9999,
-          tokenPreview: 'mock…',
-        }),
-      )
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse(200, {
+        connected: true,
+        provider: 'nous',
+        userId: 'u1',
+        expiresAt: 9999,
+        tokenPreview: 'mock…',
+      }),
+    )
     vi.stubGlobal('fetch', fetchMock)
 
     const config = await adapter.getConnectionConfig()
@@ -474,17 +470,15 @@ describe('M3 OAuth (proxy mode)', () => {
       remoteUrl: 'http://127.0.0.1:9119',
       remoteAuthMode: 'oauth',
     })
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValue(
-        jsonResponse(200, {
-          connected: false,
-          provider: '',
-          userId: '',
-          expiresAt: 0,
-          tokenPreview: null,
-        }),
-      )
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse(200, {
+        connected: false,
+        provider: '',
+        userId: '',
+        expiresAt: 0,
+        tokenPreview: null,
+      }),
+    )
     vi.stubGlobal('fetch', fetchMock)
 
     const config = await adapter.getConnectionConfig()
@@ -515,5 +509,174 @@ describe('M3 OAuth (proxy mode)', () => {
 
     expect(switched.remoteTokenSet).toBe(false)
     expect(loadRegistry().connections[0].token).toBe('')
+  })
+})
+
+describe('GatewayAdapter fs/git REST parity (remote-mode members, ADR-0010)', () => {
+  const fetchMock = vi.fn()
+
+  beforeEach(() => {
+    window.localStorage.clear()
+    loadRegistry()
+    fetchMock.mockReset()
+    vi.stubGlobal('fetch', fetchMock)
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('readDir hits GET /api/fs/list with the query path', async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse(200, {
+        entries: [{ name: 'a', path: '/repo/a', isDirectory: true }],
+      }),
+    )
+    const adapter = new GatewayAdapter()
+    const result = await adapter.readDir('/repo')
+
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      'http://127.0.0.1:5180/api/fs/list?path=%2Frepo',
+    )
+    expect(result.entries).toEqual([{ name: 'a', path: '/repo/a', isDirectory: true }])
+  })
+
+  it('readFileText hits GET /api/fs/read-text', async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse(200, { path: '/repo/a.txt', text: 'hi', language: 'text' }),
+    )
+    const adapter = new GatewayAdapter()
+    const result = await adapter.readFileText('/repo/a.txt')
+
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      'http://127.0.0.1:5180/api/fs/read-text?path=%2Frepo%2Fa.txt',
+    )
+    expect(result.text).toBe('hi')
+  })
+
+  it('writeTextFile POSTs /api/fs/write-text with path + content', async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse(200, { ok: true, path: '/repo/a.txt', byteSize: 2 }),
+    )
+    const adapter = new GatewayAdapter()
+    const result = await adapter.writeTextFile('/repo/a.txt', 'hi')
+
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe('http://127.0.0.1:5180/api/fs/write-text')
+    expect(init.method).toBe('POST')
+    expect(JSON.parse(init.body)).toEqual({ content: 'hi', path: '/repo/a.txt' })
+    expect(result.path).toBe('/repo/a.txt')
+  })
+
+  it('readFileDataUrl unwraps the dataUrl field', async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse(200, { dataUrl: 'data:image/png;base64,AAAA' }),
+    )
+    const adapter = new GatewayAdapter()
+    const result = await adapter.readFileDataUrl('/a.png')
+
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      'http://127.0.0.1:5180/api/fs/read-data-url?path=%2Fa.png',
+    )
+    expect(result).toBe('data:image/png;base64,AAAA')
+  })
+
+  it('gitRoot hits GET /api/fs/git-root', async () => {
+    fetchMock.mockResolvedValue(jsonResponse(200, { root: '/repo' }))
+    const adapter = new GatewayAdapter()
+
+    expect(await adapter.gitRoot('/repo/a')).toBe('/repo')
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      'http://127.0.0.1:5180/api/fs/git-root?path=%2Frepo%2Fa',
+    )
+  })
+
+  it('git.repoStatus hits GET /api/git/status', async () => {
+    fetchMock.mockResolvedValue(jsonResponse(200, { branch: 'main', changes: [] }))
+    const adapter = new GatewayAdapter()
+    const status = await adapter.git!.repoStatus('/repo')
+
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      'http://127.0.0.1:5180/api/git/status?path=%2Frepo',
+    )
+    expect(status).toEqual({ branch: 'main', changes: [] })
+  })
+
+  it('git.branchSwitch POSTs /api/git/branch/switch', async () => {
+    fetchMock.mockResolvedValue(jsonResponse(200, { branch: 'feat' }))
+    const adapter = new GatewayAdapter()
+    await adapter.git!.branchSwitch('/repo', 'feat')
+
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe('http://127.0.0.1:5180/api/git/branch/switch')
+    expect(JSON.parse(init.body)).toEqual({ branch: 'feat', path: '/repo' })
+  })
+
+  it('git.worktreeList unwraps { worktrees }', async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse(200, {
+        worktrees: [
+          { path: '/wt', branch: 'x', isMain: false, detached: false, locked: false },
+        ],
+      }),
+    )
+    const adapter = new GatewayAdapter()
+    const list = await adapter.git!.worktreeList('/repo')
+
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      'http://127.0.0.1:5180/api/git/worktrees?path=%2Frepo',
+    )
+    expect(list).toHaveLength(1)
+    expect(list[0].path).toBe('/wt')
+  })
+
+  it('git.review.list sends scope and skips null base', async () => {
+    fetchMock.mockResolvedValue(jsonResponse(200, { files: [], base: null }))
+    const adapter = new GatewayAdapter()
+    await adapter.git!.review.list('/repo', 'branch', null)
+
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      'http://127.0.0.1:5180/api/git/review/list?path=%2Frepo&scope=branch',
+    )
+  })
+
+  it('git.review.commit POSTs message + push', async () => {
+    fetchMock.mockResolvedValue(jsonResponse(200, { ok: true }))
+    const adapter = new GatewayAdapter()
+    await adapter.git!.review.commit('/repo', 'msg', false)
+
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe('http://127.0.0.1:5180/api/git/review/commit')
+    expect(JSON.parse(init.body)).toEqual({
+      message: 'msg',
+      path: '/repo',
+      push: false,
+    })
+  })
+
+  it('git.scanRepos is a no-op [] and review.fetchPrComment resolves null (no requests)', async () => {
+    const adapter = new GatewayAdapter()
+
+    expect(await adapter.git!.scanRepos(['/home'])).toEqual([])
+    expect(
+      await adapter.git!.review.fetchPrComment(
+        '/repo',
+        'https://github.com/x/y/pull/1',
+      ),
+    ).toBeNull()
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('fs/git requests carry the session token header', async () => {
+    fetchMock.mockResolvedValue(jsonResponse(200, { entries: [] }))
+    const adapter = new GatewayAdapter()
+    await adapter.readDir('/')
+
+    expect(fetchMock.mock.calls[0][1].headers['X-Hermes-Session-Token']).toBe(
+      'mock-token',
+    )
+    expect(fetchMock.mock.calls[0][1].headers['X-Hermes-Target']).toBe(
+      'http://127.0.0.1:5180',
+    )
   })
 })
