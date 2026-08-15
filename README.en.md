@@ -74,6 +74,10 @@ Login sessions are only kept in the server's memory and are lost on restart — 
 
 Connection info is stored in your browser's local storage; login sessions (OAuth / username-password) exist only in the server's memory. The server never saves any credential to disk.
 
+**Is my password safe when I sign in with username/password?**
+
+If you access the site over `http://` (no HTTPS), the username and password travel **in plaintext** and can be seen by anyone on the network path. For any public deployment, put HTTPS in front (e.g. an Nginx / Caddy reverse proxy); on a trusted LAN or VPN it's less of a concern, but HTTPS is still recommended.
+
 **Why can't I connect to the gateway address I entered?**
 
 If you (or the deployer) configured a connection allowlist (`WEB_PROXY_ALLOWED_TARGETS`), only gateways on the allowlist can be connected. This is a restriction deliberately set by the deployer to prevent the server from being abused.
