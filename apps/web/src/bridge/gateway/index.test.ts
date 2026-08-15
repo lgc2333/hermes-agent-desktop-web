@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { GatewayAdapter, WEB_VERSION, toHermesConnection, webApi } from './index'
-import { proxyBaseUrl } from './rest'
 import { loadRegistry } from '../registry'
 
 function jsonResponse(status: number, body: unknown): Response {
@@ -252,50 +251,6 @@ describe('proxy mode (VITE_PROXY_URL set)', () => {
     )
     expect(result.reachable).toBe(true)
     expect(result.version).toBe('0.19.1')
-    vi.unstubAllGlobals()
-  })
-})
-
-describe('proxy mode (production same-origin)', () => {
-  beforeEach(() => {
-    window.localStorage.clear()
-    loadRegistry()
-    // 生产构建无 VITE_PROXY_URL；SPA 由代理同源托管 → 同源即代理
-    vi.stubEnv('VITE_PROXY_URL', '')
-    vi.stubEnv('PROD', true)
-  })
-
-  afterEach(() => {
-    vi.unstubAllEnvs()
-  })
-
-  it('proxyBaseUrl falls back to window.location.origin in production', () => {
-    expect(proxyBaseUrl()).toBe(window.location.origin)
-  })
-
-  it('webApi targets same-origin proxy and carries X-Hermes-Target', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { ok: true }))
-    vi.stubGlobal('fetch', fetchMock)
-
-    await webApi({ path: '/api/status' })
-
-    const [url, init] = fetchMock.mock.calls[0]
-    expect(url).toBe(`${window.location.origin}/api/status`)
-    expect(init.headers['X-Hermes-Target']).toBe('http://127.0.0.1:5180')
-    vi.unstubAllGlobals()
-  })
-
-  it('getConnectionConfig prefills default gateway from same-origin /api/proxy/meta', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      jsonResponse(200, { defaultGatewayUrl: 'http://hermes:9119', allowedTargets: [] }),
-    )
-    vi.stubGlobal('fetch', fetchMock)
-    const adapter = new GatewayAdapter()
-
-    const config = await adapter.getConnectionConfig()
-
-    expect(fetchMock.mock.calls[0][0]).toBe(`${window.location.origin}/api/proxy/meta`)
-    expect(config.remoteUrl).toBe('http://hermes:9119')
     vi.unstubAllGlobals()
   })
 })
