@@ -414,6 +414,37 @@ Deno.test(
   },
 )
 
+Deno.test(
+  'proxy: ws to an unreachable gateway is rejected without a false 101',
+  async () => {
+    // token 模式 + gateway 不可达：必须在上游腿失败时直接拒绝（502，无
+    // 101）——否则浏览器先 101 后立刻断，渲染层误判已连接 → boot 完成 →
+    // 重拨循环（实测 8s 内 4-5 次拨号，UI 停在 onboarding 狂闪）。
+    const proxy = await startProxy()
+    try {
+      // 127.0.0.1:9 无服务 → 连接立即被拒。
+      const wsUrl = `${proxy.url.replace(/^http/, 'ws')}/api/ws?token=tok&target=${encodeURIComponent('http://127.0.0.1:9')}`
+      const ws = new WebSocket(wsUrl)
+
+      const outcome = await new Promise<'error' | 'close' | 'open' | 'timeout'>(
+        (resolve) => {
+          ws.onopen = () => resolve('open')
+          ws.onerror = () => resolve('error')
+          ws.onclose = () => resolve('close')
+          setTimeout(() => resolve('timeout'), 3000)
+        },
+      )
+
+      assert(
+        outcome === 'error' || outcome === 'close',
+        `expected error/close (502, no false 101), got ${outcome}`,
+      )
+    } finally {
+      await proxy.close()
+    }
+  },
+)
+
 Deno.test('proxy: ws upgrade without target fails fast (error or close)', async () => {
   const proxy = await startProxy()
   try {

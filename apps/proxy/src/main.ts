@@ -28,6 +28,7 @@ import {
   SESSION_COOKIE_NAME,
 } from './oauth.ts'
 import {
+  dialUpstreamWs,
   normalizeTarget,
   parseAllowedTargets,
   relayRest,
@@ -332,12 +333,35 @@ async function handleWs(
     )
   }
 
-  let response: Response
+  // 先拨上游（gateway 腿）并等其 OPEN，再 upgrade 浏览器：101 必须建立在
+  // 能交付的连接上。上游不可达/超时 → 502（无 101）——前端 connect()
+  // reject → boot 稳定失败；不再出现"101 后立刻断"的假连重拨循环
+  // （token 模式 + gateway 不可达实测：8s 内 4-5 次拨号，UI 停在 onboarding 狂闪）。
+  let upstream: WebSocket
+  try {
+    upstream = await dialUpstreamWs(target, url, { ticket })
+  } catch (error) {
+    return jsonResponse(
+      502,
+      {
+        detail: `proxy upstream error: ${error instanceof Error ? error.message : String(error)}`,
+      },
+      request,
+    )
+  }
+
   try {
     const upgraded = Deno.upgradeWebSocket(request)
-    response = upgraded.response
-    relayWs(upgraded.socket, url, target, { ticket })
+    relayWs(upgraded.socket, upstream)
+
+    return upgraded.response
   } catch (error) {
+    try {
+      upstream.close()
+    } catch {
+      // ignore
+    }
+
     return jsonResponse(
       502,
       {
@@ -346,8 +370,6 @@ async function handleWs(
       request,
     )
   }
-
-  return response
 }
 
 /** 构造单 handler（测试可注入配置；生产从 env 读取）。 */

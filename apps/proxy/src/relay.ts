@@ -274,30 +274,65 @@ function forward(event: MessageEvent, to: WebSocket): void {
 }
 
 /**
- * WS 中继：浏览器侧 socket（已 upgrade）↔ 上游 gateway socket 双向转发。
- *
- * M3：`opts.ticket`（OAuth 模式经 ws-ticket 换的单次票据，见 oauth.ts 的
+ * WS 拨号选项：`ticket`（OAuth 模式经 ws-ticket 换的单次票据，见 oauth.ts 的
  * wsTicketFor）存在时追加 `?ticket=`（gated gateway 拒绝 `?token=`）。
  */
 export interface RelayWsOptions {
   ticket?: string | null
 }
 
-export function relayWs(
-  browserSocket: WebSocket,
-  proxyUrl: URL,
+/**
+ * 先拨上游 gateway 腿并等待其 OPEN（默认 10s 超时，早于渲染层 15s 的
+ * connect 超时）。浏览器侧 101 必须等这一腿确认连通后才发——否则浏览器
+ * 先拿到 101、随后立刻断开（假连）：渲染层误判已连接 → boot 完成 → 网关
+ * 腿失败 → WS 断 → 重拨循环（token 模式 + gateway 不可达实测：8s 内
+ * 4-5 次拨号，UI 停在 onboarding 狂闪）。失败 reject，由调用方转 502
+ * （无 101），前端 connect() reject → boot 稳定失败。
+ */
+export function dialUpstreamWs(
   target: string,
+  proxyUrl: URL,
   opts: RelayWsOptions = {},
-): void {
+  timeoutMs = 10_000,
+): Promise<WebSocket> {
   const upstream = upstreamWsUrl(target, proxyUrl)
   if (opts.ticket) {
     upstream.searchParams.set('ticket', opts.ticket)
     upstream.searchParams.delete('token')
   }
-  const upstreamSocket = new WebSocket(upstream.href)
+  const socket = new WebSocket(upstream.href)
 
-  upstreamSocket.onopen = () => {
-    drain(upstreamSocket)
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      try {
+        socket.close()
+      } catch {
+        // ignore
+      }
+      reject(new Error(`upstream ws connect timed out after ${timeoutMs}ms`))
+    }, timeoutMs)
+
+    socket.onopen = () => {
+      clearTimeout(timer)
+      resolve(socket)
+    }
+    socket.onerror = () => {
+      clearTimeout(timer)
+      reject(new Error(`upstream ws connection failed (${target})`))
+    }
+    socket.onclose = () => {
+      clearTimeout(timer)
+    }
+  })
+}
+
+/**
+ * WS 中继：浏览器侧 socket（已 upgrade）↔ 上游 gateway socket（已 OPEN）
+ * 双向转发。上游必须先行拨通（dialUpstreamWs）——101 只能在能交付时给出。
+ */
+export function relayWs(browserSocket: WebSocket, upstreamSocket: WebSocket): void {
+  // 浏览器侧刚 upgrade 可能仍在 CONNECTING：flush 它排队中的消息。
+  browserSocket.onopen = () => {
     drain(browserSocket)
   }
   upstreamSocket.onmessage = (event) => {
