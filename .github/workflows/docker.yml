@@ -1,0 +1,93 @@
+name: Docker
+
+on:
+  push:
+    tags: ['v*']
+  pull_request:
+    branches: ['main']
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # 全历史 + tags：供 latest 判定探测 "HEAD 是否带 v 前缀 tag"
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Resolve build tags
+        id: resolve
+        run: |
+          # latest 判定：当前 commit 带 v 前缀 tag（release）才打 latest
+          LATEST_ENABLE="false"
+          if head_tag="$(git describe --tags --exact-match HEAD 2>/dev/null)" && [ "${head_tag#v}" != "$head_tag" ]; then
+              LATEST_ENABLE="true"
+          fi
+          echo "latest_enable=$LATEST_ENABLE" >> "$GITHUB_OUTPUT"
+          # tag push 时补打分支名：取包含该 tag 的远端分支（过滤 origin/HEAD）
+          BRANCH_NAME=""
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+              BRANCH_NAME="$(git branch -r --contains "$GITHUB_REF_NAME" 2>/dev/null | sed 's/^[* ]*//' | grep -v 'origin/HEAD' | sed 's#^origin/##' | head -1)"
+          fi
+          echo "branch=$BRANCH_NAME" >> "$GITHUB_OUTPUT"
+          echo "解析：latest=$LATEST_ENABLE branch=$BRANCH_NAME"
+
+      - name: Install cosign
+        if: github.event_name != 'pull_request'
+        uses: sigstore/cosign-installer@v3.5.0
+        with:
+          cosign-release: 'v2.2.4'
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3.0.0
+
+      - name: Log into registry ${{ env.REGISTRY }}
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3.0.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5.0.0
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=${{ github.ref_name }},enable=${{ github.ref_type == 'tag' }}
+            type=raw,value=${{ steps.resolve.outputs.branch }},enable=${{ github.ref_type == 'tag' && steps.resolve.outputs.branch != '' }}
+            type=raw,value=${{ github.ref_name }},enable=${{ github.ref_type == 'branch' }}
+            type=raw,value=latest,enable=${{ steps.resolve.outputs.latest_enable }}
+            type=sha
+
+      - name: Build and push Docker image
+        id: build-and-push
+        uses: docker/build-push-action@v5.0.0
+        with:
+          context: .
+          file: apps/proxy/Dockerfile
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Sign the published Docker image
+        if: ${{ github.event_name != 'pull_request' }}
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+          DIGEST: ${{ steps.build-and-push.outputs.digest }}
+        run: echo "${TAGS}" | xargs -I {} cosign sign --yes {}@${DIGEST}
