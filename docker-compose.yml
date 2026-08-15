@@ -1,0 +1,89 @@
+# docker-compose.yml — Hermes WebUI 双容器编排（PLAN §6.2，M4 落地）
+#
+# 拓扑：bridge 网络，服务名互通；webui 是浏览器唯一入口。
+#
+#   hermes ──(内部网络 http://hermes:9119)──> webui(代理+SPA) ──:8080──> 浏览器
+#
+# hermes 容器 = 上游 hermes-agent 镜像（Debian + s6-overlay，体积不归我们管）：
+#   - command: gateway run —— 消息网关；s6 容器内自动转监督（崩溃自重启）
+#   - HERMES_DASHBOARD=1 —— s6 额外监督 dashboard（API 载点：/api/* + /api/ws +
+#     /auth/native/*），绑定 0.0.0.0:9119（HERMES_DASHBOARD_HOST/PORT 可覆盖）
+#   - 非 loopback 绑定 → dashboard auth gate 强制启用（2026-06 起 --insecure
+#     不再关闭它）：必须注册 auth provider 否则 start_server 直接失败。
+#     零外部依赖方案 = 内置 basic auth provider（用户名/密码，保护 dashboard
+#     页面本身；webui 的 API 认证走 native OAuth Bearer，不受影响）
+#   - 9119 仅映射到宿主 loopback（127.0.0.1）——OAuth 授权弹窗需要浏览器能
+#     访问 gateway 的 /auth/native/authorize（redirect_uri 必须是 loopback IP
+#     字面量，上游安全边界，见 docs/deploy.md 认证章节）。仅 loopback 映射
+#     不违反"不公网暴露"的 PLAN 意图。
+#
+# webui 容器 = apps/proxy/Dockerfile（deno:alpine 薄镜像，SPA + 代理一体）：
+#   - HERMES_DEFAULT_GATEWAY_URL 经 /api/proxy/meta 运行时下发给前端设置页预填
+#     （同一 SPA 构建可部署到任意环境：改默认 URL 只需改 env，不重建镜像）
+#   - PROXY_PASSPHRASE：公网部署必开（转发面访问控制，防开放转发/SSRF）
+#   - OAUTH_REDIRECT_URI 可选：仅当上游 gateway 放宽了 redirect_uri 校验时用
+#     （默认代理按请求 origin 构造回调地址）
+#
+# 用法：
+#   export PROXY_PASSPHRASE=... HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=...
+#   docker compose up -d --build
+#   浏览器打开 http://<host>:8080 → 设置页已预填 http://hermes:9119
+#   完整部署说明见 docs/deploy.md
+#
+# 认证链路（webui → hermes，M3 协议）：
+#   - REST：代理按 OAuth 会话注入 Authorization: Bearer（gate 接受 native token）
+#   - WS：代理 mint 单次 ws-ticket（POST /api/auth/ws-ticket，Bearer）→ ?ticket= 拨号
+#   - PKCE 交换全程经 /auth/native/*（gate 公开前缀），浏览器只见 webui 同源
+
+services:
+  hermes:
+    image: hermes-agent
+    container_name: hermes
+    restart: unless-stopped
+    # OAuth 授权弹窗需要浏览器可达 /auth/native/authorize：仅映射宿主 loopback。
+    # （同机/隧道访问场景；纯公网浏览器访问见 docs/deploy.md 的限制说明）
+    ports:
+      - "127.0.0.1:9119:9119"
+    volumes:
+      - ~/.hermes:/opt/data
+    environment:
+      - HERMES_UID=${HERMES_UID:-10000}
+      - HERMES_GID=${HERMES_GID:-10000}
+      # 消息网关 + API 载点：s6 监督 dashboard（headless API 面）
+      - HERMES_DASHBOARD=1
+      - HERMES_DASHBOARD_HOST=0.0.0.0
+      - HERMES_DASHBOARD_PORT=9119
+      # dashboard auth gate 必配（非 loopback 强制）：内置 basic auth provider
+      - HERMES_DASHBOARD_BASIC_AUTH_USERNAME=${HERMES_DASHBOARD_BASIC_AUTH_USERNAME:-hermes}
+      - HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=${HERMES_DASHBOARD_BASIC_AUTH_PASSWORD:?set HERMES_DASHBOARD_BASIC_AUTH_PASSWORD — the non-loopback dashboard auth gate requires a provider}
+      # 可选：native OAuth 的 IDP 端配置（如 Hermes Cloud）。缺省时前端按
+      # gateway /api/status 宣告的 auth_flows 自动适配登录按钮
+      # - HERMES_DASHBOARD_OAUTH_CLIENT_ID=${HERMES_DASHBOARD_OAUTH_CLIENT_ID}
+    command: ["gateway", "run"]
+    networks:
+      - hermes-web
+
+  webui:
+    build:
+      context: .
+      dockerfile: apps/proxy/Dockerfile
+    image: hermes-webui
+    container_name: hermes-webui
+    restart: unless-stopped
+    depends_on:
+      - hermes
+    ports:
+      - "${WEBUI_PORT:-8080}:6722"
+    environment:
+      # 默认远端 URL：compose 服务名互通（bridge 网络）；改它无需重建镜像
+      - HERMES_DEFAULT_GATEWAY_URL=http://hermes:9119
+      # 公网部署必开：转发面访问控制（X-Hermes-Proxy-Passphrase）
+      - PROXY_PASSPHRASE=${PROXY_PASSPHRASE:?set PROXY_PASSPHRASE — public deployment requires it}
+      # 可选：仅当上游 gateway 放宽 redirect_uri 校验时覆盖回调地址
+      # - OAUTH_REDIRECT_URI=${OAUTH_REDIRECT_URI}
+    networks:
+      - hermes-web
+
+networks:
+  hermes-web:
+    driver: bridge

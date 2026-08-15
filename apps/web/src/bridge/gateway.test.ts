@@ -398,6 +398,30 @@ describe('M3 OAuth (proxy mode)', () => {
     expect(config.remoteTokenSet).toBe(false)
   })
 
+  it('getConnectionConfig reports disconnected when proxy lost the oauth session (restart)', async () => {
+    // M4 错误/重连态：代理重启后内存 token set 清空，但浏览器 httpOnly cookie
+    // 仍在——session 查询必须如实回未连接（UI 回到 Sign in，而不是假 connected）。
+    const adapter = new GatewayAdapter()
+    await adapter.saveConnectionConfig({
+      mode: 'remote',
+      remoteUrl: 'http://127.0.0.1:9119',
+      remoteAuthMode: 'oauth'
+    })
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(jsonResponse(200, { connected: false, provider: '', userId: '', expiresAt: 0, tokenPreview: null }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const config = await adapter.getConnectionConfig()
+
+    expect(config.remoteOauthConnected).toBe(false)
+    expect(config.remoteTokenPreview).toBe(null)
+    expect(config.remoteTokenSet).toBe(false)
+    // 会话查询走代理同源（credentials include 随 cookie），带 target 匹配。
+    expect(fetchMock.mock.calls[0][0]).toBe('http://127.0.0.1:6722/auth/native/session?target=http%3A%2F%2F127.0.0.1%3A9119')
+    expect(fetchMock.mock.calls[0][1].credentials).toBe('include')
+  })
+
   it('oauth mode save clears leftover static token', async () => {
     const adapter = new GatewayAdapter()
     await adapter.saveConnectionConfig({

@@ -1,0 +1,21 @@
+/**
+ * web.css — Hermes Web 响应式覆盖层（M4，非 vendor 改动）。
+ *
+ * vendor 渲染层是桌面优先；这里只修浏览器/移动端可见问题，全部收敛在
+ * apps/web 新增文件（PLAN §5：能新加文件就不改 vendor）。
+ *
+ * 1. 底部状态栏：桌面端用 overflow-x-clip 防横向滚动条（桌面宽度下大量
+ *    item 也放得下）；移动端 390px 会把 Gateway/backend 等标签截成
+ *    “Gatew…”，改为允许横向滚动（触屏滚动条自动隐藏，信息不丢）。
+ */
+@media (max-width: 640px) {
+  [data-slot='statusbar'] > div {
+    overflow-x: auto !important;
+  }
+  [data-slot='statusbar'] > div::-webkit-scrollbar {
+    height: 0;
+  }
+  [data-slot='statusbar'] > div {
+    scrollbar-width: none;
+  }
+}
