@@ -1,10 +1,8 @@
-# Docker 构建上下文排除（根 context 构建 apps/proxy/Dockerfile 用）
 .git
 .gitignore
 node_modules
 **/node_modules
-**/*.tmpdir
-**/.package.json.*
+**/*.tmpdir *_/.package.json._
 temp
 research
 docs
