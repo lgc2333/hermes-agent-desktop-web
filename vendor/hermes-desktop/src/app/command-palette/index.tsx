@@ -106,6 +106,11 @@ import { usePaletteContributions } from './contrib'
 import { MarketplaceThemePage } from './marketplace-theme-page'
 import { PetInlineToggle, PetPalettePage } from './pet-palette-page'
 
+// Web 布尔门（PATCHES.md §4 登记）：artifacts / agents 入口在 Web 版关闭
+// （PLAN §1 Q9）；apps/web/src/bridge/gates.ts 是语义权威。
+const GATE_ARTIFACTS_NAV = false
+const GATE_AGENTS_NAV = false
+
 interface PaletteItem {
   /** Keybind action id — its live combo renders as a hotkey hint. */
   action?: string
@@ -791,13 +796,18 @@ function CommandPaletteBody({ onExited }: { onExited: () => void }) {
             label: cc.nav.messaging.title,
             run: go(MESSAGING_ROUTE)
           },
-          {
-            action: 'nav.artifacts',
-            icon: Package,
-            id: 'nav-artifacts',
-            label: cc.nav.artifacts.title,
-            run: go(ARTIFACTS_ROUTE)
-          },
+          // Web 布尔门：artifacts / agents 行关闭（见文件顶部 GATE_*_NAV）。
+          ...(GATE_ARTIFACTS_NAV
+            ? [
+                {
+                  action: 'nav.artifacts',
+                  icon: Package,
+                  id: 'nav-artifacts',
+                  label: cc.nav.artifacts.title,
+                  run: go(ARTIFACTS_ROUTE)
+                }
+              ]
+            : []),
           {
             action: 'nav.cron',
             icon: Clock,
@@ -807,7 +817,9 @@ function CommandPaletteBody({ onExited }: { onExited: () => void }) {
             run: go(CRON_ROUTE)
           },
           { action: 'nav.profiles', icon: Users, id: 'nav-profiles', label: t.profiles.title, run: go(PROFILES_ROUTE) },
-          { action: 'nav.agents', icon: Cpu, id: 'nav-agents', label: t.agents.title, run: go(AGENTS_ROUTE) },
+          ...(GATE_AGENTS_NAV
+            ? [{ action: 'nav.agents', icon: Cpu, id: 'nav-agents', label: t.agents.title, run: go(AGENTS_ROUTE) }]
+            : []),
           {
             icon: Starmap,
             id: 'nav-starmap',

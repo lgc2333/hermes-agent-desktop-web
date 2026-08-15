@@ -37,6 +37,10 @@ const ArtifactsView = lazy(async () => ({ default: (await import('../artifacts')
 const MessagingView = lazy(async () => ({ default: (await import('../messaging')).MessagingView }))
 const SkillsView = lazy(async () => ({ default: (await import('../skills')).SkillsView }))
 
+// Web 布尔门（PATCHES.md §4 登记）：artifacts 页在 Web 版关闭（PLAN §1 Q9）；
+// apps/web/src/bridge/gates.ts 是语义权威。
+const GATE_ARTIFACTS_ROUTE = false
+
 export function LegacySessionRedirect() {
   const { sessionId } = useParams()
 
@@ -158,7 +162,11 @@ export const ChatRoutesSurface = memo(function ChatRoutesSurface({
       <Route element={chatView} path=":sessionId" />
       <Route element={page(<SkillsView setStatusbarItemGroup={setStatusbarItemGroup} />)} path="skills" />
       <Route element={page(<MessagingView setStatusbarItemGroup={setStatusbarItemGroup} />)} path="messaging" />
-      <Route element={page(<ArtifactsView setStatusbarItemGroup={setStatusbarItemGroup} />)} path="artifacts" />
+      {/* Web 布尔门：artifacts 路由关闭（见文件顶部 GATE_ARTIFACTS_ROUTE）——
+          直开 /artifacts 回落到 chat，避免渲染被关页面。 */}
+      {GATE_ARTIFACTS_ROUTE ? (
+        <Route element={page(<ArtifactsView setStatusbarItemGroup={setStatusbarItemGroup} />)} path="artifacts" />
+      ) : null}
       <Route element={null} path="agents" />
       <Route element={null} path="command-center" />
       <Route element={null} path="cron" />

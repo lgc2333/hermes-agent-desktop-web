@@ -10,7 +10,8 @@
     "dev": "node dev/dev.mjs",
     "build": "vite build",
     "preview": "vite preview --host 127.0.0.1 --port 4173",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "node scripts/typecheck.mjs",
+    "test": "vitest run",
     "dev:gateway": "node dev/mock-gateway.mjs",
     "dev:web": "vite --host 127.0.0.1 --port 5173"
   },

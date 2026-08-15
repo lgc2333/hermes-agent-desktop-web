@@ -59,7 +59,7 @@ _Avoid_: 薄代理（口语）、网关（错误）
 _Avoid_: 上游源码（口语）、node_modules（实现细节）
 
 **Capability bridge**:
-渲染层访问机器/原生能力的窄类型接口（桌面端为 window.hermesDesktop）；Web 端由 WebCapabilityAdapter 提供同签名实现。
+渲染层访问机器/原生能力的窄类型接口（桌面端为 window.hermesDesktop）；Web 端由 WebCapabilityAdapter 提供同签名实现，能力按可用性分三类：浏览器原生可用、经 gateway 转发、被布尔门关闭（桌面独有）。
 _Avoid_: 桥（太短）、preload（实现细节）
 
 **布尔门（feature gate）**:

@@ -51,6 +51,10 @@ import type { StatusResponse, UsageStats } from '@/types/hermes'
 import { CRON_ROUTE, SETTINGS_ROUTE, WEBHOOKS_ROUTE } from '../../routes'
 import type { StatusbarItem } from '../statusbar-controls'
 
+// Web 布尔门（PATCHES.md §4 登记）：状态栏 Agents 入口在 Web 版关闭
+// （PLAN §1 Q9）；apps/web/src/bridge/gates.ts 是语义权威。
+const GATE_AGENTS_STATUSBAR = false
+
 const EMPTY_USAGE: UsageStats = { calls: 0, input: 0, output: 0, total: 0 }
 
 interface StatusbarItemsOptions {
@@ -479,32 +483,37 @@ export function useStatusbarItems({
         toggleLabel: copy.toggleWorkspace,
         variant: 'menu'
       },
-      {
-        className: cn(
-          agentsOpen && 'bg-accent/55 text-foreground',
-          subagentsFailed > 0 && 'text-destructive hover:text-destructive'
-        ),
-        detail:
-          subagentsRunning > 0
-            ? copy.subagents(subagentsRunning)
-            : subagentsFailed > 0
-              ? copy.failed(subagentsFailed)
-              : undefined,
-        icon:
-          subagentsFailed > 0 ? (
-            <AlertCircle className="size-3" />
-          ) : subagentsRunning > 0 ? (
-            <Loader2 className="size-3 animate-spin" />
-          ) : (
-            <Codicon name="hubot" size="0.75rem" />
-          ),
-        id: 'agents',
-        label: copy.agents,
-        onSelect: openAgents,
-        title: agentsOpen ? copy.closeAgents : copy.openAgents,
-        toggleLabel: copy.agents,
-        variant: 'action'
-      },
+      // Web 布尔门：Agents 状态栏项关闭（见文件顶部 GATE_AGENTS_STATUSBAR）。
+      ...(GATE_AGENTS_STATUSBAR
+        ? ([
+            {
+              className: cn(
+                agentsOpen && 'bg-accent/55 text-foreground',
+                subagentsFailed > 0 && 'text-destructive hover:text-destructive'
+              ),
+              detail:
+                subagentsRunning > 0
+                  ? copy.subagents(subagentsRunning)
+                  : subagentsFailed > 0
+                    ? copy.failed(subagentsFailed)
+                    : undefined,
+              icon:
+                subagentsFailed > 0 ? (
+                  <AlertCircle className="size-3" />
+                ) : subagentsRunning > 0 ? (
+                  <Loader2 className="size-3 animate-spin" />
+                ) : (
+                  <Codicon name="hubot" size="0.75rem" />
+                ),
+              id: 'agents',
+              label: copy.agents,
+              onSelect: openAgents,
+              title: agentsOpen ? copy.closeAgents : copy.openAgents,
+              toggleLabel: copy.agents,
+              variant: 'action'
+            }
+          ] satisfies StatusbarItem[])
+        : []),
       {
         icon: <Clock className="size-3" />,
         id: 'cron',

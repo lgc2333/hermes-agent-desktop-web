@@ -55,7 +55,12 @@ export default defineConfig(({ command }) => ({
     host: '127.0.0.1',
     port: 5173,
     strictPort: true,
-    fs: { allow: fsAllow }
+    fs: { allow: fsAllow },
+    // Windows: pnpm drops .package.json.*.tmpdir dirs under the app root;
+    // chokidar watching them crashes vite with EBUSY when they get removed.
+    watch: {
+      ignored: ['**/.package.json.*', '**/*.tmpdir/**']
+    }
   },
   preview: {
     host: '127.0.0.1',

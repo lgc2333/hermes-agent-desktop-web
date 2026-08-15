@@ -13,8 +13,22 @@
     "esModuleInterop": true,
     "useDefineForClassFields": true,
     "allowImportingTsExtensions": true,
+    // 只显式纳入 vite/client 环境类型；不自动 include 全部 @types ——
+    // 否则 root node_modules/@types/react 与 apps/web/node_modules/@types/react
+    // （pnpm symlink）同时进程序，产生"Two different types with this name exist"
+    // 的全库伪错（M0 遗留；CLI 因 TS5101 提前退出从未暴露）。
+    "types": ["vite/client"],
     "baseUrl": ".",
     "paths": {
+      // react 类型统一钉到 root @types：apps/web 的 jsx-runtime 从
+      // apps/web/node_modules（pnpm symlink → store）解析、vendor 从 root 解析，
+      // 会同时进两个 @types/react 实例 → 全库 "Two different types" 伪错。
+      // 直接映射 .d.ts 让两处解析到同一实例（M0 遗留；CLI 因 TS5101 提前退出从未暴露）。
+      "react": ["../../node_modules/@types/react/index.d.ts"],
+      "react/jsx-runtime": ["../../node_modules/@types/react/jsx-runtime.d.ts"],
+      "react/jsx-dev-runtime": ["../../node_modules/@types/react/jsx-dev-runtime.d.ts"],
+      "react-dom": ["../../node_modules/@types/react-dom/index.d.ts"],
+      "react-dom/client": ["../../node_modules/@types/react-dom/client.d.ts"],
       "@/*": ["../../vendor/hermes-desktop/src/*"],
       "@hermes/shared/billing": ["../../vendor/hermes-shared/src/billing-types.ts"],
       "@hermes/shared": ["../../vendor/hermes-shared/src/index.ts"],

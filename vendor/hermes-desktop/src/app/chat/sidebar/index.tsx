@@ -171,6 +171,18 @@ import { CONTEXT_SPLIT_KIT, SplitSubmenu } from './split-submenu'
 const NON_SESSION_INITIAL_ROWS = 3
 const NON_SESSION_LOAD_STEP = 10
 
+// Web 布尔门（PATCHES.md §4 登记）：artifacts 页在 Web 版关闭（PLAN §1 Q9），
+// 代码保留以便 subtree 合并；apps/web/src/bridge/gates.ts 是语义权威。
+// 被关条目抽成具类型常量：条件展开时仍保有完整类型（避免隐式 any）。
+const GATE_ARTIFACTS_NAV = false
+const ARTIFACTS_NAV_ITEM: SidebarNavItem = {
+  id: 'artifacts',
+  label: '',
+  icon: props => <Codicon name="files" {...props} />,
+  route: ARTIFACTS_ROUTE,
+  keybindActionId: 'nav.artifacts'
+}
+
 // How long after connecting to warm the project tree for someone who isn't in
 // the grouped view. Long enough that the flat list — the thing actually on
 // screen — has the connection to itself first.
@@ -198,13 +210,8 @@ const SIDEBAR_NAV: SidebarNavItem[] = [
     route: MESSAGING_ROUTE,
     keybindActionId: 'nav.messaging'
   },
-  {
-    id: 'artifacts',
-    label: '',
-    icon: props => <Codicon name="files" {...props} />,
-    route: ARTIFACTS_ROUTE,
-    keybindActionId: 'nav.artifacts'
-  },
+  // Web 布尔门：artifacts（制品/文件页）入口关闭（见文件顶部 GATE_ARTIFACTS_NAV）。
+  ...(GATE_ARTIFACTS_NAV ? [ARTIFACTS_NAV_ITEM] : []),
   {
     id: 'cron',
     label: '',

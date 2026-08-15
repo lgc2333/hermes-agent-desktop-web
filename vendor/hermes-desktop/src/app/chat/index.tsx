@@ -463,7 +463,9 @@ export const ChatView = memo(function ChatView({
         suggestions: contextSuggestions
       },
       voice: {
-        enabled: true,
+        // Web 布尔门（PATCHES.md §4 登记）：语音移出 Web 计划（PLAN §1），
+        // 关闭 dictation pill；apps/web/src/bridge/gates.ts 是语义权威。
+        enabled: false,
         active: false
       }
     }),
