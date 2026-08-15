@@ -1,0 +1,30 @@
+# --- Node / pnpm ---
+node_modules/
+.pnpm-store/
+*.tsbuildinfo
+
+# --- Build output ---
+dist/
+dist-ssr/
+release/
+coverage/
+
+# --- Temp (per system AGENTS.md) ---
+temp/
+
+# --- Upstream research clone (own git repo; subtree is the source of truth) ---
+research/
+
+# --- Env / secrets ---
+.env
+.env.*
+!.env.example
+
+# --- Editor / OS ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# --- Logs ---
+*.log
