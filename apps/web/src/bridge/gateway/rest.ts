@@ -212,3 +212,128 @@ export async function fetchProxyMeta(): Promise<{
     return null
   }
 }
+/** 目标 gateway 的规范化 base URL（去尾斜杠）。 */
+export function normalizeTargetUrl(url: string): string {
+  return url.replace(/\/+$/, '')
+}
+
+/**
+ * M5：密码 "dashboard login" 登录（经代理 /api/proxy/session/login）。
+ * 成功 → 代理内存存 cookie jar 并回发 hermes_session httpOnly cookie；
+ * 失败 → 抛带 gateway detail 的错误（如 "HTTP 401: Invalid credentials"）。
+ */
+export async function proxySessionLogin(
+  target: string,
+  provider: string,
+  username: string,
+  password: string,
+): Promise<void> {
+  const proxy = proxyBaseUrl()
+  if (!proxy) {
+    throw new Error('password login requires the proxy (proxy mode only)')
+  }
+
+  const res = await proxyFetch(`${proxy}/api/proxy/session/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      target: normalizeTargetUrl(target),
+      provider,
+      username,
+      password,
+    }),
+  })
+
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { detail?: string } | null
+    throw new Error(`HTTP ${res.status}${body?.detail ? `: ${body.detail}` : ''}`)
+  }
+}
+
+/** M5：清密码会话（代理转发 /auth/logout + 清 jar 与 cookie）。 */
+export async function proxySessionLogout(): Promise<void> {
+  const proxy = proxyBaseUrl()
+  if (!proxy) {
+    return
+  }
+
+  await proxyFetch(`${proxy}/api/proxy/session/logout`, { method: 'POST' })
+}
+
+/** M5：查询密码会话状态（cookie + target 匹配才 connected）。 */
+export async function proxySessionStatus(target: string): Promise<{
+  connected: boolean
+  provider: string
+  username: string
+}> {
+  const proxy = proxyBaseUrl()
+  if (!proxy) {
+    return { connected: false, provider: '', username: '' }
+  }
+
+  try {
+    const res = await proxyFetch(
+      `${proxy}/api/proxy/session/status?target=${encodeURIComponent(normalizeTargetUrl(target))}`,
+    )
+    if (!res.ok) {
+      return { connected: false, provider: '', username: '' }
+    }
+
+    const json = (await res.json()) as {
+      connected?: boolean
+      provider?: string
+      username?: string
+    }
+
+    return {
+      connected: Boolean(json.connected),
+      provider: json.provider ?? '',
+      username: json.username ?? '',
+    }
+  } catch {
+    return { connected: false, provider: '', username: '' }
+  }
+}
+
+/**
+ * M5：探测 provider 形状（supports_password / display_name）。
+ * 走代理（同 /api/status 探测），public 端点无鉴权。失败 → null（调用方
+ * 回退到 /api/status 的 auth_providers 名字列表）。
+ */
+export async function probeAuthProviders(
+  remoteUrl: string,
+): Promise<{ name: string; displayName: string; supportsPassword: boolean }[] | null> {
+  const proxy = proxyBaseUrl()
+  const base = proxy ?? normalizeTargetUrl(remoteUrl)
+
+  try {
+    const res = await proxyFetch(`${base}/api/auth/providers`, {
+      headers: proxy ? { 'X-Hermes-Target': normalizeTargetUrl(remoteUrl) } : {},
+    })
+    if (!res.ok) {
+      return null
+    }
+
+    const json = (await res.json()) as {
+      providers?: {
+        name?: unknown
+        display_name?: unknown
+        supports_password?: unknown
+      }[]
+    }
+
+    if (!Array.isArray(json.providers)) {
+      return null
+    }
+
+    return json.providers
+      .map((p) => ({
+        name: String(p.name ?? ''),
+        displayName: String(p.display_name ?? p.name ?? ''),
+        supportsPassword: Boolean(p.supports_password),
+      }))
+      .filter((p) => p.name)
+  } catch {
+    return null
+  }
+}

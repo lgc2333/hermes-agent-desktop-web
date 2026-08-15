@@ -173,6 +173,15 @@ export function BootFailureOverlay() {
       return
     }
 
+    // M5: a password gateway has no OAuth popup — route to the embedded
+    // Gateway settings panel, which renders the username/password form
+    // (same source as Settings, no parallel copy to drift).
+    if (remoteReauth.isPassword) {
+      setView('connect')
+
+      return
+    }
+
     setBusy('signin')
 
     try {

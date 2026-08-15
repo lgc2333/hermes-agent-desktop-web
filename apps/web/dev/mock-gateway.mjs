@@ -28,12 +28,27 @@ const PROVIDER = 'mock'
 // （auth_required + auth_flows: native_pkce + /auth/native/* + ws-ticket）。
 const OAUTH_MODE = (process.env.MOCK_OAUTH ?? '0') === '1'
 
+// M5：MOCK_PASSWORD=1 时模拟纯密码门禁 gateway（auth_flows 无 native_pkce ——
+// 旧网关或 password-only provider 形态）：/auth/password-login 换 cookie 会话，
+// /api/* 全部挂 cookie 门，WS 走 ?ticket=。dev 凭据 admin/admin。
+const PASSWORD_MODE = (process.env.MOCK_PASSWORD ?? '0') === '1'
+
 // ── OAuth 模拟状态（进程内存，对齐真 gateway 的 dashboard_auth/native_flow）──
 // broker_state -> { code_challenge, redirect_uri, client_state, expires_at }
 const oauthPending = new Map()
 // gw_code -> { code_challenge, expires_at }
 const oauthCodes = new Map()
 let oauthSeq = 1
+
+// ── M5：密码会话模拟状态 ──
+const mockSessions = new Set()
+
+function hasMockSession(req) {
+  const cookie = req.headers.cookie ?? ''
+  const match = /(?:^|;)\s*hermes_mock_session=([^;]+)/.exec(cookie)
+
+  return Boolean(match && mockSessions.has(match[1]))
+}
 
 function b64url(raw) {
   return Buffer.from(raw)
@@ -440,19 +455,48 @@ function routeRest(req, res) {
   const q = queryParams(req.url)
   const method = req.method ?? 'GET'
 
+  // M5：密码门禁 —— /api/* 全部挂会话 cookie 门（/api/status 与
+  // /api/auth/providers 是 public 免检面，与真 gateway 的 PUBLIC 列表对齐）。
+  // 401 形状带 login_url，与真 gateway middleware 的 _unauth_response 一致。
+  if (
+    PASSWORD_MODE &&
+    url.startsWith('/api/') &&
+    url !== '/api/status' &&
+    url !== '/api/auth/providers' &&
+    !hasMockSession(req)
+  ) {
+    json(res, 401, {
+      error: 'unauthenticated',
+      detail: 'Unauthorized',
+      login_url: '/login',
+    })
+
+    return
+  }
+
   if (url === '/api/status' && method === 'GET') {
-    const status = OAUTH_MODE
+    const status = PASSWORD_MODE
       ? {
           ok: true,
           version: '0.0.0-mock',
-          // 真 gateway 无 auth_mode 字段（M3 probe 读 auth_required/auth_flows）；
-          // auth_mode 保留给旧 probe 逻辑做兼容。
-          auth_mode: 'oauth',
           auth_required: true,
-          auth_flows: ['cookie', 'native_pkce'],
-          auth_providers: ['nous'],
+          // 无 native_pkce：旧网关/密码-only 形态（M5 probe 靠
+          // supports_password 归入 oauth 分支）。
+          auth_flows: ['cookie'],
+          auth_providers: ['password'],
         }
-      : { ok: true, version: '0.0.0-mock', auth_mode: 'token', auth_required: false }
+      : OAUTH_MODE
+        ? {
+            ok: true,
+            version: '0.0.0-mock',
+            // 真 gateway 无 auth_mode 字段（M3 probe 读 auth_required/auth_flows）；
+            // auth_mode 保留给旧 probe 逻辑做兼容。
+            auth_mode: 'oauth',
+            auth_required: true,
+            auth_flows: ['cookie', 'native_pkce'],
+            auth_providers: ['nous'],
+          }
+        : { ok: true, version: '0.0.0-mock', auth_mode: 'token', auth_required: false }
     json(res, 200, status)
 
     return
@@ -703,6 +747,55 @@ function routeRest(req, res) {
     return
   }
 
+  // ── M5：密码门禁模拟面（password-login + providers）──────────────────────
+
+  if (url === '/api/auth/providers' && method === 'GET') {
+    if (!PASSWORD_MODE) {
+      json(res, 503, { detail: 'no auth providers registered' })
+
+      return
+    }
+    json(res, 200, {
+      providers: [
+        {
+          name: 'password',
+          display_name: 'Username & Password',
+          supports_password: true,
+        },
+      ],
+    })
+
+    return
+  }
+
+  if (url === '/auth/password-login' && method === 'POST') {
+    let body = {}
+    try {
+      body = JSON.parse(req.body ?? '{}')
+    } catch {
+      body = {}
+    }
+    // dev 凭据：admin/admin（镜像真 gateway：错误永远 401 Invalid credentials，
+    // 不区分用户不存在与密码错误）。
+    if (
+      String(body.username ?? '') !== 'admin' ||
+      String(body.password ?? '') !== 'admin'
+    ) {
+      json(res, 401, { detail: 'Invalid credentials' })
+
+      return
+    }
+    const session = `mock-pw-session-${randomBytes(6).toString('hex')}`
+    mockSessions.add(session)
+    res.writeHead(200, {
+      'Content-Type': 'application/json',
+      'Set-Cookie': `hermes_mock_session=${session}; Path=/; HttpOnly; Max-Age=900`,
+    })
+    res.end(JSON.stringify({ ok: true, next: '' }))
+
+    return
+  }
+
   if (url === '/api/auth/ws-ticket' && method === 'POST') {
     // 宽松：模拟已认证会话（真 gateway 这里要求 session cookie / Bearer）。
     json(res, 200, { ticket: `mock-ticket-${oauthSeq++}`, ttl_seconds: 30 })
@@ -749,7 +842,18 @@ httpServer.listen(PORT, '127.0.0.1', () => {
 // token 经 query 传入（真 gateway 恒时比对 _SESSION_TOKEN；mock 宽松接受）。
 const wss = new WebSocketServer({ server: httpServer, path: '/api/ws' })
 
-wss.on('connection', (socket) => {
+wss.on('connection', (socket, request) => {
+  // M5：密码门禁 —— WS 只认单次 ?ticket=（gated gateway 拒绝 ?token=）。
+  if (PASSWORD_MODE) {
+    const ticket = new URL(request.url, 'http://mock').searchParams.get('ticket') ?? ''
+    if (!ticket.startsWith('mock-ticket-')) {
+      console.log('[mock-gateway] ws rejected: no ticket')
+      socket.close(4401, 'ticket required')
+
+      return
+    }
+  }
+
   console.log('[mock-gateway] client connected')
 
   socket.on('message', (raw) => {

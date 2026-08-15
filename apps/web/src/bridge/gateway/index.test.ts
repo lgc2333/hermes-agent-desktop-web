@@ -680,3 +680,198 @@ describe('GatewayAdapter fs/git REST parity (remote-mode members, ADR-0010)', ()
     )
   })
 })
+
+describe('M5 password login ("dashboard login", proxy mode)', () => {
+  beforeEach(() => {
+    window.localStorage.clear()
+    loadRegistry()
+    vi.stubEnv('VITE_PROXY_URL', 'http://127.0.0.1:6722')
+  })
+
+  afterEach(() => {
+    vi.unstubAllEnvs()
+    vi.unstubAllGlobals()
+  })
+
+  it('probe: password-gated gateway (no native_pkce) resolves to oauth with supportsPassword', async () => {
+    const fetchMock = vi
+      .fn()
+      // /api/status
+      .mockResolvedValueOnce(
+        jsonResponse(200, {
+          version: '0.19.1',
+          auth_required: true,
+          auth_flows: ['cookie'],
+          auth_providers: ['password'],
+        }),
+      )
+      // /api/auth/providers
+      .mockResolvedValueOnce(
+        jsonResponse(200, {
+          providers: [
+            {
+              name: 'password',
+              display_name: 'Username & Password',
+              supports_password: true,
+            },
+          ],
+        }),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const adapter = new GatewayAdapter()
+    const result = await adapter.probeConnectionConfig('http://127.0.0.1:9119')
+
+    expect(result.authMode).toBe('oauth')
+    expect(result.providers).toEqual([
+      { name: 'password', displayName: 'Username & Password', supportsPassword: true },
+    ])
+    // providers 探测走代理 + target
+    expect(fetchMock.mock.calls[1][0]).toBe('http://127.0.0.1:6722/api/auth/providers')
+    expect(fetchMock.mock.calls[1][1].headers['X-Hermes-Target']).toBe(
+      'http://127.0.0.1:9119',
+    )
+  })
+
+  it('probe: gated gateway with providers endpoint failure stays token (no native_pkce)', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse(200, {
+          version: '0.19.1',
+          auth_required: true,
+          auth_flows: ['cookie'],
+          auth_providers: ['password'],
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse(503, { detail: 'no auth providers registered' }),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const adapter = new GatewayAdapter()
+    const result = await adapter.probeConnectionConfig('http://127.0.0.1:9119')
+
+    expect(result.authMode).toBe('token')
+    expect(result.providers).toEqual([{ name: 'password', displayName: 'password' }])
+  })
+
+  it('passwordLoginConnectionConfig posts credentials to the proxy and reports connected', async () => {
+    const adapter = new GatewayAdapter()
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { ok: true }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await adapter.passwordLoginConnectionConfig(
+      'http://127.0.0.1:9119',
+      'password',
+      'alice',
+      's3cret',
+    )
+
+    expect(result).toEqual({
+      ok: true,
+      baseUrl: 'http://127.0.0.1:9119',
+      connected: true,
+    })
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe('http://127.0.0.1:6722/api/proxy/session/login')
+    expect(init.credentials).toBe('include')
+    expect(JSON.parse(init.body)).toEqual({
+      target: 'http://127.0.0.1:9119',
+      provider: 'password',
+      username: 'alice',
+      password: 's3cret',
+    })
+  })
+
+  it('passwordLoginConnectionConfig surfaces gateway 401 detail as a readable error', async () => {
+    const adapter = new GatewayAdapter()
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(jsonResponse(401, { detail: 'Invalid credentials' }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(
+      adapter.passwordLoginConnectionConfig(
+        'http://127.0.0.1:9119',
+        'password',
+        'alice',
+        'wrong',
+      ),
+    ).rejects.toThrow('HTTP 401: Invalid credentials')
+  })
+
+  it('oauthLogoutConnectionConfig clears BOTH oauth and password sessions', async () => {
+    const adapter = new GatewayAdapter()
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { ok: true }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await adapter.oauthLogoutConnectionConfig('http://127.0.0.1:9119')
+
+    expect(result).toEqual({ ok: true, connected: false })
+    const urls = fetchMock.mock.calls.map((call) => call[0])
+    expect(urls).toContain('http://127.0.0.1:6722/auth/native/logout')
+    expect(urls).toContain('http://127.0.0.1:6722/api/proxy/session/logout')
+  })
+
+  it('getConnectionConfig reports connected when a password session exists (oauth endpoint empty)', async () => {
+    const adapter = new GatewayAdapter()
+    await adapter.saveConnectionConfig({
+      mode: 'remote',
+      remoteUrl: 'http://127.0.0.1:9119',
+      remoteAuthMode: 'oauth',
+    })
+    const fetchMock = vi
+      .fn()
+      // /auth/native/session → 未连接
+      .mockResolvedValueOnce(
+        jsonResponse(200, {
+          connected: false,
+          provider: '',
+          userId: '',
+          expiresAt: 0,
+          tokenPreview: null,
+        }),
+      )
+      // /api/proxy/session/status → 密码会话已连接
+      .mockResolvedValueOnce(
+        jsonResponse(200, { connected: true, provider: 'password', username: 'alice' }),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const config = await adapter.getConnectionConfig()
+
+    expect(config.remoteOauthConnected).toBe(true)
+    expect(fetchMock.mock.calls[1][0]).toBe(
+      'http://127.0.0.1:6722/api/proxy/session/status?target=http%3A%2F%2F127.0.0.1%3A9119',
+    )
+  })
+
+  it('getConnectionConfig reports disconnected when neither session exists', async () => {
+    const adapter = new GatewayAdapter()
+    await adapter.saveConnectionConfig({
+      mode: 'remote',
+      remoteUrl: 'http://127.0.0.1:9119',
+      remoteAuthMode: 'oauth',
+    })
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse(200, {
+          connected: false,
+          provider: '',
+          userId: '',
+          expiresAt: 0,
+          tokenPreview: null,
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse(200, { connected: false, provider: '', username: '' }),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const config = await adapter.getConnectionConfig()
+
+    expect(config.remoteOauthConnected).toBe(false)
+  })
+})

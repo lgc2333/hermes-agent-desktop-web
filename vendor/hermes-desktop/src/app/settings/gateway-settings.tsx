@@ -165,6 +165,9 @@ export function GatewaySettings({ embedded = false }: { embedded?: boolean } = {
   const [signingIn, setSigningIn] = useState(false)
   const [state, setState] = useState<GatewaySettingsState>(EMPTY_STATE)
   const [remoteToken, setRemoteToken] = useState('')
+  // M5: password ("dashboard login") gateways — username/password form state.
+  const [authUsername, setAuthUsername] = useState('')
+  const [authPassword, setAuthPassword] = useState('')
   const [lastTest, setLastTest] = useState<null | string>(null)
   const [sshHostSuggestions, setSshHostSuggestions] = useState<string[]>([])
   const [sshCustomHost, setSshCustomHost] = useState(false)
@@ -601,6 +604,67 @@ export function GatewaySettings({ embedded = false }: { embedded?: boolean } = {
       if (result.connected) {
         const refreshed = await window.hermesDesktop.getConnectionConfig(scope)
         acceptSavedConfig(refreshed)
+        notify({ kind: 'success', title: g.signedIn, message: g.connectedTo(providerLabel) })
+      } else {
+        notify({
+          kind: 'warning',
+          title: t.boot.failure.signInIncompleteTitle,
+          message: t.boot.failure.signInIncompleteMessage
+        })
+      }
+    } catch (err) {
+      if (seq === signingSeq.current) {
+        notifyError(err, g.signInFailed)
+      }
+    } finally {
+      if (seq === signingSeq.current) {
+        setSigningIn(false)
+      }
+    }
+  }
+
+  // M5: a username/password gateway signs in through a credential form
+  // (POST /auth/password-login on the gateway) rather than an OAuth redirect.
+  // The web proxy holds the resulting session cookie in memory, so the browser
+  // only ever sends the credentials once — nothing is persisted here.
+  const passwordSignIn = async () => {
+    const seq = ++signingSeq.current
+
+    if (!trimmedUrl) {
+      notify({ kind: 'warning', title: g.incompleteTitle, message: g.enterUrlFirst })
+
+      return
+    }
+
+    const providers = probe?.providers ?? []
+    const provider =
+      providers.find(p => p.supportsPassword)?.name ?? providers[0]?.name ?? ''
+
+    if (!provider) {
+      notify({ kind: 'warning', title: g.incompleteTitle, message: g.enterUrlFirst })
+
+      return
+    }
+
+    setSigningIn(true)
+
+    try {
+      const result = await window.hermesDesktop.passwordLoginConnectionConfig(
+        trimmedUrl,
+        provider,
+        authUsername.trim(),
+        authPassword
+      )
+
+      if (seq !== signingSeq.current) {
+        return
+      }
+
+      if (result.connected) {
+        const refreshed = await window.hermesDesktop.getConnectionConfig(scope)
+        acceptSavedConfig(refreshed)
+        setAuthPassword('')
+        setAuthUsername('')
         notify({ kind: 'success', title: g.signedIn, message: g.connectedTo(providerLabel) })
       } else {
         notify({
@@ -1321,8 +1385,8 @@ export function GatewaySettings({ embedded = false }: { embedded?: boolean } = {
             </div>
           ) : null}
 
-          {/* OAuth / password gateways: present a sign-in button + connection status. */}
-          {state.mode === 'remote' && authResolved && authMode === 'oauth' ? (
+          {/* OAuth gateways: present a sign-in button + connection status. */}
+          {state.mode === 'remote' && authResolved && authMode === 'oauth' && (!isPasswordProvider || oauthConnected) ? (
             <ListRow
               action={
                 oauthConnected ? (
@@ -1338,21 +1402,60 @@ export function GatewaySettings({ embedded = false }: { embedded?: boolean } = {
                 ) : (
                   <Button disabled={signingIn || state.envOverride || !trimmedUrl} onClick={() => void signIn()}>
                     {signingIn ? <Loader2 className="animate-spin" /> : <LogIn />}
-                    {isPasswordProvider ? g.signIn : g.signInWith(providerLabel)}
+                    {g.signInWith(providerLabel)}
                   </Button>
                 )
               }
               description={
                 oauthConnected
-                  ? isPasswordProvider
-                    ? g.authSignedInPassword
-                    : g.authSignedInOauth
-                  : isPasswordProvider
-                    ? g.authNeedsPassword
-                    : g.authNeedsOauth(providerLabel)
+                  ? g.authSignedInOauth
+                  : g.authNeedsOauth(providerLabel)
               }
               title={g.authTitle}
             />
+          ) : null}
+
+          {/* M5: password ("dashboard login") gateways get a username/password
+              form instead of the OAuth popup — the proxy holds the session. */}
+          {state.mode === 'remote' && authResolved && authMode === 'oauth' && isPasswordProvider && !oauthConnected ? (
+            <div className="mt-2 grid gap-2 rounded-xl border border-(--ui-stroke-tertiary) p-3">
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-sm font-medium">{g.authTitle}</div>
+                {signingIn ? <Loader2 className="size-4 animate-spin" /> : null}
+              </div>
+              <Input
+                autoComplete="username"
+                className={cn('h-8', CONTROL_TEXT)}
+                disabled={signingIn || state.envOverride}
+                onChange={event => setAuthUsername(event.target.value)}
+                placeholder={g.authUsername}
+                value={authUsername}
+              />
+              <Input
+                autoComplete="current-password"
+                className={cn('h-8', CONTROL_TEXT)}
+                disabled={signingIn || state.envOverride}
+                onChange={event => setAuthPassword(event.target.value)}
+                onKeyDown={event => {
+                  if (event.key === 'Enter' && authUsername.trim() && authPassword) {
+                    void passwordSignIn()
+                  }
+                }}
+                placeholder={g.authPassword}
+                type="password"
+                value={authPassword}
+              />
+              <Button
+                disabled={
+                  signingIn || state.envOverride || !trimmedUrl || !authUsername.trim() || !authPassword
+                }
+                onClick={() => void passwordSignIn()}
+              >
+                {signingIn ? <Loader2 className="animate-spin" /> : <LogIn />}
+                {g.signIn}
+              </Button>
+              <p className="text-xs leading-5 text-muted-foreground">{g.authNeedsPassword}</p>
+            </div>
           ) : null}
 
           {/* Session-token gateways: keep the existing token entry box. */}

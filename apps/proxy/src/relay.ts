@@ -91,9 +91,35 @@ export function upstreamWsUrl(target: string, proxyUrl: URL): URL {
  * M3：`opts.bearer`（OAuth 模式的 access token，来自 oauth.ts 的
  * bearerFor）存在时注入 `Authorization: Bearer` 并去掉浏览器侧可能带的
  * X-Hermes-Session-Token（OAuth 模式浏览器不持静态 token）。
+ *
+ * M5：`opts.cookie`（密码 "dashboard login" 会话的 cookie jar，来自
+ * session.ts 的 cookieFor）存在时注入 `Cookie` 头并同样摘掉浏览器侧静态
+ * token（代理会话是权威凭证）。gateway 会在响应里轮换会话 cookie（AT 过期
+ * 用 RT 透明刷新）——`opts.onSetCookie` 把响应 Set-Cookie 交回存储合并。
  */
 export interface RelayRestOptions {
   bearer?: string | null
+  cookie?: string | null
+  /** 上游响应携带 Set-Cookie 时回调（cookie 轮换合并，session.ts）。 */
+  onSetCookie?: (setCookies: string[]) => void
+}
+
+/** 读取响应的全部 Set-Cookie 原始值（Deno 2 原生 getSetCookie）。 */
+export function collectSetCookies(headers: Headers): string[] {
+  const getSetCookie = (headers as Headers & { getSetCookie?: () => string[] })
+    .getSetCookie
+  if (typeof getSetCookie === 'function') {
+    return getSetCookie.call(headers)
+  }
+  // 旧运行时回退：forEach 会把多个 set-cookie 拼成 ", " —— 尽力拆回。
+  const out: string[] = []
+  headers.forEach((value, key) => {
+    if (key.toLowerCase() === 'set-cookie') {
+      out.push(...value.split(', '))
+    }
+  })
+
+  return out
 }
 
 export async function relayRest(
@@ -110,6 +136,10 @@ export async function relayRest(
 
   if (opts.bearer) {
     headers.set('authorization', `Bearer ${opts.bearer}`)
+    headers.delete('x-hermes-session-token')
+  }
+  if (opts.cookie) {
+    headers.set('cookie', opts.cookie)
     headers.delete('x-hermes-session-token')
   }
 
@@ -131,6 +161,11 @@ export async function relayRest(
       }),
       { status: 502, headers: { 'Content-Type': 'application/json' } },
     )
+  }
+
+  const setCookies = collectSetCookies(upstream.headers)
+  if (setCookies.length && opts.onSetCookie) {
+    opts.onSetCookie(setCookies)
   }
 
   const outHeaders = new Headers()

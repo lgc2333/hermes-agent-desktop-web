@@ -61,6 +61,8 @@ export function buildWebBridge(options: WebBridgeOptions = {}): Bridge {
     probeConnectionConfig: (url) => gateway.probeConnectionConfig(url),
     oauthLoginConnectionConfig: (url) => gateway.oauthLoginConnectionConfig(url),
     oauthLogoutConnectionConfig: () => gateway.oauthLogoutConnectionConfig(),
+    passwordLoginConnectionConfig: (url, provider, username, password) =>
+      gateway.passwordLoginConnectionConfig(url, provider, username, password),
     connections: {
       list: () => gateway.connectionsList(),
       save: (payload) => gateway.connectionsSave(payload),
@@ -115,7 +117,9 @@ export function buildWebBridge(options: WebBridgeOptions = {}): Bridge {
     readDir: (path) => gateway.readDir(path),
     readFileText: (path) => gateway.readFileText(path),
     writeTextFile: (path, content) => gateway.writeTextFile(path, content),
-    readFileDataUrl: (path) => gateway.readFileDataUrl(path),
+    // 虚拟 blob 路径（web-blob://，ADR-0011）优先浏览器缓存；其余走 gateway REST。
+    readFileDataUrl: async (path) =>
+      (await browser.readFileDataUrl(path)) || gateway.readFileDataUrl(path),
     gitRoot: (path) => gateway.gitRoot(path),
     git: gateway.git,
 
@@ -131,8 +135,8 @@ export function buildWebBridge(options: WebBridgeOptions = {}): Bridge {
     quickEntry: denied.quickEntry,
     requestMicrophoneAccess: () => denied.requestMicrophoneAccess(),
     saveImageFromUrl: (url) => browser.saveImageFromUrl(url),
-    saveImageBuffer: (data, ext) => denied.saveImageBuffer(data, ext),
-    saveClipboardImage: () => denied.saveClipboardImage(),
+    saveImageBuffer: (data, ext) => browser.saveImageBuffer(data, ext),
+    saveClipboardImage: () => browser.saveClipboardImage(),
     normalizePreviewTarget: (target) => denied.normalizePreviewTarget(target),
     watchPreviewFile: (url) => denied.watchPreviewFile(url),
     stopPreviewFileWatch: (id) => denied.stopPreviewFileWatch(id),

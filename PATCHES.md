@@ -59,8 +59,34 @@ git subtree merge --prefix=vendor/hermes-desktop $NEW_FILTERED --squash
   - 原因：Web 布尔门：语音移出 Web 计划，关闭 dictation pill（产品范围决策，非能力缺失；上游 remote 模式本身支持语音）
   - 同步注意：上游若重构 voice 配置，按注释恢复（注释已注明 gates.ts 已删、语义权威 = 本文档）
 
+- vendor/hermes-desktop/src/global.d.ts
+  - 改动：新增 `DesktopPasswordLoginResult` 接口 + `hermesDesktop.passwordLoginConnectionConfig` 表面（M5 密码 "dashboard login"）
+  - 原因：Web 端密码门禁登录走代理 /api/proxy/session/login（ADR-0013）；桌面端不实现此能力（桥面存在但桌面 main 进程不注册，渲染层仅在密码 provider 分支调用）
+  - 同步注意：上游若改动 hermesDesktop 表面或 oauth 登录签名，按 M5 语义合并（该能力是 Web 专有扩展）
+
+- vendor/hermes-desktop/src/app/settings/gateway-settings.tsx
+  - 改动：oauth 分支按 isPasswordProvider 分流——未登录渲染用户名/密码表单（调 passwordLoginConnectionConfig），已登录保持原 pill + sign-out；新增 authUsername/authPassword 状态与 passwordSignIn 处理器
+  - 原因：Web 端没有 gateway 登录弹窗（桌面靠 Electron partition cookie）；表单直接 POST /auth/password-login（经代理），密码不落盘
+  - 同步注意：上游若重构 auth 区块 JSX/登录流，按 "密码 provider → 凭据表单" 语义恢复；i18n 键 authUsername/authPassword 在 types.ts 已声明
+
+- vendor/hermes-desktop/src/components/first-run-remote-form.tsx
+  - 改动：同 gateway-settings——密码 provider 渲染用户名/密码表单（passwordSignIn）
+  - 原因：同上（首启表单与设置表单同源同语义）
+  - 同步注意：同上
+
+- vendor/hermes-desktop/src/components/boot-failure-overlay.tsx
+  - 改动：signInRemote 对 isPassword 的 reauth 直接进嵌入式 Gateway settings 视图（setView('connect')），不再走 OAuth 弹窗
+  - 原因：Web 端密码 reauth 的唯一入口是设置面板里的凭据表单
+  - 同步注意：上游若改 reauth 动作列表，保留该分流
+
+- vendor/hermes-desktop/src/i18n/en.ts / zh.ts / types.ts
+  - 改动：settings.gateway 与 install 两节新增 authUsername / authPassword（install 另有 authNeedsPassword）；types.ts 同步声明
+  - 原因：密码表单文案（M5）
+  - 同步注意：上游 i18n 合入新键时按名合并，勿覆盖 M5 键
+
 ## 5. 同步后必做
 
 1. `pnpm install`（apps/web）
 2. `pnpm --filter @hermes-web/web typecheck` + 关键 vitest/e2e
 3. 更新 §1 基准 SHA 与本文档
+

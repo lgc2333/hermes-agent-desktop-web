@@ -610,6 +610,8 @@ export interface Translations {
       signOut: string
       signInWith: (provider: string) => string
       authTitle: string
+      authUsername: string
+      authPassword: string
       authSignedInPassword: string
       authSignedInOauth: string
       authNeedsPassword: string
@@ -1995,6 +1997,9 @@ export interface Translations {
     probeError: string
     identityProvider: string
     authTitle: string
+    authUsername: string
+    authPassword: string
+    authNeedsPassword: string
     authNeedsOauth: (provider: string) => string
     authSignedIn: string
     connected: string

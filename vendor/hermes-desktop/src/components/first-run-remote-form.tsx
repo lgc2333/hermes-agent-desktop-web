@@ -25,6 +25,9 @@ export function FirstRunRemoteForm({ onBack }: FirstRunRemoteFormProps) {
   const copy = t.install
   const [remoteUrl, setRemoteUrl] = useState('')
   const [remoteToken, setRemoteToken] = useState('')
+  // M5: password ("dashboard login") gateways — username/password form state.
+  const [authUsername, setAuthUsername] = useState('')
+  const [authPassword, setAuthPassword] = useState('')
   const [probeStatus, setProbeStatus] = useState<ProbeStatus>('idle')
   const [probe, setProbe] = useState<DesktopConnectionProbeResult | null>(null)
   const [oauthConnected, setOauthConnected] = useState(false)
@@ -136,6 +139,50 @@ export function FirstRunRemoteForm({ onBack }: FirstRunRemoteFormProps) {
       const result = await window.hermesDesktop.oauthLoginConnectionConfig(trimmedUrl)
       invalidateTest()
       setOauthConnected(Boolean(result.connected))
+
+      if (!result.connected) {
+        setError(copy.signInIncomplete)
+      }
+    } catch (err) {
+      setError(errorMessage(err))
+    } finally {
+      setSigningIn(false)
+    }
+  }
+
+  // M5: a username/password gateway signs in through a credential form
+  // (POST /auth/password-login on the gateway) — the proxy holds the session
+  // cookie; nothing is persisted in the browser.
+  const passwordSignIn = async () => {
+    if (!trimmedUrl) {
+      setError(copy.enterUrlFirst)
+
+      return
+    }
+
+    const providers = probe?.providers ?? []
+    const provider =
+      providers.find(p => p.supportsPassword)?.name ?? providers[0]?.name ?? ''
+
+    if (!provider) {
+      setError(copy.enterUrlFirst)
+
+      return
+    }
+
+    setSigningIn(true)
+    setError(null)
+
+    try {
+      const result = await window.hermesDesktop.passwordLoginConnectionConfig(
+        trimmedUrl,
+        provider,
+        authUsername.trim(),
+        authPassword
+      )
+      invalidateTest()
+      setOauthConnected(Boolean(result.connected))
+      setAuthPassword('')
 
       if (!result.connected) {
         setError(copy.signInIncomplete)
@@ -263,7 +310,7 @@ export function FirstRunRemoteForm({ onBack }: FirstRunRemoteFormProps) {
             </div>
           ) : null}
 
-          {authResolved && authMode === 'oauth' ? (
+          {authResolved && authMode === 'oauth' && (!isPasswordProvider || oauthConnected) ? (
             <div className="rounded-md border border-(--ui-stroke-tertiary) p-3">
               <div className="flex items-center justify-between gap-3">
                 <div>
@@ -280,10 +327,53 @@ export function FirstRunRemoteForm({ onBack }: FirstRunRemoteFormProps) {
                 ) : (
                   <Button disabled={signingIn || applying} onClick={() => void signIn()} size="sm">
                     {signingIn ? <Loader2 className="size-4 animate-spin" /> : <LogIn className="size-4" />}
-                    {isPasswordProvider ? copy.signIn : copy.signInWith(providerLabel)}
+                    {copy.signInWith(providerLabel)}
                   </Button>
                 )}
               </div>
+            </div>
+          ) : null}
+
+          {/* M5: password ("dashboard login") gateways get a username/password
+              form instead of the OAuth popup — the proxy holds the session. */}
+          {authResolved && authMode === 'oauth' && isPasswordProvider && !oauthConnected ? (
+            <div className="grid gap-2 rounded-md border border-(--ui-stroke-tertiary) p-3">
+              <div className="text-sm font-medium">{copy.authTitle}</div>
+              <Input
+                autoComplete="username"
+                disabled={signingIn || applying}
+                onChange={event => {
+                  invalidateTest()
+                  setAuthUsername(event.target.value)
+                }}
+                placeholder={copy.authUsername}
+                value={authUsername}
+              />
+              <Input
+                autoComplete="current-password"
+                disabled={signingIn || applying}
+                onChange={event => {
+                  invalidateTest()
+                  setAuthPassword(event.target.value)
+                }}
+                onKeyDown={event => {
+                  if (event.key === 'Enter' && authUsername.trim() && authPassword) {
+                    void passwordSignIn()
+                  }
+                }}
+                placeholder={copy.authPassword}
+                type="password"
+                value={authPassword}
+              />
+              <Button
+                disabled={signingIn || applying || !authUsername.trim() || !authPassword}
+                onClick={() => void passwordSignIn()}
+                size="sm"
+              >
+                {signingIn ? <Loader2 className="size-4 animate-spin" /> : <LogIn className="size-4" />}
+                {copy.signIn}
+              </Button>
+              <p className="text-xs leading-5 text-muted-foreground">{copy.authNeedsPassword}</p>
             </div>
           ) : null}
 

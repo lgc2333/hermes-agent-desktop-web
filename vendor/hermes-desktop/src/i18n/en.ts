@@ -726,6 +726,8 @@ export const en: Translations = {
       signOut: 'Sign out',
       signInWith: provider => `Sign in with ${provider}`,
       authTitle: 'Authentication',
+      authUsername: 'Username',
+      authPassword: 'Password',
       authSignedInPassword:
         'This gateway uses a username and password. You are signed in; the session refreshes automatically.',
       authSignedInOauth: 'This gateway uses OAuth. You are signed in; the session refreshes automatically.',
@@ -2382,6 +2384,9 @@ export const en: Translations = {
     probeError: 'Could not reach that Hermes gateway.',
     identityProvider: 'your identity provider',
     authTitle: 'Authentication',
+    authUsername: 'Username',
+    authPassword: 'Password',
+    authNeedsPassword: 'This gateway uses a username and password.',
     authNeedsOauth: provider => `Sign in with ${provider} before testing this gateway.`,
     authSignedIn: 'Browser sign-in completed.',
     connected: 'Connected',

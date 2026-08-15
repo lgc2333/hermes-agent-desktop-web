@@ -26,6 +26,12 @@ import {
   SESSION_COOKIE_NAME,
 } from './oauth.ts'
 import { normalizeTarget, relayRest, relayWs, safeEqual } from './relay.ts'
+import {
+  createSessionEndpoints,
+  PASSWORD_SESSION_COOKIE,
+  SessionStore,
+  type RawPostResult,
+} from './session.ts'
 
 export interface ProxyOptions {
   /** 静态托管根目录（file:// URL 或路径字符串）；不存在则静态面为空。 */
@@ -220,8 +226,60 @@ async function proxyPostJson(
   }
 }
 
-/** WS upgrade 分支（M3：OAuth 会话先 mint 单次 ticket 再拨号）。 */
-async function handleWs(request: Request, oauthStore: OAuthStore): Promise<Response> {
+/**
+ * 生产 postRaw（服务器到服务器，SessionStore 注入面）：与 proxyPostJson
+ * 同形，但返回原始响应信息（Set-Cookie 完整捕获，redirect 不跟随）。
+ */
+async function proxyPostRaw(
+  url: string,
+  body: unknown,
+  headers?: Record<string, string>,
+  timeoutMs?: number,
+): Promise<RawPostResult> {
+  const controller = new AbortController()
+  const timer = timeoutMs ? setTimeout(() => controller.abort(), timeoutMs) : undefined
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...headers },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+      redirect: 'manual',
+    })
+    const text = await res.text()
+    let parsed: unknown = {}
+    if (text) {
+      try {
+        parsed = JSON.parse(text)
+      } catch {
+        parsed = { detail: text.slice(0, 200) }
+      }
+    }
+    const setCookies: string[] = []
+    if (typeof res.headers.getSetCookie === 'function') {
+      setCookies.push(...res.headers.getSetCookie())
+    } else {
+      res.headers.forEach((value, key) => {
+        if (key.toLowerCase() === 'set-cookie') {
+          setCookies.push(...value.split(', '))
+        }
+      })
+    }
+
+    return { status: res.status, ok: res.ok, setCookies, body: parsed }
+  } finally {
+    if (timer) {
+      clearTimeout(timer)
+    }
+  }
+}
+
+/** WS upgrade 分支（M3：OAuth 会话先 mint 单次 ticket 再拨号；M5：密码会话同）。 */
+async function handleWs(
+  request: Request,
+  oauthStore: OAuthStore,
+  sessionStore: SessionStore,
+): Promise<Response> {
   const url = new URL(request.url)
   const rawTarget = url.searchParams.get('target') ?? ''
   let target: string
@@ -235,10 +293,14 @@ async function handleWs(request: Request, oauthStore: OAuthStore): Promise<Respo
     )
   }
 
-  // OAuth 会话：为本次拨号 mint 单次 ws-ticket（gated gateway 拒绝 ?token=）。
-  const sessionKey =
-    parseCookies(request.headers.get('cookie'))[SESSION_COOKIE_NAME] ?? null
-  const ticket = await oauthStore.wsTicketFor(sessionKey, target)
+  // OAuth 会话 / 密码会话：为本次拨号 mint 单次 ws-ticket（gated gateway
+  // 拒绝 ?token=）。两种会话互斥存在，先 OAuth 后密码。
+  const cookies = parseCookies(request.headers.get('cookie'))
+  const oauthKey = cookies[SESSION_COOKIE_NAME] ?? null
+  const sessionKey = cookies[PASSWORD_SESSION_COOKIE] ?? null
+  const ticket =
+    (await oauthStore.wsTicketFor(oauthKey, target)) ??
+    (await sessionStore.wsTicketFor(sessionKey, target))
 
   let response: Response
   try {
@@ -293,6 +355,12 @@ export function createProxyHandler(
       redirectUriOverride: () => options.oauthRedirectUri ?? '',
     },
   )
+  // M5：密码 "dashboard login" 会话（cookie jar 仅内存；重启失效）。
+  const sessionStore = new SessionStore({ postRaw: proxyPostRaw })
+  const session = createSessionEndpoints(sessionStore, {
+    readSessionKey: (request) =>
+      parseCookies(request.headers.get('cookie'))[PASSWORD_SESSION_COOKIE] ?? null,
+  })
 
   const isOauthPath = (path: string): boolean =>
     path === '/auth/native/start' ||
@@ -332,6 +400,11 @@ export function createProxyHandler(
     if (url.pathname === '/auth/native/session' && request.method === 'GET') {
       return withCors(await oauth.handleSession(request), request)
     }
+    // M5：密码会话状态同样免检（只回显 connected/provider/username 布尔与
+    // 非敏感字段，不构成开放转发）。
+    if (url.pathname === '/api/proxy/session/status' && request.method === 'GET') {
+      return withCors(await session.handleStatus(request), request)
+    }
 
     // 分支 3：/api/proxy/meta（公开：默认 gateway URL 预填 + passphrase 开关）。
     if (url.pathname === '/api/proxy/meta' && request.method === 'GET') {
@@ -358,9 +431,18 @@ export function createProxyHandler(
       return withCors(await oauth.handleLogout(request), request)
     }
 
+    // M5：密码会话破坏性面（登录换 jar、登出清 jar）——与 OAuth start 同级
+    // 受访问控制保护。
+    if (url.pathname === '/api/proxy/session/login' && request.method === 'POST') {
+      return withCors(await session.handleLogin(request), request)
+    }
+    if (url.pathname === '/api/proxy/session/logout' && request.method === 'POST') {
+      return withCors(await session.handleLogout(request), request)
+    }
+
     // 分支 6：转发。
     if (isWsUpgrade(request)) {
-      return handleWs(request, oauthStore)
+      return handleWs(request, oauthStore, sessionStore)
     }
 
     const rawTarget = request.headers.get('x-hermes-target') ?? ''
@@ -376,10 +458,20 @@ export function createProxyHandler(
     }
 
     // M3：OAuth 会话存在且 target 匹配 → 注入 Bearer（浏览器不持静态 token）。
-    const sessionKey =
-      parseCookies(request.headers.get('cookie'))[SESSION_COOKIE_NAME] ?? null
-    const bearer = await oauthStore.bearerFor(sessionKey, target)
-    const response = await relayRest(request, target, { bearer })
+    // M5：密码会话存在且 target 匹配 → 注入 Cookie jar；上游响应里的
+    // Set-Cookie（AT/RT 轮换）合并回 jar。
+    const cookies = parseCookies(request.headers.get('cookie'))
+    const oauthKey = cookies[SESSION_COOKIE_NAME] ?? null
+    const sessionKey = cookies[PASSWORD_SESSION_COOKIE] ?? null
+    const bearer = await oauthStore.bearerFor(oauthKey, target)
+    const cookie = sessionStore.cookieFor(sessionKey, target)
+    const response = await relayRest(request, target, {
+      bearer,
+      cookie,
+      onSetCookie: cookie
+        ? (setCookies) => sessionStore.applySetCookie(sessionKey, target, setCookies)
+        : undefined,
+    })
 
     return withCors(response, request)
   }

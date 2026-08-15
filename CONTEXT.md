@@ -21,8 +21,15 @@ _Avoid_: 配置（太泛）
 _Avoid_: 目标网关（与 Connection 混用）
 
 **Credential**:
-浏览器持有的长期凭证（静态 session token 或 OAuth token set），按连接存储，永不进入代理。
+浏览器持有的长期凭证（静态 session token），按连接存储，永不进入代理。
 _Avoid_: 密钥、token（太泛）
+
+**Password session**:
+密码门禁 gateway 的会话（"dashboard login"）：/auth/password-login 用用户名/密码
+换 cookie 会话（hermes_session_at/_rt）。代理在内存持有其 cookie jar 并在转发时
+注入（REST Cookie / WS 经 ws-ticket），与 OAuth token set 同生命周期（重启失效、
+零落盘）；密码本体不落盘不缓存。
+_Avoid_: 登录流程（太泛）、cookie（实现细节）
 
 **Session token**:
 gateway 签发的静态长期令牌，token 认证模式下的凭证；REST 走 X-Hermes-Session-Token 头，WS 走 ?token=。
@@ -51,7 +58,8 @@ _Avoid_: 前端（单指 SPA 时）
 _Avoid_: WebUI（部署单元）、前端（口语）
 
 **Proxy**:
-WebUI 内的 Deno 组件：同源转发 REST/WS 到 Target，托管 SPA 静态产物，不持有任何凭证。
+WebUI 内的 Deno 组件：同源转发 REST/WS 到 Target，托管 SPA 静态产物；持有内存态
+会话凭证（OAuth token set 与 Password session 的 cookie jar，重启失效），零落盘。
 _Avoid_: 薄代理（口语）、网关（错误）
 
 **Vendor**:
@@ -86,7 +94,7 @@ _Avoid_: 重启、刷新
 _Avoid_: 后端容器（与 Proxy 混淆）
 
 **Dashboard auth gate**:
-上游 dashboard 的非 loopback 绑定强制启用的认证闸门（2026-06 硬化后 `--insecure` 失效）；必须注册 auth provider（内置 basic auth 或 OAuth）否则启动失败。API 面认证走 native OAuth Bearer + ws-ticket，与 gate 的页面登录相互独立。
+上游 dashboard 的非 loopback 绑定强制启用的认证闸门（2026-06 硬化后 `--insecure` 失效）；必须注册 auth provider（内置 basic auth 或 OAuth）否则启动失败。API 面认证走 native OAuth Bearer、cookie 会话（Password session）或 ws-ticket，与 gate 的页面登录表单同源同会话。
 _Avoid_: 登录流程（特指页面 cookie 登录）、代理 passphrase（保护转发面的另一层）
 
 **Default gateway**:

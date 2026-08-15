@@ -133,6 +133,15 @@ declare global {
       probeConnectionConfig: (remoteUrl: string) => Promise<DesktopConnectionProbeResult>
       oauthLoginConnectionConfig: (remoteUrl: string) => Promise<DesktopOauthLoginResult>
       oauthLogoutConnectionConfig: (remoteUrl?: string) => Promise<DesktopOauthLogoutResult>
+      // M5: username/password ("dashboard login") gateways — the app sends the
+      // credentials once; the proxy holds the gateway session cookie in memory
+      // (same lifecycle as OAuth tokens: lost on proxy restart, never on disk).
+      passwordLoginConnectionConfig: (
+        remoteUrl: string,
+        provider: string,
+        username: string,
+        password: string
+      ) => Promise<DesktopPasswordLoginResult>
       // Hermes Cloud: one portal login powers discovery + silent per-agent
       // sign-in (cloud-auto-discovery Phase 3).
       cloud: {
@@ -759,6 +768,12 @@ export interface DesktopOauthLoginResult {
 
 export interface DesktopOauthLogoutResult {
   ok: boolean
+  connected: boolean
+}
+
+export interface DesktopPasswordLoginResult {
+  ok: boolean
+  baseUrl: string
   connected: boolean
 }
 

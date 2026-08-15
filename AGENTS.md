@@ -1,12 +1,12 @@
-# Hermes Web — AGENTS.md
+# Hermes-Agent-Desktop-Web — AGENTS.md
 
 把 Hermes 桌面端渲染层移植为浏览器 Web 应用，经一个 **Deno 无状态薄代理** 连接任意远程 Hermes gateway。
 
 ## 拓扑（一句话）
 
 ```
-浏览器 ──同源──> proxy(Deno, 6722) ──X-Hermes-Target 转发──> gateway(/api/* + /api/ws + /auth/native/*)
-                 └ 托管 SPA dist；零凭证落盘（OAuth token set 仅内存）
+浏览器 ──同源──> proxy(Deno, 6722) ──X-Hermes-Target 转发──> gateway(/api/* + /api/ws + /auth/native/* + /auth/password-login)
+                 └ 托管 SPA dist；零凭证落盘（OAuth token set / 密码会话 cookie 仅内存）
 ```
 
 ## 常用命令
@@ -24,6 +24,7 @@ pnpm build                                     # 生产构建 → apps/web/dist
 cd apps/proxy && deno task test                # 代理单测（deno test，42+ 用例）
 deno run --allow-net --allow-read --allow-env apps/proxy/src/main.ts   # 手动起代理
 MOCK_OAUTH=1 node apps/web/dev/mock-gateway.mjs 5182   # gated mock（native OAuth 面）
+MOCK_PASSWORD=1 node apps/web/dev/mock-gateway.mjs 5183  # 密码门禁 mock（admin/admin，M5）
 docker compose up -d --build                  # 生产部署（见 docs/deploy.md）
 bash scripts/sync-upstream.sh [tag]            # 上游 subtree 同步（PATCHES.md §3）
 ```
@@ -62,6 +63,7 @@ hermes-agent-desktop-web/
 │       ├── src/main.ts         # 单 handler 三分支：静态(排除 /api/ /auth/) → OAuth/meta → 转发
 │       ├── src/relay.ts        # REST 透传（Bearer 注入）+ WS 双向中继（ticket）
 │       ├── src/oauth.ts        # native PKCE 中转：内存 token set + httpOnly cookie 会话
+│       ├── src/session.ts      # 密码 "dashboard login" 会话：内存 cookie jar + /api/proxy/session/*
 │       ├── src/*_test.ts       # deno test（main 端到端 / oauth 单测 / relay）
 │       ├── Dockerfile          # 多阶段：node 构建 SPA → deno 运行时（= compose webui）
 │       └── deno.json           # tasks（dev/test）+ 权限声明
@@ -79,11 +81,13 @@ hermes-agent-desktop-web/
 
 ## 规则
 
+- 用户决策在写代码前应及时进 ADR。写 ADR 前必须先查看 `domain-modeling` Skill。如在实现时遇到当前情况与 ADR 预想中不符，应及时更新当前 ADR。
+
 - **vendor 纪律**（PLAN §5）：vendor/hermes-desktop|shared 内原位改动收敛到最少；能新加文件就不改旧文件；所有 vendor 改动必须登记 PATCHES.md（含同步注意）。
 
 - **凭证模型**（PLAN §6.1 / ADR-0002）：连接凭证只在浏览器（localStorage 注册表 `hermes-web.connections.v1`）；OAuth token set 只存代理内存（重启失效）；代理零凭证落盘、无状态。不要往代理加持久化/落盘凭证。
 
-- **认证两条路**：token（`X-Hermes-Session-Token` / WS `?token=`，loopback 未 gated 的 gateway）；OAuth（native PKCE 经代理 `/auth/native/*` 中转，REST Bearer + WS 单次 `?ticket=`，仅代理模式可用）。dashboard 页面密码登录（cookie 会话）不是 API 凭证——cookie 绑定 gateway 域，代理无状态，无法复用。
+- **认证三条路**：token（`X-Hermes-Session-Token` / WS `?token=`，loopback 未 gated 的 gateway）；OAuth（native PKCE 经代理 `/auth/native/*` 中转，REST Bearer + WS 单次 `?ticket=`，仅代理模式可用）；密码会话（"dashboard login"：`/auth/password-login` 换 cookie 会话，代理 `/api/proxy/session/*` 中转，cookie jar 仅内存 + 响应 Set-Cookie 轮换合并，REST Cookie + WS 经 ws-ticket，仅代理模式可用）。密码本体不落盘；代理重启即失效（与 OAuth token set 同取舍，ADR-0013）。
 
 - **布尔门**：用字面 `if (false)` 关功能入口（voice/terminal 等；artifacts/agents 曾 gate，按 ADR-0009 撤销——上游 remote 模式原生支持），不做 feature-flag 系统（gates.ts 已删）；入口关闭后渲染层自然降级。
 

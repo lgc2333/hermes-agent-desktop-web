@@ -7,7 +7,7 @@
 
 import type { DesktopOauthLoginResult, DesktopOauthLogoutResult } from '@/global'
 
-import { proxyBaseUrl, proxyFetch } from './rest'
+import { proxyBaseUrl, proxyFetch, proxySessionStatus } from './rest'
 
 /** OAuth 授权窗口名（同名复用，避免多开）。 */
 const OAUTH_WINDOW_NAME = 'hermes-oauth-login'
@@ -131,8 +131,37 @@ export class OauthBroker {
     return false
   }
 
-  /** 查询代理 OAuth 会话状态（cookie + target 匹配才 connected）。 */
+  /**
+   * 查询连接会话状态（cookie + target 匹配才 connected）。
+   * M5：OAuth 会话优先；无则查密码 "dashboard login" 会话（同一个
+   * 连接只能有一种已生效的代理会话，两种都查让 UI 的 signed-in 状态
+   * 与桌面端一致）。
+   */
   async sessionStatus(remoteUrl: string): Promise<OauthSessionStatus> {
+    const oauth = await this.oauthSession(remoteUrl)
+
+    if (oauth.connected) {
+      return oauth
+    }
+
+    const password = await proxySessionStatus(remoteUrl)
+
+    if (password.connected) {
+      return {
+        connected: true,
+        provider: password.provider,
+        // 密码会话没有 userId 概念——回显用户名（仅展示用途）。
+        userId: password.username,
+        expiresAt: 0,
+        tokenPreview: null,
+      }
+    }
+
+    return oauth
+  }
+
+  /** 查询代理 OAuth 会话状态（/auth/native/session）。 */
+  private async oauthSession(remoteUrl: string): Promise<OauthSessionStatus> {
     const proxy = proxyBaseUrl()
 
     if (!proxy) {

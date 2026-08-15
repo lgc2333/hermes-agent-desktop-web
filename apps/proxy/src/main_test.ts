@@ -645,3 +645,285 @@ Deno.test(
     }
   },
 )
+// ── M5：密码 "dashboard login" 会话端到端 ─────────────────────────────────
+
+/** 目标服务：实现 gated gateway 的密码门禁面（password-login + cookie 门 + ws-ticket）。 */
+function startPasswordTarget(): {
+  url: string
+  close: () => Promise<void>
+  cookieSeen: string[]
+  logoutSeen: number
+} {
+  const cookieSeen: string[] = []
+  let logoutSeen = 0
+  let rotated = false
+
+  const handler = async (request: Request) => {
+    const url = new URL(request.url)
+    const path = url.pathname
+
+    if (path === '/auth/password-login' && request.method === 'POST') {
+      const body = (await request.json()) as { username?: string; password?: string }
+      if (body.password !== 'right') {
+        return new Response(JSON.stringify({ detail: 'Invalid credentials' }), {
+          status: 401,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      // 成功：下发 at/rt 会话 cookie（镜像上游 cookies.py 形状）。
+      const loginHeaders = new Headers({ 'Content-Type': 'application/json' })
+      loginHeaders.append(
+        'Set-Cookie',
+        'hermes_session_at=at-1; Path=/; HttpOnly; Max-Age=900',
+      )
+      loginHeaders.append(
+        'Set-Cookie',
+        'hermes_session_rt=rt-1; Path=/; HttpOnly; Max-Age=86400',
+      )
+      loginHeaders.append('Set-Cookie', 'hermes_session_provider=basic; Path=/')
+
+      return new Response(JSON.stringify({ ok: true, next: '' }), {
+        status: 200,
+        headers: loginHeaders,
+      })
+    }
+
+    if (path === '/api/echo' && request.method === 'GET') {
+      const cookie = request.headers.get('cookie') ?? ''
+      cookieSeen.push(cookie)
+      if (!cookie.includes('hermes_session_at=')) {
+        return new Response(JSON.stringify({ error: 'unauthenticated' }), {
+          status: 401,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      // 首次带 at-1 的请求模拟一次 AT 轮换（镜像 middleware._attempt_refresh）。
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      }
+      if (cookie.includes('hermes_session_at=at-1') && !rotated) {
+        rotated = true
+        headers['Set-Cookie'] = 'hermes_session_at=at-2; Path=/; Max-Age=900'
+      }
+
+      return new Response(JSON.stringify({ cookie }), {
+        status: 200,
+        headers,
+      })
+    }
+
+    if (path === '/api/auth/ws-ticket' && request.method === 'POST') {
+      const cookie = request.headers.get('cookie') ?? ''
+      if (!cookie.includes('hermes_session_at=')) {
+        return new Response(JSON.stringify({ detail: 'Unauthorized' }), {
+          status: 401,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      return new Response(JSON.stringify({ ticket: 'ticket-pw', ttl_seconds: 30 }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    }
+
+    if (path === '/auth/logout' && request.method === 'POST') {
+      logoutSeen += 1
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    }
+
+    return new Response(JSON.stringify({ detail: 'No such API endpoint' }), {
+      status: 404,
+    })
+  }
+
+  const server = Deno.serve(
+    { port: 0, hostname: '127.0.0.1', onListen: () => {} },
+    handler,
+  )
+
+  return {
+    get url() {
+      return `http://127.0.0.1:${(server.addr as { port: number }).port}`
+    },
+    close: async () => {
+      await server.shutdown()
+    },
+    cookieSeen,
+    get logoutSeen() {
+      return logoutSeen
+    },
+  }
+}
+
+/** 走完整密码登录：POST /api/proxy/session/login → 返回 hermes_session cookie。 */
+async function passwordLogin(
+  proxyUrl: string,
+  targetUrl: string,
+  password: string,
+): Promise<{ cookie: string }> {
+  const login = await fetch(`${proxyUrl}/api/proxy/session/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      target: targetUrl,
+      provider: 'basic',
+      username: 'alice',
+      password,
+    }),
+  })
+  assertEquals(login.status, 200)
+  const setCookie = login.headers.get('set-cookie') ?? ''
+  assertEquals(setCookie.startsWith('hermes_session='), true)
+
+  return { cookie: setCookie.split(';')[0] }
+}
+
+Deno.test(
+  'proxy: password login → cookie-injected REST → status → logout',
+  async () => {
+    const target = startPasswordTarget()
+    const proxy = await startProxy()
+    try {
+      const { cookie } = await passwordLogin(proxy.url, target.url, 'right')
+
+      // 状态：connected + 回显 provider/username（不泄露 cookie 本体）。
+      const status = await fetch(
+        `${proxy.url}/api/proxy/session/status?target=${encodeURIComponent(target.url)}`,
+        { headers: { cookie } },
+      )
+      assertEquals(status.status, 200)
+      const info = (await status.json()) as Record<string, unknown>
+      assertEquals(info.connected, true)
+      assertEquals(info.provider, 'basic')
+      assertEquals(info.username, 'alice')
+
+      // REST 转发：代理注入 cookie jar → 目标看到会话 cookie。
+      const echo = await fetch(`${proxy.url}/api/echo`, {
+        headers: {
+          'X-Hermes-Target': target.url,
+          cookie,
+        },
+      })
+      assertEquals(echo.status, 200)
+      const echoBody = (await echo.json()) as { cookie: string }
+      assertEquals(echoBody.cookie.includes('hermes_session_at=at-1'), true)
+
+      // 登出：清 jar + 清 cookie，后续请求不再注入（目标 401）。
+      const logout = await fetch(`${proxy.url}/api/proxy/session/logout`, {
+        method: 'POST',
+        headers: { cookie },
+      })
+      assertEquals(logout.status, 200)
+      assertEquals((logout.headers.get('set-cookie') ?? '').includes('Max-Age=0'), true)
+      assertEquals(target.logoutSeen, 1)
+
+      const after = await fetch(`${proxy.url}/api/echo`, {
+        headers: {
+          'X-Hermes-Target': target.url,
+          cookie,
+        },
+      })
+      assertEquals(after.status, 401)
+    } finally {
+      await proxy.close()
+      await target.close()
+    }
+  },
+)
+
+Deno.test('proxy: password login failure passes through 401 detail', async () => {
+  const target = startPasswordTarget()
+  const proxy = await startProxy()
+  try {
+    const login = await fetch(`${proxy.url}/api/proxy/session/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        target: target.url,
+        provider: 'basic',
+        username: 'alice',
+        password: 'wrong',
+      }),
+    })
+    assertEquals(login.status, 401)
+    assertEquals(
+      ((await login.json()) as { detail: string }).detail,
+      'Invalid credentials',
+    )
+  } finally {
+    await proxy.close()
+    await target.close()
+  }
+})
+
+Deno.test(
+  'proxy: password session rotates cookies from relayed Set-Cookie',
+  async () => {
+    const target = startPasswordTarget()
+    const proxy = await startProxy()
+    try {
+      const { cookie } = await passwordLogin(proxy.url, target.url, 'right')
+
+      // 第一次请求触发目标轮换（at-1 → at-2），代理把响应 Set-Cookie 合并回 jar。
+      const first = await fetch(`${proxy.url}/api/echo`, {
+        headers: {
+          'X-Hermes-Target': target.url,
+          cookie,
+        },
+      })
+      assertEquals(first.status, 200)
+
+      const second = await fetch(`${proxy.url}/api/echo`, {
+        headers: {
+          'X-Hermes-Target': target.url,
+          cookie,
+        },
+      })
+      assertEquals(second.status, 200)
+      // 第二次请求的目标侧 cookie 已是轮换后的 at-2。
+      assertEquals(target.cookieSeen[1].includes('hermes_session_at=at-2'), true)
+    } finally {
+      await proxy.close()
+      await target.close()
+    }
+  },
+)
+
+Deno.test(
+  'proxy: password session status is public (CORS) and login needs passphrase',
+  async () => {
+    const target = startPasswordTarget()
+    const proxy = await startProxy({ passphrase: 'sekrit' })
+    try {
+      // status 免检 + CORS（跨端口轮询）。
+      const status = await fetch(
+        `${proxy.url}/api/proxy/session/status?target=${encodeURIComponent(target.url)}`,
+        { headers: { Origin: 'http://127.0.0.1:5173' } },
+      )
+      assertEquals(status.status, 200)
+      assertEquals(
+        status.headers.get('access-control-allow-origin'),
+        'http://127.0.0.1:5173',
+      )
+
+      // login 是破坏性面：无 passphrase → 401。
+      const denied = await fetch(`${proxy.url}/api/proxy/session/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          target: target.url,
+          provider: 'basic',
+          username: 'a',
+          password: 'b',
+        }),
+      })
+      assertEquals(denied.status, 401)
+    } finally {
+      await proxy.close()
+      await target.close()
+    }
+  },
+)

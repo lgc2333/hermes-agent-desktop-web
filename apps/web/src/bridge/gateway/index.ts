@@ -57,7 +57,10 @@ import { RemoteFsGit } from './fs-git'
 import { OauthBroker } from './oauth'
 import {
   fetchProxyMeta,
+  probeAuthProviders,
   proxyBaseUrl,
+  proxySessionLogin,
+  proxySessionLogout,
   toHermesConnection,
   webApi,
   wsUrlFor,
@@ -260,12 +263,29 @@ export class GatewayAdapter {
         auth_providers?: string[]
       } | null
 
-      // M3：真 gateway 无 auth_mode 字段，按 auth_required + auth_flows 判定
-      // （gated + native_pkce → oauth；loopback → token）；旧 mock 的
-      // auth_mode 字段保留兼容。
+      // M5：/api/auth/providers（public）下发 provider 形状——supports_password
+      // 驱动 UI 显示 "dashboard login" 用户名/密码表单（桌面端同款判定：
+      // 全部 provider 支持密码才视为密码门禁）。失败回退到 status 的名字列表。
+      const enriched = await probeAuthProviders(remoteUrl)
+      const fallbackProviders: DesktopAuthProvider[] = (json?.auth_providers ?? []).map(
+        (name) => ({ name, displayName: name }),
+      )
+      const providers: DesktopAuthProvider[] = (enriched ?? fallbackProviders).map(
+        (p) => ({
+          name: p.name,
+          displayName: p.displayName,
+          supportsPassword: p.supportsPassword,
+        }),
+      )
+      const supportsPassword = providers.some((p) => p.supportsPassword)
+
+      // M3：真 gateway 无 auth_mode 字段，按 auth_required + auth_flows 判定；
+      // M5：密码门禁（gated + 无 native_pkce 的旧网关或纯密码 provider）
+      // 归入 oauth 分支——cookie/ws-ticket 机制与 OAuth 完全一致，只是
+      // 登录换成了用户名/密码表单；旧 mock 的 auth_mode 字段保留兼容。
       const authMode =
         json?.auth_required === true
-          ? (json.auth_flows ?? []).includes('native_pkce')
+          ? (json.auth_flows ?? []).includes('native_pkce') || supportsPassword
             ? 'oauth'
             : 'token'
           : json?.auth_required === false
@@ -275,12 +295,6 @@ export class GatewayAdapter {
               : json?.auth_mode === 'token'
                 ? 'token'
                 : 'unknown'
-      const providers: DesktopAuthProvider[] = (json?.auth_providers ?? []).map(
-        (name) => ({
-          name,
-          displayName: name,
-        }),
-      )
 
       return {
         baseUrl: remoteUrl,
@@ -313,7 +327,34 @@ export class GatewayAdapter {
   async oauthLogoutConnectionConfig(
     remoteUrl?: string,
   ): Promise<DesktopOauthLogoutResult> {
-    return this.oauth.logout(remoteUrl)
+    // M5：登出同时清两种代理会话（OAuth token set + 密码 cookie jar）——
+    // UI 不区分登出的是哪一种，幂等即可。
+    const [oauth] = await Promise.all([
+      this.oauth.logout(remoteUrl),
+      proxySessionLogout().catch(() => undefined),
+    ])
+
+    return oauth
+  }
+
+  // ── M5：密码 "dashboard login" 会话（经代理 /api/proxy/session/*）──────
+
+  async passwordLoginConnectionConfig(
+    remoteUrl: string,
+    provider: string,
+    username: string,
+    password: string,
+  ): Promise<DesktopOauthLoginResult> {
+    const baseUrl = remoteUrl.replace(/\/+$/, '')
+
+    try {
+      await proxySessionLogin(baseUrl, provider, username, password)
+
+      return { ok: true, baseUrl, connected: true }
+    } catch (error) {
+      // 失败抛 readable 错误（带 gateway detail），渲染层 notifyError 展示。
+      throw new Error(error instanceof Error ? error.message : String(error))
+    }
   }
 
   // ── profile ──────────────────────────────────────────────────────────────
