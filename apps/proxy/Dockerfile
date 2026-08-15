@@ -33,6 +33,11 @@ RUN pnpm install --frozen-lockfile
 COPY apps/web apps/web
 COPY vendor/hermes-desktop vendor/hermes-desktop
 COPY vendor/hermes-shared vendor/hermes-shared
+# .git 供 build-version.mjs 读 commit hash（ADR-0014 阶梯 2）——.dockerignore
+# 保留 .git 在上下文，这里拷进构建阶段；运行时阶段（deno）不携带。
+COPY .git .git
+# 构建期可见性（actions 日志可直接确认 git 是否进入上下文）。
+RUN git rev-parse --short HEAD 2>/dev/null || echo 'WARN: no .git in build context — WEB_VERSION falls back to package.json'
 
 RUN pnpm --filter @hermes-web/web build
 

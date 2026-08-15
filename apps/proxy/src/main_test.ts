@@ -379,6 +379,41 @@ Deno.test('proxy: relays WebSocket bidirectionally with ?target=', async () => {
   }
 })
 
+Deno.test(
+  'proxy: ws upgrade without session and without token is rejected (no false connect)',
+  async () => {
+    // OAuth/密码会话连接取消登录后：无会话、WS URL 无 ?token=。代理必须在
+    // upgrade 前 401，而不是先 101 再断——后者让渲染层误判已连接 →
+    // boot 循环（模型选择 ↔ setup 闪断）。
+    const target = startTargetWs()
+    const proxy = await startProxy()
+    try {
+      const targetHttp = target.url.replace(/^ws/, 'http')
+      const wsUrl = `${proxy.url.replace(/^http/, 'ws')}/api/ws?target=${encodeURIComponent(targetHttp)}`
+      const ws = new WebSocket(wsUrl)
+
+      const outcome = await new Promise<'error' | 'close' | 'open' | 'timeout'>(
+        (resolve) => {
+          ws.onopen = () => resolve('open')
+          ws.onerror = () => resolve('error')
+          ws.onclose = () => resolve('close')
+          setTimeout(() => resolve('timeout'), 3000)
+        },
+      )
+
+      // 非 101（401）在浏览器/Deno WebSocket 上表现为 error 或 close——
+      // 关键是不能 open（假连），且失败必须快速到达。
+      assert(
+        outcome === 'error' || outcome === 'close',
+        `expected error/close (401), got ${outcome}`,
+      )
+    } finally {
+      await proxy.close()
+      await target.close()
+    }
+  },
+)
+
 Deno.test('proxy: ws upgrade without target fails fast (error or close)', async () => {
   const proxy = await startProxy()
   try {

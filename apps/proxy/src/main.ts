@@ -317,6 +317,19 @@ async function handleWs(
     (await oauthStore.wsTicketFor(oauthKey, target)) ??
     (await sessionStore.wsTicketFor(sessionKey, target))
 
+  // 无会话且无静态 token：gated gateway 拨号必败。必须在 upgrade 前拒绝
+  // （401），否则浏览器先拿 101、随后立刻断开——渲染层误判已连接 → 跳
+  // 模型选择 → 鉴权 401 → 跳回 setup → 重拨循环（OAuth 取消后实测的闪断
+  // 循环）。401 让前端稳定落到 sign-in 恢复面（boot-failure overlay 的
+  // remote-reauth 分支）。
+  if (!ticket && !url.searchParams.has('token')) {
+    return jsonResponse(
+      401,
+      { detail: 'gateway session required (sign in first)' },
+      request,
+    )
+  }
+
   let response: Response
   try {
     const upgraded = Deno.upgradeWebSocket(request)
