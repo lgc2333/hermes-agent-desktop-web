@@ -55,7 +55,9 @@ if (withProxy) {
 if (!noMock) {
   run('mock-gateway', process.execPath, ['dev/mock-gateway.mjs'])
 } else {
-  console.log('[dev] --no-mock: mock gateway not started (connecting to your own gateway)')
+  console.log(
+    '[dev] --no-mock: mock gateway not started (connecting to your own gateway)',
+  )
 }
 run(
   'vite',

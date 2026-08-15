@@ -12,7 +12,13 @@
  * Usage: node cdp-oauth.mjs
  */
 
-const CDP = 'ws://127.0.0.1:9224/devtools/browser/' + (await fetch('http://127.0.0.1:9224/json/version').then(r => r.json())).webSocketDebuggerUrl.split('/').pop()
+const CDP =
+  'ws://127.0.0.1:9224/devtools/browser/' +
+  (
+    await fetch('http://127.0.0.1:9224/json/version').then((r) => r.json())
+  ).webSocketDebuggerUrl
+    .split('/')
+    .pop()
 const APP = 'http://127.0.0.1:5173'
 const TARGET = 'http://127.0.0.1:5180'
 
@@ -41,7 +47,7 @@ function send(method, params = {}, sessionId) {
   })
 }
 
-ws.onmessage = event => {
+ws.onmessage = (event) => {
   const msg = JSON.parse(String(event.data))
   if (msg.id && pending.has(msg.id)) {
     const { resolve, reject } = pending.get(msg.id)
@@ -52,13 +58,22 @@ ws.onmessage = event => {
 }
 
 async function evalIn(sessionId, expression, awaitPromise = true) {
-  const res = await send('Runtime.evaluate', {
-    expression,
-    awaitPromise,
-    returnByValue: true
-  }, sessionId)
+  const res = await send(
+    'Runtime.evaluate',
+    {
+      expression,
+      awaitPromise,
+      returnByValue: true,
+    },
+    sessionId,
+  )
   if (res.exceptionDetails) {
-    throw new Error('eval failed: ' + JSON.stringify(res.exceptionDetails.exception?.description ?? res.exceptionDetails.text))
+    throw new Error(
+      'eval failed: ' +
+        JSON.stringify(
+          res.exceptionDetails.exception?.description ?? res.exceptionDetails.text,
+        ),
+    )
   }
   return res.result?.value
 }
@@ -69,7 +84,7 @@ async function waitFor(sessionId, expression, timeoutMs = 30000, label = express
   while (Date.now() < deadline) {
     last = await evalIn(sessionId, expression)
     if (last) return last
-    await new Promise(r => setTimeout(r, 400))
+    await new Promise((r) => setTimeout(r, 400))
   }
   throw new Error(`waitFor timeout: ${label} (last=${JSON.stringify(last)})`)
 }
@@ -84,45 +99,64 @@ const { sessionId } = await send('Target.attachToTarget', { targetId, flatten: t
 await send('Runtime.enable', {}, sessionId)
 await send('Page.enable', {}, sessionId)
 
-await waitFor(sessionId, '!!window.hermesDesktop && !!document.querySelector("#root *")', 60000, 'app boot')
-await new Promise(r => setTimeout(r, 3000))
+await waitFor(
+  sessionId,
+  '!!window.hermesDesktop && !!document.querySelector("#root *")',
+  60000,
+  'app boot',
+)
+await new Promise((r) => setTimeout(r, 3000))
 pass('app booted, bridge installed')
 
 console.log('[1] bridge-level OAuth login...')
-await evalIn(sessionId, `
+await evalIn(
+  sessionId,
+  `
   window.localStorage.removeItem('hermes-web.connections.v1');
   true
-`)
+`,
+)
 await evalIn(sessionId, `location.reload(); true`)
 await waitFor(sessionId, '!!window.hermesDesktop', 60000, 'reload boot')
-await new Promise(r => setTimeout(r, 3000))
+await new Promise((r) => setTimeout(r, 3000))
 
-const saved = await evalIn(sessionId, `
+const saved = await evalIn(
+  sessionId,
+  `
   window.hermesDesktop.saveConnectionConfig({
     mode: 'remote',
     remoteAuthMode: 'oauth',
     remoteUrl: '${TARGET}'
   }).then(c => ({ authMode: c.remoteAuthMode, url: c.remoteUrl }))
-`)
+`,
+)
 pass('save oauth connection', JSON.stringify(saved))
 
-const login = await evalIn(sessionId, `
+const login = await evalIn(
+  sessionId,
+  `
   window.hermesDesktop.oauthLoginConnectionConfig('${TARGET}')
-`)
+`,
+)
 pass('oauth login', JSON.stringify(login))
 if (!login.connected) throw new Error('oauth login failed')
 
-const config = await evalIn(sessionId, `
+const config = await evalIn(
+  sessionId,
+  `
   window.hermesDesktop.getConnectionConfig().then(c => ({
     connected: c.remoteOauthConnected,
     preview: c.remoteTokenPreview,
     tokenSet: c.remoteTokenSet
   }))
-`)
+`,
+)
 pass('config oauth connected', JSON.stringify(config))
 
 console.log('[2] chat over WS (oauth session)...')
-const chat = await evalIn(sessionId, `
+const chat = await evalIn(
+  sessionId,
+  `
   (async () => {
     const conn = await window.hermesDesktop.getConnection()
     const ws = new WebSocket(conn.wsUrl)
@@ -161,45 +195,65 @@ const chat = await evalIn(sessionId, `
     ws.close()
     return out
   })()
-`)
-pass('chat streaming', 'opened=' + chat.opened + ' complete=' + String(chat.complete ?? '').slice(0, 40))
-if (!chat.opened || !chat.complete) throw new Error('chat failed: ' + JSON.stringify(chat))
+`,
+)
+pass(
+  'chat streaming',
+  'opened=' + chat.opened + ' complete=' + String(chat.complete ?? '').slice(0, 40),
+)
+if (!chat.opened || !chat.complete)
+  throw new Error('chat failed: ' + JSON.stringify(chat))
 
 console.log('[3] settings UI...')
 await evalIn(sessionId, `location.href = '${APP}/settings?tab=gateway'; true`)
-await new Promise(r => setTimeout(r, 2500))
-const ui = await evalIn(sessionId, `
+await new Promise((r) => setTimeout(r, 2500))
+const ui = await evalIn(
+  sessionId,
+  `
   (() => {
     const buttons = [...document.querySelectorAll('button')].map(b => b.textContent.trim().slice(0, 40))
     return buttons.filter(Boolean).slice(0, 20)
   })()
-`)
+`,
+)
 console.log('  settings buttons:', JSON.stringify(ui))
-const oauthButton = await evalIn(sessionId, `
+const oauthButton = await evalIn(
+  sessionId,
+  `
   (() => {
     const b = [...document.querySelectorAll('button')].find(x => /sign in|log in|oauth|sign-in/i.test(x.textContent))
     return b ? { text: b.textContent.trim() } : null
   })()
-`)
+`,
+)
 pass('oauth button visible', JSON.stringify(oauthButton))
 
 console.log('[4] refresh persistence...')
 await evalIn(sessionId, `location.reload(); true`)
 await waitFor(sessionId, '!!window.hermesDesktop', 60000, 'refresh boot')
-await new Promise(r => setTimeout(r, 3000))
-const after = await evalIn(sessionId, `
+await new Promise((r) => setTimeout(r, 3000))
+const after = await evalIn(
+  sessionId,
+  `
   window.hermesDesktop.getConnectionConfig().then(c => c.remoteOauthConnected)
-`)
+`,
+)
 pass('oauth session survives refresh', 'connected=' + after)
 
 console.log('[5] logout...')
-const logout = await evalIn(sessionId, `
+const logout = await evalIn(
+  sessionId,
+  `
   window.hermesDesktop.oauthLogoutConnectionConfig('${TARGET}')
-`)
+`,
+)
 pass('oauth logout', JSON.stringify(logout))
-const afterLogout = await evalIn(sessionId, `
+const afterLogout = await evalIn(
+  sessionId,
+  `
   window.hermesDesktop.getConnectionConfig().then(c => c.remoteOauthConnected)
-`)
+`,
+)
 pass('disconnected after logout', 'connected=' + afterLogout)
 
 console.log('\n[M3] ALL PASS')
