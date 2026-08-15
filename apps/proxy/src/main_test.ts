@@ -2,8 +2,8 @@
  * main_test.ts — 代理端到端测试：真实 Deno.serve 起代理 + 临时目标服务，
  * 客户端走完整 HTTP/WS 链路（同 main.ts 生产形态）。
  */
-import { assertEquals } from 'jsr:@std/assert'
-import { createProxyHandler } from './main.ts'
+import { assert, assertEquals } from 'jsr:@std/assert'
+import { createProxyHandler, defaultWebDist } from './main.ts'
 
 // ── 目标服务（echo HTTP / echo WS）─────────────────────────────────────────
 
@@ -230,6 +230,19 @@ Deno.test('proxy: serves static files and SPA-falls back for client routes', asy
     await proxy.close()
   }
 })
+Deno.test('defaultWebDist: resolves to repo apps/web/dist (M4 regression)', () => {
+  // M4 生产服务器测试抓出的 bug：默认值曾是 '../web/dist/'，相对 src/main.ts
+  // 解析到 apps/proxy/web/dist（不存在）→ 生产静态托管静默 400（dev 走 vite
+  // 从未触发默认值）。纯函数断言：相对本文件（src/）两级必须落在 apps/web/dist。
+  const url = defaultWebDist(import.meta.url)
+  const parsed = new URL(url)
+  assertEquals(parsed.protocol, 'file:')
+  assert(
+    parsed.pathname.endsWith('/apps/web/dist/'),
+    `expected .../apps/web/dist/, got ${parsed.pathname}`
+  )
+})
+
 
 // ── WS 中继 ────────────────────────────────────────────────────────────────
 

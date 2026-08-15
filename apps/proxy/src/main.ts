@@ -107,11 +107,13 @@ function isWsUpgrade(request: Request): boolean {
 async function serveStatic(request: Request, webDist: URL): Promise<Response | null> {
   const url = new URL(request.url)
 
-  // 只服务 GET/HEAD；/api/ 前缀绝不进静态面。
+  // 只服务 GET/HEAD；/api/ 与 /auth/ 前缀绝不进静态面（转发面与 OAuth
+  // 免检面在静态分支之后，SPA fallback 不能吞掉它们——M4 生产测试抓出：
+  // webDist 指向真实 dist 后 /auth/native/* 被 fallback 成 index.html）。
   if (request.method !== 'GET' && request.method !== 'HEAD') {
     return null
   }
-  if (url.pathname.startsWith('/api/')) {
+  if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/auth/')) {
     return null
   }
 
@@ -232,14 +234,24 @@ async function handleWs(request: Request, oauthStore: OAuthStore): Promise<Respo
 }
 
 /** 构造单 handler（测试可注入配置；生产从 env 读取）。 */
+/**
+ * 默认 SPA 产物位置：相对模块位置两级到仓库 apps/web/dist。
+ * 注意不是 '../web/dist/'——那会解析到 apps/proxy/web/dist（不存在，
+ * M4 生产服务器测试抓出的 bug：dev 走 vite 从未触发静态面默认值，
+ * 生产模式（Dockerfile / 直接 deno run）静默 400）。
+ */
+export function defaultWebDist(metaUrl: string): string {
+  return new URL('../../web/dist/', metaUrl).href
+}
+
 export function createProxyHandler(options: ProxyOptions = {}): (request: Request) => Promise<Response> {
   const passphrase = options.passphrase ?? ''
   const defaultGatewayUrl = options.defaultGatewayUrl ?? ''
   let webDist: URL
   try {
-    webDist = new URL(options.webDist ?? '../web/dist/', import.meta.url)
+    webDist = new URL(options.webDist ?? defaultWebDist(import.meta.url))
   } catch {
-    webDist = new URL('../web/dist/', import.meta.url)
+    webDist = new URL(defaultWebDist(import.meta.url))
   }
 
   const oauthStore = new OAuthStore({ postJson: proxyPostJson })
