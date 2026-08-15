@@ -85,14 +85,29 @@ export function upstreamWsUrl(target: string, proxyUrl: URL): URL {
   return upstream
 }
 
-/** REST 全量转发：method/headers/body 透传，响应流式回传。 */
-export async function relayRest(request: Request, target: string): Promise<Response> {
+/**
+ * REST 全量转发：method/headers/body 透传，响应流式回传。
+ *
+ * M3：`opts.bearer`（OAuth 模式的 access token，来自 oauth.ts 的
+ * bearerFor）存在时注入 `Authorization: Bearer` 并去掉浏览器侧可能带的
+ * X-Hermes-Session-Token（OAuth 模式浏览器不持静态 token）。
+ */
+export interface RelayRestOptions {
+  bearer?: string | null
+}
+
+export async function relayRest(request: Request, target: string, opts: RelayRestOptions = {}): Promise<Response> {
   const headers = new Headers()
   request.headers.forEach((value, key) => {
     if (!STRIP_HEADERS.has(key.toLowerCase())) {
       headers.set(key, value)
     }
   })
+
+  if (opts.bearer) {
+    headers.set('authorization', `Bearer ${opts.bearer}`)
+    headers.delete('x-hermes-session-token')
+  }
 
   let upstream: Response
   try {
@@ -158,9 +173,22 @@ function forward(event: MessageEvent, to: WebSocket): void {
   }
 }
 
-/** WS 中继：浏览器侧 socket（已 upgrade）↔ 上游 gateway socket 双向转发。 */
-export function relayWs(browserSocket: WebSocket, proxyUrl: URL, target: string): void {
+/**
+ * WS 中继：浏览器侧 socket（已 upgrade）↔ 上游 gateway socket 双向转发。
+ *
+ * M3：`opts.ticket`（OAuth 模式经 ws-ticket 换的单次票据，见 oauth.ts 的
+ * wsTicketFor）存在时追加 `?ticket=`（gated gateway 拒绝 `?token=`）。
+ */
+export interface RelayWsOptions {
+  ticket?: string | null
+}
+
+export function relayWs(browserSocket: WebSocket, proxyUrl: URL, target: string, opts: RelayWsOptions = {}): void {
   const upstream = upstreamWsUrl(target, proxyUrl)
+  if (opts.ticket) {
+    upstream.searchParams.set('ticket', opts.ticket)
+    upstream.searchParams.delete('token')
+  }
   const upstreamSocket = new WebSocket(upstream.href)
 
   upstreamSocket.onopen = () => {
