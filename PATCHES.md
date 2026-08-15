@@ -65,9 +65,9 @@ git subtree merge --prefix=vendor/hermes-desktop $NEW_FILTERED --squash
   - 同步注意：上游若改动 hermesDesktop 表面或 oauth 登录签名，按 M5/M6 语义合并（该能力是 Web 专有扩展）
 
 - vendor/hermes-desktop/src/app/settings/gateway-settings.tsx
-  - 改动：oauth 分支按 isPasswordProvider 分流——未登录渲染用户名/密码表单（调 passwordLoginConnectionConfig），已登录保持原 pill + sign-out；新增 authUsername/authPassword 状态与 passwordSignIn 处理器（M5）。M6：OAuth 未连接时渲染 paste-back 区块（Textarea + 提交按钮，调 oauthPasteConnectionConfig），新增 pastedUrl/pasteSubmitting 状态与 pasteSignIn 处理器
+  - 改动：oauth 分支按 isPasswordProvider 分流——未登录渲染用户名/密码表单（调 passwordLoginConnectionConfig），已登录保持原 pill + sign-out；新增 authUsername/authPassword 状态与 passwordSignIn 处理器（M5）。M6：OAuth 未连接时渲染 paste-back 区块（Textarea + 提交按钮，调 oauthPasteConnectionConfig），新增 pastedUrl/pasteSubmitting 状态与 pasteSignIn 处理器。M7 修复：passwordSignIn 发送凭证前先 saveConnectionConfig（与 OAuth signIn 同款）——表单 URL 若只是 meta 下发的显示级预填（defaultGatewayUrl），登录后注册表仍指向出厂 mock，白名单（ADR-0015）下所有 REST/WS 转发 403 target not allowed（清 cookie 重登"登录成功但没连上"根因）
   - 原因：Web 端没有 gateway 登录弹窗（桌面靠 Electron partition cookie）；表单直接 POST /auth/password-login（经代理），密码不落盘；远端部署 OAuth 需粘贴回跳（ADR-0017）
-  - 同步注意：上游若重构 auth 区块 JSX/登录流，按 "密码 provider → 凭据表单 / OAuth → 登录按钮 + paste 回退" 语义恢复；i18n 键 authUsername/authPassword/authPaste* 在 types.ts 已声明
+  - 同步注意：上游若重构 auth 区块 JSX/登录流，按 "密码 provider → 凭据表单 / OAuth → 登录按钮 + paste 回退" 语义恢复；passwordSignIn 的登录前 saveConnectionConfig 是 Web 专有修复（依赖 Web 桥 saveConnectionConfig 落盘 registry），上游无此语义；i18n 键 authUsername/authPassword/authPaste* 在 types.ts 已声明
 
 - vendor/hermes-desktop/src/components/first-run-remote-form.tsx
   - 改动：同 gateway-settings——密码 provider 渲染用户名/密码表单（passwordSignIn，M5）；OAuth 未连接时渲染 paste-back 区块（M6）
@@ -84,7 +84,56 @@ git subtree merge --prefix=vendor/hermes-desktop $NEW_FILTERED --squash
   - 原因：密码表单与 paste-back 文案
   - 同步注意：上游 i18n 合入新键时按名合并，勿覆盖 M5/M6 键
 
-## 5. 同步后必做
+## 5. 需注意的上游联动
+
+非 vendor 但依赖 vendor/上游结构、subtree pull 后需核对的 Web 侧文件：
+
+- apps/web/index.html
+  - Web 构建入口（M4 生产构建修复）。原为指向 vendor/hermes-desktop/index.html
+    的符号链接：dev 模式（vite serve）正常，但 rolldown 生产构建（vite build）对
+    symlink 解析出的跨目录路径报错（"fileName must be neither absolute nor
+    relative paths"），导致 Dockerfile 的构建阶段从未真正跑通。这里改为真文件，
+    内容照抄 vendor 版（含 pre-paint 主题背景脚本）；原注释块已移入本文档，
+    文件现与 vendor 版逐字节一致。
+    同步注意：subtree pull 后若上游改 vendor/hermes-desktop/index.html，
+    直接照抄 vendor 版即可（Web 侧无差异需保留）。
+
+- apps/web/src/main.tsx
+  - Web 入口：先 installWebBridge()（ESM import 顺序保证桥在渲染层模块图
+    求值前就位，boot 侧 store 在模块作用域读 window.hermesDesktop），再
+    import vendor 渲染树（../../../vendor/hermes-desktop/src/main）与 web.css。
+    同步注意：上游若重构 src/main.tsx 入口（改名/换路径/改 boot 序列），
+    此 import 与装桥顺序须按新结构核对。
+
+- apps/web/src/web.css
+  - Web 覆盖层（非 vendor，M4）：选择器按 vendor DOM 结构锚定
+    （data-slot='statusbar'、mode 卡片 .grid.auto-rows-fr.grid-cols-1、
+    boot-failure 按钮行等），web.css 头注标注每条规则的"全库唯一"锚点。
+    同步注意：上游若改这些 class/data-slot/按钮结构，覆盖会静默失效——
+    subtree pull 后按头注锚点核对（e2e：cdp-mobile3 / cdp-hide-modes /
+    cdp-repair-logs 等回归）。
+
+- apps/web/vite.config.ts（+ tsconfig.json / vitest.config.ts）
+  - 别名与 include 指向 vendor 源码：'@' → vendor/hermes-desktop/src、
+    '@hermes/shared' → vendor/hermes-shared/src、'@hermes/plugin-sdk'、
+    '@/debug/dev-only'（serve 真模块 / build noop 双态）；publicDir 直接复用
+    vendor public/（不复制）。vite.config.ts 头注已说明：subtree pull 除
+    路径常量外无需对账。
+    同步注意：上游若移动目录或改入口模块名（如 src/debug/dev-only.ts），
+    更新三处配置的路径常量与别名即可。
+
+- apps/web/scripts/build-version.mjs
+  - 构建版本计算（ADR-0014）：读 vendor/hermes-desktop/package.json 的版本
+    拼 WEB_VERSION（<上游桌面版本>+web.<项目标识>），subtree 同步后自动跟随，
+    无需手工改；无 git 检出（Docker 构建）时退回 apps/web 版本号。
+
+- apps/web/src/bridge/
+  - WebCapabilityAdapter 实现 window.hermesDesktop 表面，签名以
+    vendor/hermes-desktop/src/global.d.ts（本身是 §4 登记的 vendor 改动）为准。
+    同步注意：上游若增改 hermesDesktop 表面，桥层（adapter.ts +
+    browser/gateway/denied）须同步适配，typecheck 兜底。
+
+## 6. 同步后必做
 
 1. `pnpm install`（apps/web）
 2. `pnpm --filter @hermes-web/web typecheck` + 关键 vitest/e2e

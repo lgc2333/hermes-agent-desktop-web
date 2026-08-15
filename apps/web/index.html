@@ -1,15 +1,3 @@
-<!--
-  apps/web/index.html — Web 构建入口（M4 生产构建修复）。
-
-  原为指向 vendor/hermes-desktop/index.html 的符号链接：dev 模式（vite serve）
-  正常，但 rolldown 生产构建（vite build）对 symlink 解析出的跨目录路径报错
-  （"fileName must be neither absolute nor relative paths"），导致
-  Dockerfile 的构建阶段从未真正跑通。这里改为真文件，内容照抄 vendor 版
-  （含 pre-paint 主题背景脚本）。
-
-  同步注意：subtree pull 后若上游改 vendor/hermes-desktop/index.html，
-  按此文件比对更新（差异应只有本注释块）。
--->
 <!doctype html>
 <html lang="en">
   <head>

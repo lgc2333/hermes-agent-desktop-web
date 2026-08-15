@@ -85,6 +85,10 @@ export class GatewayAdapter {
   private readonly apiImpl: typeof webApi
   private readonly fsGit: RemoteFsGit
   private readonly oauth: OauthBroker
+  // M7：connectionApplied 订阅者。桌面端由 main 进程在 apply 后发 IPC；
+  // Web 无后端子进程 → 桥内保存完成后自广播，驱动渲染层 use-gateway-boot
+  // 的 softSwitch 重拨（否则修复连接后 boot-failure 覆盖层永不关闭）。
+  private readonly connectionAppliedListeners = new Set<() => void>()
 
   constructor(options: WebBridgeOptions = {}) {
     this.apiImpl = options.api ?? webApi
@@ -140,8 +144,12 @@ export class GatewayAdapter {
     return () => undefined
   }
 
-  onConnectionApplied(_callback: () => void): () => void {
-    return () => undefined
+  onConnectionApplied(callback: () => void): () => void {
+    this.connectionAppliedListeners.add(callback)
+
+    return () => {
+      this.connectionAppliedListeners.delete(callback)
+    }
   }
 
   onPowerResume(_callback: () => void): () => void {
@@ -238,7 +246,20 @@ export class GatewayAdapter {
     payload: DesktopConnectionConfigInput,
   ): Promise<DesktopConnectionConfig> {
     // M1：保存即应用（浏览器无进程需要重启；M2 换代理后此处触发重连）。
-    return this.saveConnectionConfig(payload)
+    // M7：保存完成后广播 connectionApplied——渲染层 use-gateway-boot 的
+    // onConnectionApplied 监听据此走 softSwitch（关旧网关 → 读新注册表 →
+    // 重拨 WS → completeDesktopBoot），否则"保存并重连"后 boot-failure
+    // 覆盖层停在原地（桌面端此事件来自 main 进程 IPC，Web 桥内自广播）。
+    const saved = await this.saveConnectionConfig(payload)
+    for (const listener of [...this.connectionAppliedListeners]) {
+      try {
+        listener()
+      } catch {
+        // 单个监听器抛错不阻断保存结果。
+      }
+    }
+
+    return saved
   }
 
   async testConnectionConfig(

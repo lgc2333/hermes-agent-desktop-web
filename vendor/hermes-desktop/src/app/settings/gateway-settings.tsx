@@ -683,6 +683,26 @@ export function GatewaySettings({ embedded = false }: { embedded?: boolean } = {
     setSigningIn(true)
 
     try {
+      // Save (don't apply/restart) before sending credentials — same as the
+      // OAuth signIn flow: the persisted connection URL is what drives REST/WS
+      // forwarding, so a login made with a display-only prefilled URL
+      // (defaultGatewayUrl from /api/proxy/meta) would leave the registry on
+      // the factory mock and every proxied call 403 'target not allowed' under
+      // the allowlist (ADR-0015) — the exact "login succeeded, nothing works"
+      // trap after clearing cookies.
+      const saved = await window.hermesDesktop.saveConnectionConfig({
+        mode: state.mode,
+        profile: scope ?? undefined,
+        remoteAuthMode: 'oauth',
+        remoteUrl: trimmedUrl
+      })
+
+      if (seq !== signingSeq.current) {
+        return
+      }
+
+      acceptSavedConfig(saved)
+
       const result = await window.hermesDesktop.passwordLoginConnectionConfig(
         trimmedUrl,
         provider,

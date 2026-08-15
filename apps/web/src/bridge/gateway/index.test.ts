@@ -719,6 +719,42 @@ describe('M3 OAuth (proxy mode)', () => {
     vi.unstubAllGlobals()
   })
 
+  it('applyConnectionConfig emits connectionApplied (renderer softSwitch re-dials; save does not)', async () => {
+    const adapter = new GatewayAdapter()
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse(200, {
+        connected: true,
+        provider: 'nous',
+        userId: 'u1',
+        expiresAt: 9999,
+        tokenPreview: 'mock…',
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    const onApplied = vi.fn()
+    const unsubscribe = adapter.onConnectionApplied(onApplied)
+
+    await adapter.applyConnectionConfig({
+      mode: 'remote',
+      remoteUrl: 'http://127.0.0.1:9119',
+      remoteAuthMode: 'oauth',
+    })
+
+    // "保存并重连" → 广播事件，渲染层 use-gateway-boot 据此 softSwitch 重拨。
+    expect(onApplied).toHaveBeenCalledTimes(1)
+
+    // "仅保存（Save for next restart）" 不触发重连事件——只有 apply 会。
+    onApplied.mockClear()
+    await adapter.saveConnectionConfig({ mode: 'remote', remoteUrl: 'http://127.0.0.1:9119' })
+    expect(onApplied).not.toHaveBeenCalled()
+
+    // 退订后不再收到事件。
+    unsubscribe()
+    await adapter.applyConnectionConfig({ mode: 'remote', remoteUrl: 'http://127.0.0.1:9119' })
+    expect(onApplied).not.toHaveBeenCalled()
+    vi.unstubAllGlobals()
+  })
+
   it('saveConnectionConfig reports disconnected when no proxy session exists', async () => {
     const adapter = new GatewayAdapter()
     const fetchMock = vi
