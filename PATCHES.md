@@ -49,14 +49,6 @@ git subtree merge --prefix=vendor/hermes-desktop $NEW_FILTERED --squash
 
 ## 4. 当前 vendor 原位改动清单
 
-> **已撤销（ADR-0009）**：artifacts / agents 的 4 处入口布尔门（chat/sidebar、
-> contrib/surfaces、command-palette、shell/hooks/use-statusbar-items）已还原
-> 上游原样——上游桌面端在 remote gateway 模式下原生支持这两个功能
-> （artifacts 文件读取走 gateway /api/fs/*、agents 数据走 gateway WS 事件），
-> Web 桥的通用 REST/WS 转发天然覆盖，gate 属过度关闭。apps/web/src/bridge/
-> gates.ts 已整体删除（isDenied 无消费方）；语义权威 = 本文档。历史登记见
-> git 历史与 ADR-0009。
-
 - vendor/hermes-desktop/src/styles.css
   - 改动：`@import 'tailwindcss'` 后加两行 `@source '../../hermes-desktop/src'` 与 `@source '../../hermes-shared/src'`
   - 原因：Tailwind v4 自动扫描只覆盖 vite root（apps/web），vendor 源码的类名不生成 CSS 规则（M0 验证时发现界面下半部无样式崩坏）；@source 让 Tailwind 扫描 vendor 源码
