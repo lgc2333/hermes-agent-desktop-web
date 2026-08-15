@@ -17,11 +17,42 @@
  */
 
 import http from 'node:http'
+import { createHash, randomBytes } from 'node:crypto'
 import { WebSocketServer } from 'ws'
 
 const PORT = Number(process.argv[2] ?? process.env.MOCK_GATEWAY_PORT ?? 5180)
 const MODEL = 'mock-model'
 const PROVIDER = 'mock'
+
+// M3：MOCK_OAUTH=1 时模拟 gated gateway 的 native OAuth 面
+// （auth_required + auth_flows: native_pkce + /auth/native/* + ws-ticket）。
+const OAUTH_MODE = (process.env.MOCK_OAUTH ?? '0') === '1'
+
+// ── OAuth 模拟状态（进程内存，对齐真 gateway 的 dashboard_auth/native_flow）──
+// broker_state -> { code_challenge, redirect_uri, client_state, expires_at }
+const oauthPending = new Map()
+// gw_code -> { code_challenge, expires_at }
+const oauthCodes = new Map()
+let oauthSeq = 1
+
+function b64url(raw) {
+  return Buffer.from(raw).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+}
+
+function s256(verifier) {
+  return b64url(createHash('sha256').update(verifier, 'ascii').digest())
+}
+
+function oauthTokenSet(seed = oauthSeq++) {
+  return {
+    access_token: `mock-oauth-access-${seed}-${randomBytes(6).toString('hex')}`,
+    refresh_token: `mock-oauth-refresh-${seed}-${randomBytes(6).toString('hex')}`,
+    token_type: 'Bearer',
+    expires_at: Math.floor(Date.now() / 1000) + 3600,
+    provider: 'nous',
+    user_id: `mock-user-${seed}`
+  }
+}
 
 // ── 会话存储 ────────────────────────────────────────────────────────────────
 // stored id（durable，侧栏/路由用）↔ runtime id（live 事件用）。mock 简化：
@@ -387,7 +418,19 @@ function routeRest(req, res) {
   const method = req.method ?? 'GET'
 
   if (url === '/api/status' && method === 'GET') {
-    json(res, 200, { ok: true, version: '0.0.0-mock', auth_mode: 'token' })
+    const status = OAUTH_MODE
+      ? {
+          ok: true,
+          version: '0.0.0-mock',
+          // 真 gateway 无 auth_mode 字段（M3 probe 读 auth_required/auth_flows）；
+          // auth_mode 保留给旧 probe 逻辑做兼容。
+          auth_mode: 'oauth',
+          auth_required: true,
+          auth_flows: ['cookie', 'native_pkce'],
+          auth_providers: ['nous']
+        }
+      : { ok: true, version: '0.0.0-mock', auth_mode: 'token', auth_required: false }
+    json(res, 200, status)
 
     return
   }
@@ -527,6 +570,115 @@ function routeRest(req, res) {
     return
   }
 
+
+  // ── M3：native OAuth 模拟面（对齐真 gateway 的 dashboard_auth/native_flow）──
+
+  if (url === '/auth/native/authorize' && method === 'GET') {
+    const q = new URL(req.url, 'http://mock')
+    const challenge = q.searchParams.get('code_challenge') || ''
+    const methodPkce = q.searchParams.get('code_challenge_method') || ''
+    const redirectUri = q.searchParams.get('redirect_uri') || ''
+    const state = q.searchParams.get('state') || ''
+
+    // 与真 gateway 一致：只接受 S256 + loopback redirect_uri。
+    if (methodPkce.toUpperCase() !== 'S256') {
+      json(res, 400, { detail: 'code_challenge_method must be S256' })
+
+      return
+    }
+    if (!challenge) {
+      json(res, 400, { detail: 'code_challenge required' })
+
+      return
+    }
+    if (!redirectUri) {
+      json(res, 400, { detail: 'redirect_uri required' })
+
+      return
+    }
+    const parsedRedirect = new URL(redirectUri)
+    if (parsedRedirect.protocol !== 'http:' || !['127.0.0.1', '::1'].includes(parsedRedirect.hostname)) {
+      json(res, 400, { detail: 'native redirect_uri host must be a loopback IP literal (127.0.0.1 / ::1)' })
+
+      return
+    }
+
+    // 模拟 IDP 即时完成：直接 302 回 redirect_uri 带一次性 code + state。
+    const broker = `broker-${oauthSeq++}`
+    const code = `mock-gw-code-${oauthSeq++}`
+    oauthPending.set(broker, {
+      code_challenge: challenge,
+      redirect_uri: redirectUri,
+      client_state: state,
+      expires_at: Math.floor(Date.now() / 1000) + 600
+    })
+    oauthCodes.set(code, {
+      code_challenge: challenge,
+      expires_at: Math.floor(Date.now() / 1000) + 120
+    })
+    const sep = redirectUri.includes('?') ? '&' : '?'
+    res.writeHead(302, {
+      Location: `${redirectUri}${sep}code=${code}&state=${encodeURIComponent(state)}`
+    })
+    res.end()
+
+    return
+  }
+
+  if (url === '/auth/native/token' && method === 'POST') {
+    let body = {}
+    try {
+      body = JSON.parse(req.body ?? '{}')
+    } catch {
+      body = {}
+    }
+    const code = String(body.code ?? '')
+    const verifier = String(body.code_verifier ?? '')
+    const issued = oauthCodes.get(code)
+
+    // 单次消费 + PKCE 校验（对齐 redeem_code：pop 后再校验）。
+    oauthCodes.delete(code)
+    if (!issued || issued.expires_at < Math.floor(Date.now() / 1000)) {
+      json(res, 400, { detail: 'Invalid or expired authorization code.' })
+
+      return
+    }
+    if (s256(verifier) !== issued.code_challenge) {
+      json(res, 400, { detail: 'Invalid or expired authorization code.' })
+
+      return
+    }
+
+    json(res, 200, oauthTokenSet())
+
+    return
+  }
+
+  if (url === '/auth/native/refresh' && method === 'POST') {
+    let body = {}
+    try {
+      body = JSON.parse(req.body ?? '{}')
+    } catch {
+      body = {}
+    }
+    if (!String(body.refresh_token ?? '').startsWith('mock-oauth-refresh-')) {
+      json(res, 401, { error: 'session_expired', detail: 'Refresh token expired or invalid; start a new sign-in.' })
+
+      return
+    }
+
+    json(res, 200, oauthTokenSet())
+
+    return
+  }
+
+  if (url === '/api/auth/ws-ticket' && method === 'POST') {
+    // 宽松：模拟已认证会话（真 gateway 这里要求 session cookie / Bearer）。
+    json(res, 200, { ticket: `mock-ticket-${oauthSeq++}`, ttl_seconds: 30 })
+
+    return
+  }
+
   json(res, 404, { detail: `No such API endpoint: ${req.url.split('?')[0]}` })
 }
 
@@ -542,7 +694,18 @@ const httpServer = http.createServer((req, res) => {
     return
   }
 
-  routeRest(req, res)
+  // 收集请求体（OAuth token/refresh 是 POST JSON）。
+  let body = ''
+  req.on('data', chunk => {
+    body += chunk
+    if (body.length > 1_000_000) {
+      req.destroy()
+    }
+  })
+  req.on('end', () => {
+    req.body = body
+    routeRest(req, res)
+  })
 })
 
 httpServer.listen(PORT, '127.0.0.1', () => {

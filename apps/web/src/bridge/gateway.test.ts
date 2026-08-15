@@ -232,3 +232,187 @@ describe('proxy mode (VITE_PROXY_URL set)', () => {
     vi.unstubAllGlobals()
   })
 })
+
+describe('M3 OAuth (proxy mode)', () => {
+  beforeEach(() => {
+    window.localStorage.clear()
+    loadRegistry()
+    vi.stubEnv('VITE_PROXY_URL', 'http://127.0.0.1:6722')
+  })
+
+  afterEach(() => {
+    vi.unstubAllEnvs()
+    vi.unstubAllGlobals()
+  })
+
+  it('probeConnectionConfig reads real gateway auth fields (auth_required + auth_flows)', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse(200, {
+        version: '0.19.1',
+        auth_required: true,
+        auth_flows: ['cookie', 'native_pkce'],
+        auth_providers: ['nous']
+      })
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const adapter = new GatewayAdapter()
+    const result = await adapter.probeConnectionConfig('http://127.0.0.1:9119')
+
+    expect(result.authMode).toBe('oauth')
+    expect(result.providers).toEqual([{ name: 'nous', displayName: 'nous' }])
+  })
+
+  it('probeConnectionConfig: loopback gateway (no gate) reports token', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(200, { version: '0.19.1', auth_required: false })))
+
+    const adapter = new GatewayAdapter()
+    const result = await adapter.probeConnectionConfig('http://127.0.0.1:9119')
+
+    expect(result.authMode).toBe('token')
+  })
+
+  it('webApi in oauth mode omits the static token header and sends credentials', async () => {
+    const adapter = new GatewayAdapter()
+    await adapter.saveConnectionConfig({
+      mode: 'remote',
+      remoteUrl: 'http://127.0.0.1:9119',
+      remoteAuthMode: 'oauth'
+    })
+
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { ok: true }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await webApi({ path: '/api/status' })
+
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe('http://127.0.0.1:6722/api/status')
+    expect(init.headers['X-Hermes-Session-Token']).toBeUndefined()
+    expect(init.headers['X-Hermes-Target']).toBe('http://127.0.0.1:9119')
+    expect(init.credentials).toBe('include')
+  })
+
+  it('wsUrl for oauth mode carries no token query (cookie + ws-ticket instead)', async () => {
+    const adapter = new GatewayAdapter()
+    await adapter.saveConnectionConfig({
+      mode: 'remote',
+      remoteUrl: 'http://127.0.0.1:9119',
+      remoteAuthMode: 'oauth'
+    })
+    const conn = await adapter.getConnection()
+
+    expect(conn.wsUrl).toBe('ws://127.0.0.1:6722/api/ws?target=' + encodeURIComponent('http://127.0.0.1:9119'))
+    expect(conn.wsUrl.includes('token=')).toBe(false)
+  })
+
+  it('oauthLoginConnectionConfig: no proxy → rejected', async () => {
+    vi.unstubAllEnvs()
+    const adapter = new GatewayAdapter()
+    const result = await adapter.oauthLoginConnectionConfig('http://127.0.0.1:9119')
+
+    expect(result).toEqual({ ok: false, baseUrl: 'http://127.0.0.1:9119', connected: false })
+  })
+
+  it('oauthLoginConnectionConfig: start → open window → poll session until connected', async () => {
+    const adapter = new GatewayAdapter()
+    const fakeWin = {
+      closed: false,
+      close: vi.fn(),
+      location: { href: '' }
+    }
+    const openMock = vi.fn(() => fakeWin)
+    vi.stubGlobal('open', openMock)
+    ;(window as unknown as { open: typeof openMock }).open = openMock
+
+    const fetchMock = vi
+      .fn()
+      // start
+      .mockResolvedValueOnce(jsonResponse(200, { authorizeUrl: 'http://127.0.0.1:9119/auth/native/authorize?state=s1' }))
+      // session 轮询：第一次未连接，第二次已连接
+      .mockResolvedValueOnce(jsonResponse(200, { connected: false }))
+      .mockResolvedValueOnce(
+        jsonResponse(200, { connected: true, provider: 'nous', userId: 'u1', expiresAt: 9999, tokenPreview: 'mock…' })
+      )
+    vi.stubGlobal('fetch', fetchMock)
+    vi.useFakeTimers()
+
+    const promise = adapter.oauthLoginConnectionConfig('http://127.0.0.1:9119')
+    // 推进两轮轮询：第一轮未连接，第二轮已连接。
+    await vi.advanceTimersByTimeAsync(600)
+    await vi.advanceTimersByTimeAsync(600)
+    const result = await promise
+
+    vi.useRealTimers()
+
+    expect(result).toEqual({ ok: true, baseUrl: 'http://127.0.0.1:9119', connected: true })
+    // start 请求形状
+    expect(fetchMock.mock.calls[0][0]).toBe('http://127.0.0.1:6722/auth/native/start')
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ target: 'http://127.0.0.1:9119' })
+    // 授权窗口导航到 authorize URL
+    expect(fakeWin.location.href).toBe('http://127.0.0.1:9119/auth/native/authorize?state=s1')
+  })
+
+  it('oauthLogoutConnectionConfig posts logout to the proxy', async () => {
+    const adapter = new GatewayAdapter()
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { ok: true }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await adapter.oauthLogoutConnectionConfig('http://127.0.0.1:9119')
+
+    expect(result).toEqual({ ok: true, connected: false })
+    expect(fetchMock.mock.calls[0][0]).toBe('http://127.0.0.1:6722/auth/native/logout')
+    expect(fetchMock.mock.calls[0][1].credentials).toBe('include')
+  })
+
+  it('getConnectionConfig prefills default gateway from /api/proxy/meta (untouched registry)', async () => {
+    const adapter = new GatewayAdapter()
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(200, { defaultGatewayUrl: 'http://hermes:9119', requiresPassphrase: true }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const config = await adapter.getConnectionConfig()
+
+    expect(config.remoteUrl).toBe('http://hermes:9119')
+    // 未保存：registry 仍是出厂 mock 连接。
+    expect(loadRegistry().connections[0].url).toBe('http://127.0.0.1:5180')
+    expect(fetchMock.mock.calls[0][0]).toBe('http://127.0.0.1:6722/api/proxy/meta')
+  })
+
+  it('getConnectionConfig queries oauth session status for oauth connections', async () => {
+    const adapter = new GatewayAdapter()
+    await adapter.saveConnectionConfig({
+      mode: 'remote',
+      remoteUrl: 'http://127.0.0.1:9119',
+      remoteAuthMode: 'oauth'
+    })
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse(200, { connected: true, provider: 'nous', userId: 'u1', expiresAt: 9999, tokenPreview: 'mock…' })
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const config = await adapter.getConnectionConfig()
+
+    expect(config.remoteOauthConnected).toBe(true)
+    expect(config.remoteTokenPreview).toBe('mock…')
+    expect(config.remoteTokenSet).toBe(false)
+  })
+
+  it('oauth mode save clears leftover static token', async () => {
+    const adapter = new GatewayAdapter()
+    await adapter.saveConnectionConfig({
+      mode: 'remote',
+      remoteUrl: 'http://127.0.0.1:5199',
+      remoteAuthMode: 'token',
+      remoteToken: 'fresh-token'
+    })
+    const switched = await adapter.saveConnectionConfig({
+      mode: 'remote',
+      remoteUrl: 'http://127.0.0.1:5199',
+      remoteAuthMode: 'oauth'
+    })
+
+    expect(switched.remoteTokenSet).toBe(false)
+    expect(loadRegistry().connections[0].token).toBe('')
+  })
+})

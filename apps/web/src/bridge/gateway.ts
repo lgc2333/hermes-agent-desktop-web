@@ -15,6 +15,7 @@
 import type {
   BackendExit,
   DesktopActiveProfile,
+  DesktopAuthProvider,
   DesktopBootProgress,
   DesktopBootstrapEvent,
   DesktopBootstrapState,
@@ -38,6 +39,8 @@ import type {
 import type { GatewayWsUrlResult } from '@hermes/shared'
 
 import {
+  DEFAULT_CONNECTION_ID,
+  defaultMockConnection,
   getPrimaryConnection,
   loadRegistry,
   readProfilePreference,
@@ -49,7 +52,13 @@ import {
   type WebConnectionRecord
 } from './registry'
 
-export const WEB_VERSION = '0.1.0-web-m2'
+export const WEB_VERSION = '0.1.0-web-m3'
+
+/** OAuth 授权窗口名（同名复用，避免多开）。 */
+const OAUTH_WINDOW_NAME = 'hermes-oauth-login'
+/** 授权轮询：500ms 间隔，最长 5 分钟（与 gateway pending TTL 对齐）。 */
+const OAUTH_POLL_INTERVAL_MS = 500
+const OAUTH_POLL_TIMEOUT_MS = 5 * 60_000
 
 /**
  * M2 代理基址（唯一落点，handoff M2 §4）：
@@ -65,6 +74,14 @@ export function proxyBaseUrl(): string | null {
   }
 
   return null
+}
+
+/**
+ * M3：经代理的 fetch —— credentials: 'include'，让 httpOnly OAuth 会话
+ * cookie（hermes_oauth_session）随请求携带（dev 跨端口同站 / 生产同源）。
+ */
+function proxyFetch(input: string, init: RequestInit = {}): Promise<Response> {
+  return fetch(input, { ...init, credentials: 'include' })
 }
 
 /** 网关 base URL：M2 = 代理（目标 gateway 经 X-Hermes-Target 头指定）。 */
@@ -86,6 +103,13 @@ function wsUrlFor(conn: WebConnectionRecord): string {
 
   if (proxy) {
     const wsBase = proxy.replace(/^http/, 'ws')
+
+    // M3：OAuth 模式凭证在代理（httpOnly cookie + ws-ticket），WS 握手经
+    // cookie 认证、代理 mint 单次 ticket，不带 ?token=（gated gateway 拒绝
+    // token query）。
+    if (conn.authMode === 'oauth') {
+      return `${wsBase}/api/ws?target=${encodeURIComponent(conn.url.replace(/\/+$/, ''))}`
+    }
 
     return `${wsBase}/api/ws?token=${encodeURIComponent(conn.token)}&target=${encodeURIComponent(conn.url.replace(/\/+$/, ''))}`
   }
@@ -163,9 +187,12 @@ export async function webApi<T>(request: HermesApiRequest): Promise<T> {
     }
   }
 
+  // M3：OAuth 模式浏览器不持静态 token（代理按会话注入 Bearer），
+  // 只带目标；token 模式照旧带 X-Hermes-Session-Token。
+  const oauth = conn.authMode === 'oauth'
   init.headers = {
     ...(init.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
-    'X-Hermes-Session-Token': conn.token,
+    ...(oauth ? {} : { 'X-Hermes-Session-Token': conn.token }),
     // M2：目标 gateway 由每次请求携带（代理无状态，见 PLAN §6）。
     'X-Hermes-Target': conn.url.replace(/\/+$/, '')
   }
@@ -176,7 +203,7 @@ export async function webApi<T>(request: HermesApiRequest): Promise<T> {
     : undefined
 
   try {
-    const res = await fetch(`${base}${path}`, { ...init, signal: controller.signal })
+    const res = await proxyFetch(`${base}${path}`, { ...init, signal: controller.signal })
 
     if (!res.ok) {
       const body = await res.text().catch(() => '')
@@ -305,8 +332,34 @@ export class GatewayAdapter {
     }
   }
 
+  /**
+   * M3：连接配置 = registry 快照 + 运行时增强：
+   *   - OAuth 连接：向代理查询 httpOnly 会话状态（connected + tokenPreview）；
+   *   - 默认连接从未配置过且代理下发 defaultGatewayUrl（/api/proxy/meta，
+   *     compose env HERMES_DEFAULT_GATEWAY_URL）→ 表单预填默认 URL（用户
+   *     保存才落盘，不动 registry）。
+   */
   async getConnectionConfig(): Promise<DesktopConnectionConfig> {
-    return this.toConfig(getPrimaryConnection())
+    const conn = getPrimaryConnection()
+    const config = this.toConfig(conn)
+
+    if (conn.authMode === 'oauth') {
+      const session = await this.oauthSessionStatus(conn.url)
+      config.remoteOauthConnected = session.connected
+      if (session.connected && session.tokenPreview) {
+        config.remoteTokenPreview = session.tokenPreview
+      }
+    }
+
+    // 默认连接预填（只在仍是出厂 mock 地址时生效）。
+    if (conn.id === DEFAULT_CONNECTION_ID && conn.url === defaultMockConnection().url) {
+      const meta = await this.fetchProxyMeta().catch(() => null)
+      if (meta?.defaultGatewayUrl) {
+        config.remoteUrl = meta.defaultGatewayUrl
+      }
+    }
+
+    return config
   }
 
   async saveConnectionConfig(payload: DesktopConnectionConfigInput): Promise<DesktopConnectionConfig> {
@@ -349,13 +402,39 @@ export class GatewayAdapter {
         }
       }
 
-      const json = (await status.json().catch(() => null)) as { version?: string; auth_mode?: string } | null
+      const json = (await status.json().catch(() => null)) as {
+        version?: string
+        auth_mode?: string
+        auth_required?: boolean
+        auth_flows?: string[]
+        auth_providers?: string[]
+      } | null
+
+      // M3：真 gateway 无 auth_mode 字段，按 auth_required + auth_flows 判定
+      // （gated + native_pkce → oauth；loopback → token）；旧 mock 的
+      // auth_mode 字段保留兼容。
+      const authMode =
+        json?.auth_required === true
+          ? (json.auth_flows ?? []).includes('native_pkce')
+            ? 'oauth'
+            : 'token'
+          : json?.auth_required === false
+            ? 'token'
+            : json?.auth_mode === 'oauth'
+              ? 'oauth'
+              : json?.auth_mode === 'token'
+                ? 'token'
+                : 'unknown'
+      const providers: DesktopAuthProvider[] = (json?.auth_providers ?? []).map(name => ({
+        name,
+        displayName: name
+      }))
 
       return {
         baseUrl: remoteUrl,
         reachable: true,
-        authMode: json?.auth_mode === 'oauth' ? 'oauth' : json?.auth_mode === 'token' ? 'token' : 'unknown',
-        providers: [],
+        authMode,
+        providers,
         version: json?.version ?? null,
         error: null
       }
@@ -371,13 +450,166 @@ export class GatewayAdapter {
     }
   }
 
-  async oauthLoginConnectionConfig(_remoteUrl: string): Promise<DesktopOauthLoginResult> {
-    // OAuth 是 M3 里程碑；M1 直拒。
-    return { ok: false, baseUrl: getPrimaryConnection().url, connected: false }
+  /**
+   * M3：native OAuth 登录（经代理中转，PKCE 全程在代理侧）。
+   *
+   * 流程：POST /auth/native/start（代理生成 PKCE/state + authorize URL）→
+   * 新窗口打开 gateway 授权页 → gateway 完成授权后 302 回代理 callback →
+   * 代理换 token set 并存 httpOnly cookie → 本窗口轮询 /auth/native/session
+   * 直到 connected（或窗口关闭 / 超时）。
+   */
+  async oauthLoginConnectionConfig(remoteUrl: string): Promise<DesktopOauthLoginResult> {
+    const proxy = proxyBaseUrl()
+    const baseUrl = remoteUrl.replace(/\/+$/, '')
+
+    if (!proxy) {
+      // 直连模式无代理中转（token 在浏览器侧才能转发）——OAuth 不可用。
+      return { ok: false, baseUrl, connected: false }
+    }
+
+    // 同步段先开窗（保留用户手势，避免弹窗拦截），拿到 authorize URL 后再导航。
+    const win = window.open('', OAUTH_WINDOW_NAME, 'popup,width=560,height=680')
+
+    if (!win) {
+      return { ok: false, baseUrl, connected: false }
+    }
+
+    try {
+      const start = await proxyFetch(`${proxy}/auth/native/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ target: baseUrl })
+      })
+
+      if (!start.ok) {
+        win.close()
+
+        return { ok: false, baseUrl, connected: false }
+      }
+
+      const { authorizeUrl } = (await start.json()) as { authorizeUrl?: string }
+
+      if (!authorizeUrl) {
+        win.close()
+
+        return { ok: false, baseUrl, connected: false }
+      }
+
+      // 授权窗口导航（gateway → IDP → 代理 callback → 自动关闭）。
+      win.location.href = authorizeUrl
+
+      const connected = await this.pollOauthSession(baseUrl, win)
+
+      return { ok: true, baseUrl, connected }
+    } catch {
+      try {
+        win.close()
+      } catch {
+        // already closed
+      }
+
+      return { ok: false, baseUrl, connected: false }
+    }
   }
 
-  async oauthLogoutConnectionConfig(): Promise<DesktopOauthLogoutResult> {
-    return { ok: false, connected: false }
+  async oauthLogoutConnectionConfig(remoteUrl?: string): Promise<DesktopOauthLogoutResult> {
+    const proxy = proxyBaseUrl()
+
+    if (!proxy) {
+      return { ok: false, connected: false }
+    }
+
+    try {
+      const res = await proxyFetch(`${proxy}/auth/native/logout`, { method: 'POST' })
+
+      return { ok: res.ok, connected: false }
+    } catch {
+      return { ok: false, connected: false }
+    }
+  }
+
+  /** 轮询代理会话状态：窗口关闭即停（最后一查）；最多 OAUTH_POLL_TIMEOUT_MS。 */
+  private async pollOauthSession(remoteUrl: string, win: Window | null): Promise<boolean> {
+    const deadline = Date.now() + OAUTH_POLL_TIMEOUT_MS
+
+    while (Date.now() < deadline) {
+      await new Promise(resolve => window.setTimeout(resolve, OAUTH_POLL_INTERVAL_MS))
+
+      if (win && win.closed) {
+        // 窗口已关闭：最后一查确认结果（登录成功时 callback 页自动关闭）。
+        return this.oauthSessionStatus(remoteUrl).then(s => s.connected)
+      }
+
+      const session = await this.oauthSessionStatus(remoteUrl)
+      if (session.connected) {
+        return true
+      }
+    }
+
+    return false
+  }
+
+  /** 查询代理 OAuth 会话状态（cookie + target 匹配才 connected）。 */
+  private async oauthSessionStatus(remoteUrl: string): Promise<{
+    connected: boolean
+    provider: string
+    userId: string
+    expiresAt: number
+    tokenPreview: string | null
+  }> {
+    const proxy = proxyBaseUrl()
+
+    if (!proxy) {
+      return { connected: false, provider: '', userId: '', expiresAt: 0, tokenPreview: null }
+    }
+
+    try {
+      const res = await proxyFetch(
+        `${proxy}/auth/native/session?target=${encodeURIComponent(remoteUrl.replace(/\/+$/, ''))}`
+      )
+
+      if (!res.ok) {
+        return { connected: false, provider: '', userId: '', expiresAt: 0, tokenPreview: null }
+      }
+
+      const json = (await res.json()) as {
+        connected?: boolean
+        provider?: string
+        userId?: string
+        expiresAt?: number
+        tokenPreview?: string | null
+      }
+
+      return {
+        connected: Boolean(json.connected),
+        provider: json.provider ?? '',
+        userId: json.userId ?? '',
+        expiresAt: json.expiresAt ?? 0,
+        tokenPreview: json.tokenPreview ?? null
+      }
+    } catch {
+      return { connected: false, provider: '', userId: '', expiresAt: 0, tokenPreview: null }
+    }
+  }
+
+  /** 读代理 /api/proxy/meta（默认 gateway URL 预填）。 */
+  private async fetchProxyMeta(): Promise<{ defaultGatewayUrl: string | null; requiresPassphrase: boolean } | null> {
+    const proxy = proxyBaseUrl()
+
+    if (!proxy) {
+      return null
+    }
+
+    try {
+      const res = await fetch(`${proxy}/api/proxy/meta`)
+      if (!res.ok) {
+        return null
+      }
+
+      return (await res.json()) as { defaultGatewayUrl: string | null; requiresPassphrase: boolean }
+    } catch {
+      return null
+    }
   }
 
   // ── profile ──────────────────────────────────────────────────────────────
@@ -408,7 +640,7 @@ export class GatewayAdapter {
       label: payload.label,
       url: payload.url ?? '',
       authMode: payload.authMode ?? 'token',
-      token: payload.token ?? getPrimaryConnection().token
+      token: payload.authMode === 'oauth' ? '' : (payload.token ?? getPrimaryConnection().token)
     }
     upsertConnection(record)
 
@@ -522,6 +754,10 @@ export class GatewayAdapter {
 
     if (payload.remoteAuthMode !== undefined) {
       next.authMode = payload.remoteAuthMode
+      if (payload.remoteAuthMode === 'oauth') {
+        // OAuth 凭证在代理 httpOnly 会话；清掉 token 模式残留的静态 token。
+        next.token = ''
+      }
     }
 
     if (payload.remoteToken !== undefined && payload.remoteToken !== '') {
