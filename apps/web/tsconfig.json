@@ -1,0 +1,26 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "useDefineForClassFields": true,
+    "allowImportingTsExtensions": true,
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["../../vendor/hermes-desktop/src/*"],
+      "@hermes/shared/billing": ["../../vendor/hermes-shared/src/billing-types.ts"],
+      "@hermes/shared": ["../../vendor/hermes-shared/src/index.ts"],
+      "@hermes/plugin-sdk": ["../../vendor/hermes-desktop/src/sdk/index.ts"],
+      "@/debug/dev-only": ["../../vendor/hermes-desktop/src/debug/dev-only.noop.ts"]
+    }
+  },
+  "include": ["src", "../../vendor/hermes-desktop/src", "../../vendor/hermes-shared/src"]
+}
