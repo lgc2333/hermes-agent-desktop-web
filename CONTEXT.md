@@ -109,3 +109,7 @@ _Avoid_: 默认配置（太泛）
 远端部署完成 Native OAuth 的方式（ADR-0017）：start 默认用 loopback 字面量 redirect_uri，浏览器登录后跳到本机 127.0.0.1 失败（预期），用户复制地址栏完整回调 URL（含 code+state，或裸 query）经 `/auth/native/paste` 粘贴回代理；代理校验 state + target 后走与 callback 相同的 code 交换。安全属性不变（PKCE/state/单次/短 TTL 由 gateway 强制）。
 _Avoid_: 隧道（已不需要）、登录流程（太泛）
 _Avoid_: localhost（上游明确拒绝）、"可配置的允许列表"（不存在）
+
+**发布 tag**:
+发布点的 git tag，携带完整版本标识 `v<桌面版本>+web.<Web项目版本>`（如 v0.17.0+web.0.1.0），与客户端自报版本 WEB_VERSION 完全一致；构建脚本对已含 `+web.` 的 tag 直接使用、不再重复拼装（ADR-0018）。桌面版本须对映 vendor/hermes-desktop/package.json，Web 项目版本对映 apps/web/package.json。
+_Avoid_: 纯项目版本 tag（ADR-0014 旧示例）、版本号（不指 tag 时）
