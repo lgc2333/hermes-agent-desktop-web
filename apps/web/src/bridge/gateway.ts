@@ -49,19 +49,50 @@ import {
   type WebConnectionRecord
 } from './registry'
 
-export const WEB_VERSION = '0.1.0-web-m1'
+export const WEB_VERSION = '0.1.0-web-m2'
 
-/** 网关 base URL：M1 = 注册表里连接的 url；M2 = 同源代理（本函数是唯一落点）。 */
+/**
+ * M2 代理基址（唯一落点，handoff M2 §4）：
+ *   - VITE_PROXY_URL 设置（dev：vite :5173 页面 → 代理 :8787）→ 用它；
+ *   - 生产：SPA 由代理同源托管 → window.location.origin；
+ *   - 都没配置 → null，回退 M1 直连（conn.url，mock CORS 开放可直连）。
+ */
+export function proxyBaseUrl(): string | null {
+  const env = import.meta.env.VITE_PROXY_URL as string | undefined
+
+  if (env && env.trim()) {
+    return env.replace(/\/+$/, '')
+  }
+
+  return null
+}
+
+/** 网关 base URL：M2 = 代理（目标 gateway 经 X-Hermes-Target 头指定）。 */
 export function gatewayBaseUrl(conn?: WebConnectionRecord): string {
   const record = conn ?? getPrimaryConnection()
 
-  return record.url.replace(/\/+$/, '')
+  return proxyBaseUrl() ?? record.url.replace(/\/+$/, '')
 }
 
+/**
+ * WS 拨号 URL：
+ *   - 经代理：浏览器 WebSocket 无法携带自定义头，目标编码进 query
+ *     （ws://proxy/api/ws?token=..&target=<encoded gateway url>）；
+ *   - 直连回退：真 gateway 形态 ws(s)://gw/api/ws?token=..（M1 是
+ *     mock 特有的 /gateway 路径，M2 mock 已对齐 /api/ws）。
+ */
 function wsUrlFor(conn: WebConnectionRecord): string {
-  const base = gatewayBaseUrl(conn).replace(/^http/, 'ws')
+  const proxy = proxyBaseUrl()
 
-  return `${base}/gateway?token=${encodeURIComponent(conn.token)}`
+  if (proxy) {
+    const wsBase = proxy.replace(/^http/, 'ws')
+
+    return `${wsBase}/api/ws?token=${encodeURIComponent(conn.token)}&target=${encodeURIComponent(conn.url.replace(/\/+$/, ''))}`
+  }
+
+  const base = conn.url.replace(/\/+$/, '').replace(/^http/, 'ws')
+
+  return `${base}/api/ws?token=${encodeURIComponent(conn.token)}`
 }
 
 /** HermesConnection 渲染层实读字段（handoff §2 已核实）。 */
@@ -134,7 +165,9 @@ export async function webApi<T>(request: HermesApiRequest): Promise<T> {
 
   init.headers = {
     ...(init.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
-    'X-Hermes-Session-Token': conn.token
+    'X-Hermes-Session-Token': conn.token,
+    // M2：目标 gateway 由每次请求携带（代理无状态，见 PLAN §6）。
+    'X-Hermes-Target': conn.url.replace(/\/+$/, '')
   }
 
   const controller = new AbortController()
@@ -295,8 +328,14 @@ export class GatewayAdapter {
 
   async probeConnectionConfig(remoteUrl: string): Promise<DesktopConnectionProbeResult> {
     try {
-      const status = await fetch(`${remoteUrl.replace(/\/+$/, '')}/api/status`, {
-        headers: { 'X-Hermes-Session-Token': getPrimaryConnection().token }
+      // M2：探测也走代理（dev 跨源 / 生产同源都通），转发正确性一并验证。
+      const proxy = proxyBaseUrl()
+      const base = proxy ?? remoteUrl.replace(/\/+$/, '')
+      const status = await fetch(`${base}/api/status`, {
+        headers: {
+          'X-Hermes-Session-Token': getPrimaryConnection().token,
+          ...(proxy ? { 'X-Hermes-Target': remoteUrl.replace(/\/+$/, '') } : {})
+        }
       })
 
       if (!status.ok) {
@@ -506,5 +545,3 @@ export class GatewayAdapter {
     }
   }
 }
-
-

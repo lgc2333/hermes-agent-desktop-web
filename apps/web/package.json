@@ -8,6 +8,7 @@
   },
   "scripts": {
     "dev": "node dev/dev.mjs",
+    "dev:proxy": "node dev/dev.mjs --with-proxy",
     "build": "vite build",
     "preview": "vite preview --host 127.0.0.1 --port 4173",
     "typecheck": "node scripts/typecheck.mjs",

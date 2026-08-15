@@ -2,7 +2,9 @@
  * Connection registry — 连接定义 + 凭证全在浏览器（ADR-0002 / PLAN §6.1）。
  *
  * localStorage 键 `hermes-web.connections.v1`：
- *   - 一个默认连接指向本地 mock gateway（M1），M2 换成手填 URL + 代理协议；
+ *   - 默认连接指向本地 mock gateway（dev 对照端）；M2 起连接 URL 是**目标**
+ *     gateway（浏览器经代理转发，代理基址由 VITE_PROXY_URL/同源决定，见
+ *     gateway.ts 的 proxyBaseUrl()）；手填 URL + token 连真 serve；
  *   - token 静态长期凭证按连接存储，绝不进入任何代理/后端；
  *   - 换设备/换浏览器需重新填写（代价，ADR-0002 已接受）。
  *

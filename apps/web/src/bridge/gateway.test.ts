@@ -32,6 +32,7 @@ describe('webApi (REST forwarding)', () => {
     const [url, init] = fetchMock.mock.calls[0]
     expect(url).toBe('http://127.0.0.1:5180/api/status')
     expect(init.headers['X-Hermes-Session-Token']).toBe('mock-token')
+    expect(init.headers['X-Hermes-Target']).toBe('http://127.0.0.1:5180')
     expect(init.method).toBe('GET')
   })
 
@@ -92,7 +93,7 @@ describe('GatewayAdapter', () => {
 
     expect(conn.baseUrl).toBe('http://127.0.0.1:5180')
     expect(conn.token).toBe('mock-token')
-    expect(conn.wsUrl).toMatch(/^ws:\/\/127\.0\.0\.1:5180\/gateway\?token=mock-token$/)
+    expect(conn.wsUrl).toMatch(/^ws:\/\/127\.0\.0\.1:5180\/api\/ws\?token=mock-token$/)
     expect(conn.authMode).toBe('token')
     expect(conn.mode).toBe('remote')
     expect(conn.nativeOverlayWidth).toBe(0)
@@ -105,7 +106,7 @@ describe('GatewayAdapter', () => {
     const adapter = new GatewayAdapter()
     const result = await adapter.getGatewayWsUrl()
 
-    expect(result).toEqual({ ok: true, wsUrl: expect.stringContaining('/gateway?token=') })
+    expect(result).toEqual({ ok: true, wsUrl: expect.stringContaining('/api/ws?token=') })
   })
 
   it('revalidate/touch are cheap no-ops with ok:true', async () => {
@@ -177,6 +178,57 @@ describe('toHermesConnection', () => {
     expect(conn.authMode).toBe('oauth')
     expect(conn.remoteKind).toBe('url')
     expect(conn.source).toBe('settings')
-    expect(conn.wsUrl.startsWith('ws://h:9119/gateway?token=')).toBe(true)
+    expect(conn.wsUrl.startsWith('ws://h:9119/api/ws?token=')).toBe(true)
+  })
+})
+
+describe('proxy mode (VITE_PROXY_URL set)', () => {
+  beforeEach(() => {
+    window.localStorage.clear()
+    loadRegistry()
+    vi.stubEnv('VITE_PROXY_URL', 'http://127.0.0.1:8787')
+  })
+
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
+  it('webApi targets the proxy and carries X-Hermes-Target', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { ok: true }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await webApi({ path: '/api/status' })
+
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe('http://127.0.0.1:8787/api/status')
+    expect(init.headers['X-Hermes-Target']).toBe('http://127.0.0.1:5180')
+    expect(init.headers['X-Hermes-Session-Token']).toBe('mock-token')
+    vi.unstubAllGlobals()
+  })
+
+  it('wsUrl encodes the gateway target into the query', async () => {
+    const adapter = new GatewayAdapter()
+    const conn = await adapter.getConnection()
+
+    expect(conn.baseUrl).toBe('http://127.0.0.1:8787')
+    expect(conn.wsUrl).toBe(
+      'ws://127.0.0.1:8787/api/ws?token=mock-token&target=' + encodeURIComponent('http://127.0.0.1:5180')
+    )
+  })
+
+  it('probeConnectionConfig goes through the proxy', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse(200, { version: '0.19.1', auth_mode: 'token' })
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const adapter = new GatewayAdapter()
+    const result = await adapter.probeConnectionConfig('http://127.0.0.1:9119')
+
+    expect(fetchMock.mock.calls[0][0]).toBe('http://127.0.0.1:8787/api/status')
+    expect(fetchMock.mock.calls[0][1].headers['X-Hermes-Target']).toBe('http://127.0.0.1:9119')
+    expect(result.reachable).toBe(true)
+    expect(result.version).toBe('0.19.1')
+    vi.unstubAllGlobals()
   })
 })

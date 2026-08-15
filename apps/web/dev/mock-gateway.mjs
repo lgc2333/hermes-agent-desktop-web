@@ -2,7 +2,7 @@
 /**
  * M1 mock gateway — 可聊天的 JSON-RPC/WS + REST 双通道 mock 后端。
  *
- * 渲染层走两条通道（handoff §4）：
+ * 渲染层走两条通道（handoff §4，M2 起经同源代理转发）：
  *   - REST（经 bridge api()）：/api/config、/api/status、sidebar 会话列表…
  *   - WS（JsonRpcGatewayClient）：session.create/resume、prompt.submit +
  *     流式事件（message.start/delta/complete、session.info）
@@ -263,14 +263,52 @@ const RPC_HANDLERS = {
   },
   'prompt.submit': (params, socket) => {
     const session = getSessionByRuntime(params?.session_id) ?? createSession({})
+    const text = String(params?.text ?? '')
+
+    // M2 审批模拟：消息含 "approval" 时先推 approval.request，等 approval.respond
+    // 后才继续流式（与真 gateway 的 _await_gateway_decision 行为对齐）。
+    if (/approval/i.test(text)) {
+      session.approvalPending = {
+        request_id: mintId('apr'),
+        command: 'rm -rf /tmp/demo-artifacts',
+        description: 'dangerous command (mock approval)',
+        allow_permanent: true
+      }
+      session.pendingText = text
+      setTimeout(() => {
+        socket.send(
+          JSON.stringify({
+            method: 'event',
+            params: { type: 'approval.request', session_id: session.runtimeId, payload: session.approvalPending }
+          })
+        )
+      }, 80)
+
+      return { ok: true }
+    }
 
     // Fire-and-forget：ACK 立即返回，回复走事件流。
-    setTimeout(() => streamTurn(socket, session, String(params?.text ?? '')), 50)
+    setTimeout(() => streamTurn(socket, session, text), 50)
 
     return { ok: true }
   },
+  'approval.respond': (params, socket) => {
+    const sessionId = params?.session_id
+    const session = sessionId ? getSessionByRuntime(sessionId) : null
+
+    if (session?.approvalPending) {
+      const pending = session.approvalPending
+      session.approvalPending = null
+      const text = session.pendingText ?? ''
+      session.pendingText = null
+      setTimeout(() => streamTurn(socket, session, text), 80)
+
+      return { ok: true, resolved: true, request_id: pending.request_id }
+    }
+
+    return { ok: false, error: 'no pending approval' }
+  },
   'process.kill': () => ({ ok: true }),
-  'approval.respond': () => ({ ok: true }),
   'approval.received': () => ({ ok: true }),
   'approval.pending': () => ({ ok: true }),
   'clarify.respond': () => ({ ok: true }),
@@ -513,7 +551,9 @@ httpServer.listen(PORT, '127.0.0.1', () => {
 
 // ── WS（挂在同一个 HTTP server 上，同端口双协议）────────────────────────────
 
-const wss = new WebSocketServer({ server: httpServer, path: '/gateway' })
+// M2：路径对齐真 gateway 的 /api/ws（M1 是 mock 特有的 /gateway）。
+// token 经 query 传入（真 gateway 恒时比对 _SESSION_TOKEN；mock 宽松接受）。
+const wss = new WebSocketServer({ server: httpServer, path: '/api/ws' })
 
 wss.on('connection', socket => {
   console.log('[mock-gateway] client connected')
@@ -540,7 +580,7 @@ wss.on('connection', socket => {
 })
 
 wss.on('listening', () => {
-  console.log(`[mock-gateway] WS listening on ws://127.0.0.1:${PORT}/gateway`)
+  console.log(`[mock-gateway] WS listening on ws://127.0.0.1:${PORT}/api/ws`)
 })
 
 function shutdown() {
