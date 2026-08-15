@@ -58,3 +58,30 @@
 .z-\(--z-setup\) .flex.flex-wrap.gap-2 > button:last-child[data-variant='ghost'] {
   display: none;
 }
+
+/* 6. 移动端视口高度：桌面渲染层用 height:100% / h-screen(=100vh) 按「大视口」
+  （地址栏收起时的高度）解析，而手机浏览器展开地址栏时可视区比大视口矮
+  一个标题栏高度——应用底部（composer 输入框、状态栏）整条被推出可视区
+  外，真机上只剩输入框一条顶边。dvh 跟随当前可视高度，地址栏展开/收起
+  都正好填满可视区（应用文档不滚动，dvh 实际稳定在 svh；svh 声明在前作
+  降级）。不覆盖桌面宽度。 */
+@media (max-width: 640px) {
+  :root,
+  body,
+  #root {
+    height: 100svh !important;
+    height: 100dvh !important;
+  }
+  .h-screen {
+    height: 100svh !important;
+    height: 100dvh !important;
+  }
+  /* 底部安全区（home indicator / 手势条）：dvh 视口延伸到屏幕物理底边，
+    输入框底边会被系统手势条盖住。dock 是底部锚定的测量盒子，把底衬垫
+    并入安全区，--composer-measured-height 一并包含，线程留白不失配。 */
+  [data-slot='composer-dock'] {
+    padding-bottom: calc(
+      var(--composer-shell-pad-block-end) + env(safe-area-inset-bottom)
+    ) !important;
+  }
+}

@@ -122,6 +122,36 @@ const probeExpr = `(() => {
 const probe = await evalIn(sessionId, probeExpr)
 console.log(JSON.stringify(probe, null, 2))
 
+// M? 移动端视口契约：应用根必须按「当前可视高度」铺满（web.css §6 的 dvh
+// 覆盖）。真机上地址栏展开会让 100vh 高出一个标题栏高度，composer 整条被
+// 推出屏幕；CDP 仿真里 dvh==vh，这里只能守住「根高 == innerHeight + 输入
+// 框完整在可视区内」的契约，真机行为靠部署后设备验证。
+const contractExpr = `(() => {
+  const rootH = parseFloat(getComputedStyle(document.documentElement).height)
+  const dock = document.querySelector('[data-slot="composer-dock"]')
+  const r = dock ? dock.getBoundingClientRect() : null
+  return {
+    rootHeightPx: rootH,
+    innerHeight: window.innerHeight,
+    rootMatchesViewport: Math.abs(rootH - window.innerHeight) <= 1,
+    dockVisible: !!r && r.width > 0 && r.height > 0,
+    dockBottomInViewport: !!r && r.bottom <= window.innerHeight + 1 && r.bottom >= 0,
+    dockTopInViewport: !!r && r.top >= -1
+  }
+})()`
+const contract = await evalIn(sessionId, contractExpr)
+console.log('[M-responsive] viewport contract: ' + JSON.stringify(contract))
+const ok =
+  contract.rootMatchesViewport &&
+  contract.dockVisible &&
+  contract.dockBottomInViewport &&
+  contract.dockTopInViewport
+if (!ok) {
+  console.error('[M-responsive] FAIL: composer dock 未完整处于移动端可视区内')
+  process.exit(1)
+}
+console.log('[M-responsive] PASS: composer dock 完整处于可视区内（根高=innerHeight=' + contract.innerHeight + 'px）')
+
 const shot = await send('Page.captureScreenshot', { format: 'png' }, sessionId)
 const fs = await import('node:fs')
 fs.writeFileSync('temp/e2e-out/mobile-boot.png', Buffer.from(shot.data, 'base64'))
