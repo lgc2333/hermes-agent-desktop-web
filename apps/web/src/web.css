@@ -19,3 +19,20 @@
     scrollbar-width: none;
   }
 }
+/* 2. Connection mode：web 只支持远程连接（PLAN §1 纯远程，local/cloud/ssh 无对应
+      后端形态）——隐藏其余三张卡片，只留 remote。auto-rows-fr 组合全库唯一
+      （vendor .../gateway-settings.tsx 的 mode 卡片容器），同一规则同时覆盖
+      设置页与 boot-failure embedded 视图（M4 起）。 */
+.grid.auto-rows-fr.grid-cols-1 > button:nth-child(1),
+.grid.auto-rows-fr.grid-cols-1 > button:nth-child(2),
+.grid.auto-rows-fr.grid-cols-1 > button:nth-child(4) {
+  display: none;
+}
+
+/* 3. boot-failure recovery：隐藏 "Use local gateway"（web 没有本地后端进程）。
+      按钮行是纯 `flex flex-wrap gap-2`（全库唯一，其余均带 mt-* 前缀类），
+      local 按钮 = 行内倒数第二 + data-variant="secondary"；本地失败分支的
+      settings 按钮是 ghost variant，不会被命中。 */
+.z-\(--z-setup\) .flex.flex-wrap.gap-2 > button[data-variant="secondary"]:nth-last-child(2) {
+  display: none;
+}
