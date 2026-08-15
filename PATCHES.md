@@ -67,6 +67,20 @@ git subtree merge --prefix=vendor/hermes-desktop $NEW_FILTERED --squash
 | apps/web/tsconfig.json | `types: ["vite/client"]`（不自动 include 全部 @types）；paths 把 react/react-dom/jsx-runtime 直接钉到 root `../../node_modules/@types/*/index.d.ts` | pnpm 下 apps/web 与 root 各有一份 @types/react，jsx-runtime 从不同根解析 → 全库 "Two different types with this name exist" 伪错（M0 遗留，CLI 因 TS5101 提前退出从未暴露）；映射 .d.ts 文件（非包目录）让两处解析到同一实例。删 baseUrl 会切到 TS6 新 paths 模式产生模块身份重复，故保留 baseUrl + in-process typecheck 过滤 TS5101 |
 | apps/web/vite.config.ts | server.watch.ignored 加 `['**/.package.json.*', '**/*.tmpdir/**']` | Windows 下 pnpm 在 app root 下生成 .package.json.*.tmpdir 目录，chokidar 监听其在删除时崩溃（EBUSY）。注：此改动在 M1 会话开始前已存在于工作区（非本轮所作），合理，随本批提交 |
 
+### 4.2 非 vendor 配套（M2 批，代理 + token 模式）
+
+| 文件 | 改动 | 原因 |
+|------|------|------|
+| apps/proxy/ | 新增 Deno 薄代理（src/main.ts 单 handler 三分支 + src/relay.ts 转发核心 + 测试；oauth.ts 为 M3 占位） | M2 里程碑：静态托管 SPA + REST/WS 转发 + X-Hermes-Target 切换 + passphrase（PLAN §6 / ADR-0007）。deno.json 的 tasks 带 --allow-* 权限声明 |
+| apps/web/src/bridge/gateway.ts | gatewayBaseUrl/wsUrlFor 改为代理协议：proxyBaseUrl()（VITE_PROXY_URL → 生产同源 → 直连回退）；webApi/probeConnectionConfig 带 X-Hermes-Target 头；WS URL 代理模式带 ?target= | M2 换桥落点（handoff M2 §4）：只改这两个函数即可切换同源代理协议；真 gateway WS 端点为 /api/ws?token= |
+| apps/web/dev/mock-gateway.mjs | WS 路径 /gateway → /api/ws；新增 approval 模拟（消息含 "approval" 推 approval.request，approval.respond 后继续流式） | 与真 gateway 协议对齐（转发测试对照端）；M2 审批流验收 |
+| apps/web/dev/dev.mjs | 支持 --with-proxy：起 Deno 代理并注入 VITE_PROXY_URL（端口与 apps/proxy/src/main.ts 默认一致，用户改为 6722）；npm script dev:proxy | M2 dev 形态：浏览器经代理转发到 mock/真 gateway |
+| docs/adr/0007-proxy-forwarding-protocol.md | 新增 ADR | 代理转发面协议决策（X-Hermes-Target + WS target query） |
+| apps/web/src/bridge/gateway.test.ts | 断言更新（/api/ws 形态）+ 新增代理模式用例（VITE_PROXY_URL） | 桥语义变化回归 |
+| temp/m2-acceptance/ | CDP 验收脚本（cdp-chat-mock / cdp-chat-serve / cdp-approval + 输出） | M2 浏览器验收记录（与 m1-acceptance 同模式，headless Chrome 9224） |
+
+> 注：apps/proxy/src/main.ts 的 PORT 默认值由用户手工改为 6722（M2 期间），dev.mjs 的 VITE_PROXY_URL 与之保持一致。
+
 
 ## 5. 同步后必做
 
