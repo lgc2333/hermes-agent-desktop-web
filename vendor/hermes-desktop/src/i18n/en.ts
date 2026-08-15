@@ -733,6 +733,10 @@ export const en: Translations = {
       authSignedInOauth: 'This gateway uses OAuth. You are signed in; the session refreshes automatically.',
       authNeedsPassword: 'This gateway uses a username and password. Sign in to authorize this desktop app.',
       authNeedsOauth: provider => `This gateway uses OAuth. Sign in with ${provider} to authorize this desktop app.`,
+      authPasteHint:
+        'Remote or tunnel-free setup? After signing in, the browser lands on a failed 127.0.0.1 page — that is expected. Copy the full URL from the address bar and paste it here to complete sign-in.',
+      authPastePlaceholder: 'Paste the callback URL (?code=...&state=...)',
+      authPasteSubmit: 'Complete sign-in',
       tokenTitle: 'Session token',
       tokenDesc: 'The dashboard session token used for REST and WebSocket access. Leave blank to keep the saved token.',
       existingToken: value => `Existing token ${value}`,
@@ -2388,6 +2392,10 @@ export const en: Translations = {
     authPassword: 'Password',
     authNeedsPassword: 'This gateway uses a username and password.',
     authNeedsOauth: provider => `Sign in with ${provider} before testing this gateway.`,
+    authPasteHint:
+      'Remote or tunnel-free setup? After signing in, the browser lands on a failed 127.0.0.1 page — that is expected. Copy the full URL from the address bar and paste it here to complete sign-in.',
+    authPastePlaceholder: 'Paste the callback URL (?code=...&state=...)',
+    authPasteSubmit: 'Complete sign-in',
     authSignedIn: 'Browser sign-in completed.',
     connected: 'Connected',
     signIn: 'Sign in',

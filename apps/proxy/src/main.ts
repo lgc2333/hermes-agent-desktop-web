@@ -48,8 +48,10 @@ export interface ProxyOptions {
   allowedTargets?: string[]
   /** /api/proxy/meta 下发的默认 gateway URL（生产 compose env）。 */
   defaultGatewayUrl?: string
-  /** OAuth redirect_uri 覆盖（部署场景；默认 = 请求 origin）。 */
+  /** OAuth redirect_uri 覆盖（部署场景；默认 = loopback 字面量，ADR-0017）。 */
   oauthRedirectUri?: string
+  /** 代理监听端口（loopback redirect_uri 基址；默认 6722，ADR-0017）。 */
+  oauthLoopbackPort?: number
 }
 
 const MIME: Record<string, string> = {
@@ -407,7 +409,7 @@ export function createProxyHandler(
         parseCookies(request.headers.get('cookie'))[SESSION_COOKIE_NAME] ?? null,
     },
     {
-      origin: (request) => new URL(request.url).origin,
+      loopbackPort: options.oauthLoopbackPort,
       redirectUriOverride: () => options.oauthRedirectUri ?? '',
       allowTarget,
     },
@@ -422,12 +424,6 @@ export function createProxyHandler(
     },
     { allowTarget },
   )
-
-  const isOauthPath = (path: string): boolean =>
-    path === '/auth/native/start' ||
-    path === '/auth/native/callback' ||
-    path === '/auth/native/session' ||
-    path === '/auth/native/logout'
 
   return async (request: Request): Promise<Response> => {
     const url = new URL(request.url)
@@ -475,6 +471,11 @@ export function createProxyHandler(
     // 分支 5：OAuth 启动面（target 白名单校验在 oauth.ts 内，拒绝 403）。
     if (url.pathname === '/auth/native/start' && request.method === 'POST') {
       return withCors(await oauth.handleStart(request), request)
+    }
+    // ADR-0017：远端粘贴回跳（免检面，与 callback 同级——只交换内存中
+    // 已登记 state 的 code，不构成开放转发）。
+    if (url.pathname === '/auth/native/paste' && request.method === 'POST') {
+      return withCors(await oauth.handlePaste(request), request)
     }
     if (url.pathname === '/auth/native/logout' && request.method === 'POST') {
       return withCors(await oauth.handleLogout(request), request)
@@ -539,6 +540,7 @@ if (import.meta.main) {
     allowedTargets: parseAllowedTargets(Deno.env.get('WEB_PROXY_ALLOWED_TARGETS')),
     defaultGatewayUrl: Deno.env.get('WEB_DEFAULT_GATEWAY_URL') ?? undefined,
     oauthRedirectUri: Deno.env.get('WEB_OAUTH_REDIRECT_URI') ?? undefined,
+    oauthLoopbackPort: PORT,
   })
   Deno.serve({ port: PORT, hostname: HOST }, handler)
 }

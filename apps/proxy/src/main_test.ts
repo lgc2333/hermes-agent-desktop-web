@@ -562,14 +562,18 @@ async function oauthLogin(
   assertEquals(start.status, 200)
   const { authorizeUrl } = await start.json()
 
-  // 2) 模拟浏览器：跟随 authorize 302（gateway → redirect_uri = 代理 callback）。
+  // 2) 模拟浏览器：跟随 authorize 302（gateway → redirect_uri = 代理 loopback）。
   const hop = await fetch(authorizeUrl, { redirect: 'manual' })
   assertEquals(hop.status, 302)
   const location = hop.headers.get('location') ?? ''
-  assertEquals(location.startsWith(proxyUrl + '/auth/native/callback'), true)
+  // ADR-0017：start 的 redirect_uri 是 loopback 字面量（127.0.0.1:<port>，
+  // 非请求 origin）；dev 拓扑下 127.0.0.1 恰是本机代理——把端口改写为测试
+  // 代理的实际端口，继续模拟浏览器跟随回跳。
+  assert(/^http:\/\/127\.0\.0\.1:\d+\/auth\/native\/callback\?/.test(location))
+  const cbUrl = location.replace(/^http:\/\/127\.0\.0\.1:\d+/, proxyUrl)
 
   // 3) 浏览器到达代理 callback（同窗口导航，无自定义头）。
-  const cb = await fetch(location)
+  const cb = await fetch(cbUrl)
   assertEquals(cb.status, 200)
   const setCookie = cb.headers.get('set-cookie') ?? ''
   assertEquals(setCookie.includes('hermes_oauth_session='), true)
@@ -665,6 +669,72 @@ Deno.test('proxy: OAuth WS dial mints a ticket and replaces token', async () => 
     await target.close()
   }
 })
+Deno.test(
+  'proxy: OAuth paste-back login completes through /auth/native/paste (ADR-0017)',
+  async () => {
+    const target = startOauthTarget()
+    const proxy = await startProxy()
+    try {
+      // start → 远端浏览器拿不到 loopback 回调（跳本机 127.0.0.1 失败），
+      // 复制地址栏 URL 粘贴到 /auth/native/paste。
+      const start = await fetch(`${proxy.url}/auth/native/start`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ target: target.url }),
+      })
+      assertEquals(start.status, 200)
+      const { authorizeUrl } = await start.json()
+
+      // 跟随 authorize 302（gateway → redirect_uri = loopback 字面量）。
+      const hop = await fetch(authorizeUrl, { redirect: 'manual' })
+      assertEquals(hop.status, 302)
+      const location = hop.headers.get('location') ?? ''
+      assert(location.startsWith('http://127.0.0.1:'), location)
+      assert(location.includes('/auth/native/callback?code='), location)
+
+      // 用户粘贴完整回调 URL（含 code + state）。
+      const paste = await fetch(`${proxy.url}/auth/native/paste`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ target: target.url, url: location }),
+      })
+      assertEquals(paste.status, 200)
+      assertEquals((await paste.json()).ok, true)
+      const setCookie = paste.headers.get('set-cookie') ?? ''
+      assertEquals(setCookie.includes('hermes_oauth_session='), true)
+      assertEquals(setCookie.includes('HttpOnly'), true)
+      const cookie = setCookie.split(';')[0]
+
+      // 会话可用（免检查询）。
+      const session = await fetch(
+        `${proxy.url}/auth/native/session?target=${encodeURIComponent(target.url)}`,
+        { headers: { cookie } },
+      )
+      assertEquals((await session.json()).connected, true)
+
+      // 带 cookie 的 REST → Bearer 注入（与 callback 登录同一会话面）。
+      const echo = await fetch(`${proxy.url}/api/echo`, {
+        headers: { 'x-hermes-target': target.url, cookie },
+      })
+      assertEquals(echo.status, 200)
+      assertEquals((await echo.json()).auth, 'Bearer access-oauth-1')
+
+      // 伪造粘贴（未知 state）→ 400，不产生会话。
+      const forged = await fetch(`${proxy.url}/auth/native/paste`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          target: target.url,
+          url: '?code=x&state=forged',
+        }),
+      })
+      assertEquals(forged.status, 400)
+    } finally {
+      await proxy.close()
+      await target.close()
+    }
+  },
+)
 
 Deno.test(
   'proxy: /api/proxy/meta reports default gateway + allowed targets (public)',

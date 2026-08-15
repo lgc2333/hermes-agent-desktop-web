@@ -132,6 +132,13 @@ declare global {
       sshResolveHost: (host: string) => Promise<DesktopSshResolveResult>
       probeConnectionConfig: (remoteUrl: string) => Promise<DesktopConnectionProbeResult>
       oauthLoginConnectionConfig: (remoteUrl: string) => Promise<DesktopOauthLoginResult>
+      // ADR-0017: remote deployments can't reach the proxy's loopback redirect —
+      // the user pastes the address-bar callback URL (or bare ?code=..&state=..)
+      // and the proxy completes the same code exchange.
+      oauthPasteConnectionConfig: (
+        remoteUrl: string,
+        pasted: string
+      ) => Promise<DesktopOauthLoginResult>
       oauthLogoutConnectionConfig: (remoteUrl?: string) => Promise<DesktopOauthLogoutResult>
       // M5: username/password ("dashboard login") gateways — the app sends the
       // credentials once; the proxy holds the gateway session cookie in memory

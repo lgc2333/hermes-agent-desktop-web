@@ -103,5 +103,9 @@ _Avoid_: 登录流程（特指页面 cookie 登录）、代理 target allowlist�
 _Avoid_: 默认配置（太泛）
 
 **Loopback redirect_uri**:
-上游 `/auth/native/authorize` 只接受 127.0.0.1/::1 字面量 redirect_uri（RFC 8252 §7.3，安全边界、无放宽渠道）；因此 OAuth 登录要求浏览器与代理同机或经 SSH 隧道回连 loopback。详见 README.md「安全模型」。
+上游 `/auth/native/authorize` 只接受 127.0.0.1/::1 字面量 redirect_uri（RFC 8252 §7.3，安全边界、无放宽渠道）；因此 OAuth 登录要求浏览器与代理同机，或经 Paste-back 手动搬回 code。详见 README.md「安全模型」。
+
+**Paste-back（粘贴回跳）**:
+远端部署完成 Native OAuth 的方式（ADR-0017）：start 默认用 loopback 字面量 redirect_uri，浏览器登录后跳到本机 127.0.0.1 失败（预期），用户复制地址栏完整回调 URL（含 code+state，或裸 query）经 `/auth/native/paste` 粘贴回代理；代理校验 state + target 后走与 callback 相同的 code 交换。安全属性不变（PKCE/state/单次/短 TTL 由 gateway 强制）。
+_Avoid_: 隧道（已不需要）、登录流程（太泛）
 _Avoid_: localhost（上游明确拒绝）、"可配置的允许列表"（不存在）

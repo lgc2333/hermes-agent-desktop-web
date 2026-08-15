@@ -17,6 +17,7 @@
 
 # 3. 跑脚本
 node apps/web/e2e/cdp-oauth.mjs          # 桥层 OAuth 全链路
+node apps/web/e2e/cdp-oauth-paste.mjs    # paste-back 登录（ADR-0017，远端免隧道）
 node apps/web/e2e/cdp-ui.mjs             # UI 层 OAuth + 聊天 + 刷新保持
 node apps/web/e2e/cdp-reconnect-a.mjs    # token 断连 → 自动重连
 node apps/web/e2e/cdp-reconnect-b.mjs    # OAuth + 代理重启会话丢失

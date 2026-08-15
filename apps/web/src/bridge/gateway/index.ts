@@ -217,8 +217,21 @@ export class GatewayAdapter {
     const current = getPrimaryConnection()
     const next = this.applyConfigToRecord(current, payload)
     upsertConnection(next)
+    const config = this.toConfig(next)
 
-    return this.toConfig(next)
+    // M5：与 getConnectionConfig 同款——OAuth/密码会话状态查代理实时会话，
+    // 而不是注册表快照硬编码 false。否则点"保存并重连"（apply 委托本方法）
+    // 返回的 config 恒为未连接，设置页账密输入框（!oauthConnected）错误残留，
+    // 即使代理 jar 里已有有效会话（WS 已连上）。
+    if (config.remoteAuthMode === 'oauth') {
+      const session = await this.oauth.sessionStatus(config.remoteUrl)
+      config.remoteOauthConnected = session.connected
+      if (session.connected && session.tokenPreview) {
+        config.remoteTokenPreview = session.tokenPreview
+      }
+    }
+
+    return config
   }
 
   async applyConnectionConfig(
@@ -325,6 +338,14 @@ export class GatewayAdapter {
     remoteUrl: string,
   ): Promise<DesktopOauthLoginResult> {
     return this.oauth.login(remoteUrl)
+  }
+
+  // ADR-0017：远端部署粘贴回跳（浏览器地址栏回调 URL → 代理完成交换）。
+  async oauthPasteConnectionConfig(
+    remoteUrl: string,
+    pasted: string,
+  ): Promise<DesktopOauthLoginResult> {
+    return this.oauth.paste(remoteUrl, pasted)
   }
 
   async oauthLogoutConnectionConfig(

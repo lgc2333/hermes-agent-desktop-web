@@ -5,13 +5,17 @@
  * Cloud/Privy 由 gateway 的 auth_flows 自动适配），代理负责：
  *
  *   1. `/auth/native/start`    —— 生成 PKCE pair + state，构建 gateway
- *      authorize URL 返回给浏览器（浏览器开新窗口导航过去）；
- *   2. `/auth/native/callback` —— gateway 完成授权后 302 回代理（redirect_uri
- *      指向代理 origin）；代理校验 state（CSRF），用 code + verifier 换
+ *      authorize URL 返回给浏览器（浏览器开新窗口导航过去）；redirect_uri
+ *      默认是代理自身的 loopback 字面量（ADR-0017，gateway 只收 loopback）；
+ *   2. `/auth/native/callback` —— gateway 完成授权后 302 回代理（dev 拓扑
+ *      弹窗自动关闭）；代理校验 state（CSRF），用 code + verifier 换
  *      token set，存进程内存，并 Set-Cookie httpOnly 会话；
- *   3. `/auth/native/session`  —— 浏览器带 cookie 查询连接状态（不暴露
+ *   3. `/auth/native/paste`    —— 远端部署的粘贴回跳（ADR-0017）：浏览器
+ *      跳到本机 127.0.0.1 失败（预期），用户把地址栏完整 URL 粘贴回来，
+ *      代理校验 state + target 后走与 callback 完全相同的 code 交换路径；
+ *   4. `/auth/native/session`  —— 浏览器带 cookie 查询连接状态（不暴露
  *      token 本体，只回显 provider/userId/过期时间/前 4 位预览）；
- *   4. `/auth/native/logout`   —— 清内存 token set + 清 cookie。
+ *   5. `/auth/native/logout`   —— 清内存 token set + 清 cookie。
  *
  * 凭证生命周期：token set 只存在于代理进程内存（重启即失效，PLAN §6 无
  * 持久化），浏览器只持有一个 httpOnly session cookie（值 = 内存键）。
@@ -30,10 +34,12 @@
  *   POST <target>/auth/native/refresh { refresh_token, provider? } → 同上
  *   POST <target>/api/auth/ws-ticket (Bearer) → { ticket, ttl_seconds }
  *
- * 已知限制（M4 部署处理）：真 gateway 校验 redirect_uri 必须是 loopback
- * （127.0.0.1/::1，见 native_flow 的 _validate_loopback_redirect_uri），因此
- * dev 拓扑（代理与浏览器同机）开箱即用；代理在远端服务器时需 gateway 侧
- * 放宽或用 WEB_OAUTH_REDIRECT_URI 覆盖（若 gateway 接受非 loopback）。
+ * 拓扑（ADR-0017 paste-back）：真 gateway 校验 redirect_uri 必须是 loopback
+ * （127.0.0.1/::1，见 native_flow 的 _validate_loopback_redirect_uri），故
+ * start 默认用代理自身的 loopback 字面量 127.0.0.1:<port>——dev（浏览器与
+ * 代理同机）弹窗自动完成；远端部署时浏览器跳到本机 127.0.0.1 失败（预期），
+ * 用户复制地址栏完整 URL 经 /auth/native/paste 粘贴完成，无需隧道。
+ * WEB_OAUTH_REDIRECT_URI 仍可整体覆盖 redirect_uri（部署场景）。
  */
 
 /** PKCE pair（S256，RFC 7636）。verifier 43 chars，challenge 43 chars。 */
@@ -102,6 +108,8 @@ const DEFAULT_PENDING_TTL_MS = 10 * 60_000 // 与 gateway 的 _PENDING_TTL_SECON
 const DEFAULT_REFRESH_SKEW_SECONDS = 60
 const TOKEN_EXCHANGE_TIMEOUT_MS = 15_000
 const WS_TICKET_TIMEOUT_MS = 10_000
+/** ADR-0017：loopback redirect_uri 默认端口（与 main.ts PORT 默认 6722 对齐）。 */
+const DEFAULT_LOOPBACK_PORT = 6722
 
 // ── PKCE / 随机数（Web Crypto，Deno 原生）──────────────────────────────────
 
@@ -193,17 +201,29 @@ export function parseCallback(
   expectedState: string,
 ): { code: string } {
   const parsed = new URL(requestUrl, 'http://127.0.0.1')
-  const error = parsed.searchParams.get('error')
+
+  return parseCallbackQuery(parsed.searchParams, expectedState)
+}
+
+/**
+ * 从 URLSearchParams 提取 code 并校验 state（callback 与 paste 共享）。
+ * state 不匹配抛错（CSRF，RFC 6749 §10.12）；error 参数原样透传。
+ */
+export function parseCallbackQuery(
+  search: URLSearchParams,
+  expectedState: string,
+): { code: string } {
+  const error = search.get('error')
 
   if (error) {
-    const desc = parsed.searchParams.get('error_description') || ''
+    const desc = search.get('error_description') || ''
     throw new Error(
       `Gateway rejected native login: ${error}${desc ? ` (${desc})` : ''}`,
     )
   }
 
-  const code = parsed.searchParams.get('code') || ''
-  const state = parsed.searchParams.get('state') || ''
+  const code = search.get('code') || ''
+  const state = search.get('state') || ''
 
   if (!code) {
     throw new Error('Native callback missing authorization code')
@@ -214,6 +234,36 @@ export function parseCallback(
   }
 
   return { code }
+}
+
+/**
+ * 解析用户粘贴的回跳内容（完整 URL 或裸 query，容忍前后空白）。
+ * 返回 code + state；不在此校验 state——paste 端点按 state 查 pending
+ * 时完成 CSRF 校验（与 callback 同一条验证链）。
+ */
+export function parsePastedCallback(raw: string): { code: string; state: string } {
+  const trimmed = raw.trim()
+
+  if (!trimmed) {
+    throw new Error('Pasted callback is empty')
+  }
+
+  let parsed: URL
+  try {
+    // 完整 URL 用自身 origin；裸 query（如 ?code=..&state=..）以 127.0.0.1 兜底解析。
+    parsed = new URL(trimmed, 'http://127.0.0.1')
+  } catch {
+    throw new Error('Invalid pasted callback URL')
+  }
+
+  const code = parsed.searchParams.get('code') || ''
+  const state = parsed.searchParams.get('state') || ''
+
+  if (!code) {
+    throw new Error('Pasted callback missing authorization code')
+  }
+
+  return { code, state }
 }
 
 /** 规范化 `/auth/native/token`（或 refresh）JSON 响应；形状非法抛错。 */
@@ -537,6 +587,8 @@ export interface OauthEndpoints {
   handleStart: (request: Request) => Promise<Response>
   /** GET /auth/native/callback —— gateway 回跳；Set-Cookie + 完成页。 */
   handleCallback: (request: Request) => Promise<Response>
+  /** POST /auth/native/paste —— 远端粘贴回跳（ADR-0017）；Set-Cookie + JSON。 */
+  handlePaste: (request: Request) => Promise<Response>
   /** GET /auth/native/session —— 状态查询（cookie + ?target=）。 */
   handleSession: (request: Request) => Promise<Response>
   /** POST /auth/native/logout —— 清会话 + 清 cookie。 */
@@ -568,28 +620,57 @@ function json(
 }
 
 /**
- * 组装 OAuth 端点。`origin` = 代理对外 origin（redirect_uri 基址）；
- * `redirectUriOverride`（env WEB_OAUTH_REDIRECT_URI）可覆盖（部署场景）。
+ * 用 code + 已登记的 state 完成交换（callback 与 paste 共享，ADR-0017）。
+ * 取 pending（CSRF：只有代理自己生成过的 state 才可交换）→ POST
+ * /auth/native/token（code + verifier）→ 落内存会话。失败清 pending
+ * （code 单次使用，重试无意义）。
+ */
+async function exchangeCode(
+  store: OAuthStore,
+  state: string,
+  code: string,
+): Promise<NativeTokenSet> {
+  const pending = store.getPending(state)
+
+  if (!pending) {
+    throw new Error('Unknown or expired login state')
+  }
+
+  const body = await store.deps.postJson(
+    nativeTokenUrl(pending.target),
+    { code, code_verifier: pending.verifier },
+    { timeoutMs: TOKEN_EXCHANGE_TIMEOUT_MS },
+  )
+  const tokenSet = parseTokenResponse(body)
+  store.storeSession(pending.sessionKey, pending.target, tokenSet)
+  store.removePending(state)
+
+  return tokenSet
+}
+
+/**
+ * 组装 OAuth 端点。`loopbackPort` = 代理监听端口（loopback redirect_uri
+ * 基址，默认 6722，ADR-0017）；`redirectUriOverride`（env
+ * WEB_OAUTH_REDIRECT_URI）可整体覆盖（部署场景）。
  */
 export function createOauthEndpoints(
   store: OAuthStore,
   ctx: OauthHandlerContext,
   opts: {
-    origin: (request: Request) => string
+    /** 代理监听端口；loopback redirect_uri 用（默认 6722）。 */
+    loopbackPort?: number
     redirectUriOverride?: () => string
     /** 目标白名单（ADR-0015）：返回 false 时 start 拒绝 403。 */
     allowTarget?: (target: string) => boolean
-  } = {
-    origin: () => '',
-  },
+  } = {},
 ): OauthEndpoints {
-  const redirectUriFor = (request: Request): string => {
+  const redirectUriFor = (): string => {
     const override = opts.redirectUriOverride?.()
     if (override && override.trim()) {
       return override.trim()
     }
 
-    return `${opts.origin(request)}/auth/native/callback`
+    return `http://127.0.0.1:${opts.loopbackPort ?? DEFAULT_LOOPBACK_PORT}/auth/native/callback`
   }
 
   return {
@@ -622,7 +703,7 @@ export function createOauthEndpoints(
       }
 
       try {
-        const { authorizeUrl } = await store.begin(normalized, redirectUriFor(request))
+        const { authorizeUrl } = await store.begin(normalized, redirectUriFor())
 
         return json(200, { authorizeUrl })
       } catch (error) {
@@ -648,14 +729,7 @@ export function createOauthEndpoints(
         const { code } = parseCallback(url.pathname + url.search, state)
         // code 有 TTL（gateway 侧 120s），callback 到交换之间的窗口足够；
         // 交换失败清掉 pending（code 单次使用，重试无意义）。
-        const body = await store.deps.postJson(
-          nativeTokenUrl(pending.target),
-          { code, code_verifier: pending.verifier },
-          { timeoutMs: TOKEN_EXCHANGE_TIMEOUT_MS },
-        )
-        const tokenSet = parseTokenResponse(body)
-        store.storeSession(pending.sessionKey, pending.target, tokenSet)
-        store.removePending(state)
+        await exchangeCode(store, state, code)
 
         return new Response(DONE_HTML, {
           status: 200,
@@ -676,6 +750,72 @@ export function createOauthEndpoints(
             headers: { 'Content-Type': 'text/html; charset=utf-8' },
           },
         )
+      }
+    },
+
+    /**
+     * POST /auth/native/paste —— 远端部署的粘贴回跳（ADR-0017）。
+     * body { target, url }：url = 用户从地址栏复制的完整回调 URL（或裸
+     * query）；按 state 查 pending（CSRF 与 callback 同一条验证链），
+     * target 必须匹配，随后走与 callback 完全相同的 code 交换。
+     */
+    async handlePaste(request: Request): Promise<Response> {
+      let target = ''
+      let pasted = ''
+
+      try {
+        const body = (await request.json().catch(() => ({}))) as {
+          target?: unknown
+          url?: unknown
+        }
+        target = String(body.target ?? '')
+        pasted = String(body.url ?? '')
+      } catch {
+        // JSON 解析失败按空处理（url required 400）。
+      }
+
+      if (!pasted) {
+        return json(400, { detail: 'url required' })
+      }
+
+      let state = ''
+
+      try {
+        const parsed = parsePastedCallback(pasted)
+        state = parsed.state
+        const pending = store.getPending(state)
+
+        if (!pending) {
+          return json(400, { detail: 'Unknown or expired login state' })
+        }
+
+        // target 匹配校验（防把 A 网关的 code 贴到 B 网关的 pending 上）。
+        if (target) {
+          let normalized = ''
+          try {
+            normalized = normalizeTargetUrl(target)
+          } catch {
+            // 非法 target 走 mismatch。
+          }
+          if (!normalized || normalized !== pending.target) {
+            return json(400, { detail: 'target mismatch' })
+          }
+        }
+
+        await exchangeCode(store, state, parsed.code)
+
+        return json(200, { ok: true }, {
+          'Cache-Control': 'no-store',
+          'Set-Cookie': sessionCookieValue(pending.sessionKey),
+        })
+      } catch (error) {
+        if (state) {
+          store.removePending(state)
+        }
+
+        return json(400, {
+          detail: error instanceof Error ? error.message : String(error),
+        })
       }
     },
 

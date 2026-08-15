@@ -616,6 +616,9 @@ export interface Translations {
       authSignedInOauth: string
       authNeedsPassword: string
       authNeedsOauth: (provider: string) => string
+      authPasteHint: string
+      authPastePlaceholder: string
+      authPasteSubmit: string
       tokenTitle: string
       tokenDesc: string
       existingToken: (value: string) => string
@@ -2001,6 +2004,9 @@ export interface Translations {
     authPassword: string
     authNeedsPassword: string
     authNeedsOauth: (provider: string) => string
+    authPasteHint: string
+    authPastePlaceholder: string
+    authPasteSubmit: string
     authSignedIn: string
     connected: string
     signIn: string

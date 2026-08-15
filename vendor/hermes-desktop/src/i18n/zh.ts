@@ -934,6 +934,10 @@ export const zh: Translations = {
       authSignedInOauth: '此网关使用 OAuth。你已登录，会话会自动刷新。',
       authNeedsPassword: '此网关使用用户名和密码。请登录以授权此桌面应用。',
       authNeedsOauth: provider => `此网关使用 OAuth。请使用 ${provider} 登录以授权此桌面应用。`,
+      authPasteHint:
+        '远程或无隧道环境？登录后浏览器会跳到 127.0.0.1 并显示连接失败——这是正常的。复制地址栏里的完整 URL 粘贴到这里完成登录。',
+      authPastePlaceholder: '粘贴回调 URL（含 ?code=...&state=...）',
+      authPasteSubmit: '完成登录',
       tokenTitle: '会话 token',
       tokenDesc: '用于 REST 和 WebSocket 访问的 dashboard 会话 token。留空则保留已保存的 token。',
       existingToken: value => `现有 token ${value}`,
@@ -2572,6 +2576,10 @@ export const zh: Translations = {
     authPassword: '密码',
     authNeedsPassword: '此网关使用用户名和密码。',
     authNeedsOauth: provider => `测试此网关前请先使用 ${provider} 登录。`,
+    authPasteHint:
+      '远程或无隧道环境？登录后浏览器会跳到 127.0.0.1 并显示连接失败——这是正常的。复制地址栏里的完整 URL 粘贴到这里完成登录。',
+    authPastePlaceholder: '粘贴回调 URL（含 ?code=...&state=...）',
+    authPasteSubmit: '完成登录',
     authSignedIn: '浏览器登录已完成。',
     connected: '已连接',
     signIn: '登录',

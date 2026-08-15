@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tip } from '@/components/ui/tooltip'
 import type { DesktopAuthProvider, DesktopCloudAgent, DesktopCloudOrg, DesktopConnectionProbeResult } from '@/global'
@@ -168,6 +169,10 @@ export function GatewaySettings({ embedded = false }: { embedded?: boolean } = {
   // M5: password ("dashboard login") gateways — username/password form state.
   const [authUsername, setAuthUsername] = useState('')
   const [authPassword, setAuthPassword] = useState('')
+  // ADR-0017: remote deployments can't reach the proxy's loopback redirect —
+  // the user pastes the address-bar callback URL to complete sign-in.
+  const [pastedUrl, setPastedUrl] = useState('')
+  const [pasteSubmitting, setPasteSubmitting] = useState(false)
   const [lastTest, setLastTest] = useState<null | string>(null)
   const [sshHostSuggestions, setSshHostSuggestions] = useState<string[]>([])
   const [sshCustomHost, setSshCustomHost] = useState(false)
@@ -619,6 +624,35 @@ export function GatewaySettings({ embedded = false }: { embedded?: boolean } = {
     } finally {
       if (seq === signingSeq.current) {
         setSigningIn(false)
+      }
+    }
+  }
+
+  // ADR-0017: remote deployments — the browser lands on a failed 127.0.0.1
+  // page after signing in (the proxy's loopback redirect is unreachable). The
+  // user copies the address-bar URL and pastes it here; the proxy completes
+  // the same code exchange as the popup callback.
+  const pasteSignIn = async () => {
+    const seq = ++signingSeq.current
+
+    if (!trimmedUrl || !pastedUrl.trim()) {
+      return
+    }
+
+    setPasteSubmitting(true)
+
+    try {
+      await window.hermesDesktop.oauthPasteConnectionConfig(trimmedUrl, pastedUrl)
+      const refreshed = await window.hermesDesktop.getConnectionConfig(scope)
+      acceptSavedConfig(refreshed)
+      notify({ kind: 'success', title: g.signedIn, message: g.connectedTo(providerLabel) })
+    } catch (err) {
+      if (seq === signingSeq.current) {
+        notifyError(err, g.signInFailed)
+      }
+    } finally {
+      if (seq === signingSeq.current) {
+        setPasteSubmitting(false)
       }
     }
   }
@@ -1413,6 +1447,31 @@ export function GatewaySettings({ embedded = false }: { embedded?: boolean } = {
               }
               title={g.authTitle}
             />
+          ) : null}
+
+          {/* ADR-0017: tunnel-free fallback — after signing in, a remote browser
+              lands on a failed 127.0.0.1 page (expected). Paste the address-bar
+              URL here; the proxy completes the same code exchange. */}
+          {state.mode === 'remote' && authResolved && authMode === 'oauth' && !isPasswordProvider && !oauthConnected ? (
+            <div className="mt-2 grid gap-2 rounded-xl border border-(--ui-stroke-tertiary) p-3">
+              <p className="text-xs text-(--ui-text-tertiary)">{g.authPasteHint}</p>
+              <Textarea
+                className="min-h-16 resize-y"
+                disabled={signingIn || state.envOverride}
+                onChange={event => setPastedUrl(event.target.value)}
+                placeholder={g.authPastePlaceholder}
+                value={pastedUrl}
+              />
+              <Button
+                disabled={signingIn || state.envOverride || !trimmedUrl || !pastedUrl.trim()}
+                onClick={() => void pasteSignIn()}
+                size="sm"
+                variant="outline"
+              >
+                {pasteSubmitting ? <Loader2 className="size-3 animate-spin" /> : null}
+                {g.authPasteSubmit}
+              </Button>
+            </div>
           ) : null}
 
           {/* M5: password ("dashboard login") gateways get a username/password

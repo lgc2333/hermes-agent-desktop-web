@@ -14,6 +14,7 @@ import {
   nativeTokenUrl,
   parseCallback,
   parseCookies,
+  parsePastedCallback,
   parseTokenResponse,
   sessionCookieValue,
   tokenNeedsRefresh,
@@ -391,7 +392,7 @@ function makeEndpoints(store: OAuthStore) {
         parseCookies(request.headers.get('cookie'))['hermes_oauth_session'] ?? null,
     },
     {
-      origin: () => 'http://127.0.0.1:6722',
+      loopbackPort: 6722,
     },
   )
 }
@@ -534,6 +535,192 @@ Deno.test('handleLogout: clears session and cookie', async () => {
   assertEquals(store.sessionCount, 0)
   const setCookie = res.headers.get('set-cookie') ?? ''
   assertEquals(setCookie.includes('Max-Age=0'), true)
+})
+
+// ── paste-back 粘贴回跳（ADR-0017）────────────────────────────────────────
+
+Deno.test('parsePastedCallback: full URL / bare query / trimmed input', () => {
+  const full = parsePastedCallback(
+    '  http://127.0.0.1:6722/auth/native/callback?code=gw-code&state=st  ',
+  )
+  assertEquals(full, { code: 'gw-code', state: 'st' })
+  const bare = parsePastedCallback('?code=gw-code&state=st')
+  assertEquals(bare, { code: 'gw-code', state: 'st' })
+})
+
+Deno.test('parsePastedCallback: rejects empty / missing code / invalid URL', () => {
+  assertThrows(() => parsePastedCallback('   '), Error, 'empty')
+  assertThrows(
+    () => parsePastedCallback('?state=st'),
+    Error,
+    'missing authorization code',
+  )
+  assertThrows(() => parsePastedCallback('http://[bad'), Error, 'Invalid')
+})
+
+Deno.test(
+  'handleStart: default redirect_uri is the proxy loopback literal (ADR-0017)',
+  async () => {
+    const store = new OAuthStore(makeDeps())
+    const endpoints = createOauthEndpoints(store, { readSessionKey: () => null })
+    const ok = await endpoints.handleStart(
+      new Request('http://127.0.0.1:6722/auth/native/start', {
+        method: 'POST',
+        body: JSON.stringify({ target: 'http://gw:9119' }),
+      }),
+    )
+    assertEquals(ok.status, 200)
+    const { authorizeUrl } = await ok.json()
+    assertEquals(
+      new URL(authorizeUrl).searchParams.get('redirect_uri'),
+      'http://127.0.0.1:6722/auth/native/callback',
+    )
+  },
+)
+
+Deno.test(
+  'handlePaste: pasting the callback URL completes the login (cookie + exchange)',
+  async () => {
+    const deps = makeDeps()
+    const store = new OAuthStore(deps)
+    const endpoints = makeEndpoints(store)
+
+    const start = await endpoints.handleStart(
+      new Request('http://127.0.0.1:6722/auth/native/start', {
+        method: 'POST',
+        body: JSON.stringify({ target: 'http://gw:9119' }),
+      }),
+    )
+    const { authorizeUrl } = await start.json()
+    const state = new URL(authorizeUrl).searchParams.get('state')!
+
+    const res = await endpoints.handlePaste(
+      new Request('http://127.0.0.1:6722/auth/native/paste', {
+        method: 'POST',
+        body: JSON.stringify({
+          target: 'http://gw:9119',
+          url: `http://127.0.0.1:6722/auth/native/callback?code=gw-code&state=${state}`,
+        }),
+      }),
+    )
+    assertEquals(res.status, 200)
+    assertEquals((await res.json()).ok, true)
+    const setCookie = res.headers.get('set-cookie') ?? ''
+    assertEquals(setCookie.includes('hermes_oauth_session='), true)
+    // 交换走 gateway /auth/native/token——与 callback 同一条验证链。
+    assertEquals(deps.calls.length, 1)
+    assertEquals(deps.calls[0].url, 'http://gw:9119/auth/native/token')
+    const tokenBody = deps.calls[0].body as Record<string, unknown>
+    assertEquals(tokenBody.code, 'gw-code')
+    assertEquals(typeof tokenBody.code_verifier, 'string')
+    assertEquals(store.sessionCount, 1)
+    assertEquals(store.pendingCount, 0)
+  },
+)
+
+Deno.test('handlePaste: bare ?code=..&state=.. query works', async () => {
+  const store = new OAuthStore(makeDeps())
+  const endpoints = makeEndpoints(store)
+  const start = await endpoints.handleStart(
+    new Request('http://127.0.0.1:6722/auth/native/start', {
+      method: 'POST',
+      body: JSON.stringify({ target: 'http://gw:9119' }),
+    }),
+  )
+  const { authorizeUrl } = await start.json()
+  const state = new URL(authorizeUrl).searchParams.get('state')!
+
+  const res = await endpoints.handlePaste(
+    new Request('http://127.0.0.1:6722/auth/native/paste', {
+      method: 'POST',
+      body: JSON.stringify({ target: 'http://gw:9119', url: `?code=gw-code&state=${state}` }),
+    }),
+  )
+  assertEquals(res.status, 200)
+  assertEquals(store.sessionCount, 1)
+})
+
+Deno.test('handlePaste: forged/unknown state rejected (CSRF), no exchange', async () => {
+  const deps = makeDeps()
+  const store = new OAuthStore(deps)
+  const endpoints = makeEndpoints(store)
+
+  const res = await endpoints.handlePaste(
+    new Request('http://127.0.0.1:6722/auth/native/paste', {
+      method: 'POST',
+      body: JSON.stringify({
+        target: 'http://gw:9119',
+        url: '?code=x&state=forged',
+      }),
+    }),
+  )
+  assertEquals(res.status, 400)
+  assertEquals(deps.calls.length, 0)
+  assertEquals(store.sessionCount, 0)
+})
+
+Deno.test('handlePaste: target mismatch rejected, pending kept for retry', async () => {
+  const store = new OAuthStore(makeDeps())
+  const endpoints = makeEndpoints(store)
+  const start = await endpoints.handleStart(
+    new Request('http://127.0.0.1:6722/auth/native/start', {
+      method: 'POST',
+      body: JSON.stringify({ target: 'http://gw:9119' }),
+    }),
+  )
+  const { authorizeUrl } = await start.json()
+  const state = new URL(authorizeUrl).searchParams.get('state')!
+
+  const res = await endpoints.handlePaste(
+    new Request('http://127.0.0.1:6722/auth/native/paste', {
+      method: 'POST',
+      body: JSON.stringify({
+        target: 'http://other:1',
+        url: `?code=gw-code&state=${state}`,
+      }),
+    }),
+  )
+  assertEquals(res.status, 400)
+  assertEquals(store.sessionCount, 0)
+  // pending 保留：用户改对 target 后仍可粘贴（或走 callback）。
+  assertEquals(store.pendingCount, 1)
+})
+
+Deno.test('handlePaste: state mismatch in pasted URL rejected (CSRF)', async () => {
+  const store = new OAuthStore(makeDeps())
+  const endpoints = makeEndpoints(store)
+  const start = await endpoints.handleStart(
+    new Request('http://127.0.0.1:6722/auth/native/start', {
+      method: 'POST',
+      body: JSON.stringify({ target: 'http://gw:9119' }),
+    }),
+  )
+  const { authorizeUrl } = await start.json()
+  const state = new URL(authorizeUrl).searchParams.get('state')!
+
+  const res = await endpoints.handlePaste(
+    new Request('http://127.0.0.1:6722/auth/native/paste', {
+      method: 'POST',
+      body: JSON.stringify({
+        target: 'http://gw:9119',
+        url: `?code=gw-code&state=evil-${state}`,
+      }),
+    }),
+  )
+  assertEquals(res.status, 400)
+  assertEquals(store.sessionCount, 0)
+})
+
+Deno.test('handlePaste: empty url → 400', async () => {
+  const store = new OAuthStore(makeDeps())
+  const endpoints = makeEndpoints(store)
+  const res = await endpoints.handlePaste(
+    new Request('http://127.0.0.1:6722/auth/native/paste', {
+      method: 'POST',
+      body: JSON.stringify({ target: 'http://gw:9119', url: '' }),
+    }),
+  )
+  assertEquals(res.status, 400)
 })
 
 // ── 边界 ────────────────────────────────────────────────────────────────────

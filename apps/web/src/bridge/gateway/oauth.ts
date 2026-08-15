@@ -89,6 +89,31 @@ export class OauthBroker {
     }
   }
 
+  /**
+   * ADR-0017：远端部署的粘贴回跳。浏览器跳到本机 127.0.0.1 失败（预期），
+   * 用户复制地址栏完整回调 URL（或裸 ?code=..&state=..）粘贴回来；代理
+   * 校验 state + target 后完成与 callback 相同的 code 交换并 Set-Cookie。
+   * 失败抛 readable 错误（带代理 detail），渲染层 notifyError 展示。
+   */
+  async paste(remoteUrl: string, pasted: string): Promise<DesktopOauthLoginResult> {
+    const proxy = proxyBaseUrl()
+    const baseUrl = remoteUrl.replace(/\/+$/, '')
+
+    const res = await proxyFetch(`${proxy}/auth/native/paste`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target: baseUrl, url: pasted }),
+    })
+
+    if (!res.ok) {
+      const body = (await res.json().catch(() => null)) as { detail?: string } | null
+
+      throw new Error(body?.detail || `OAuth paste failed (${res.status})`)
+    }
+
+    return { ok: true, baseUrl, connected: true }
+  }
+
   async logout(remoteUrl?: string): Promise<DesktopOauthLogoutResult> {
     const proxy = proxyBaseUrl()
 

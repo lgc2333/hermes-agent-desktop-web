@@ -464,6 +464,43 @@ describe('M3 OAuth (proxy mode)', () => {
     expect(fetchMock.mock.calls[0][1].credentials).toBe('include')
   })
 
+  it('oauthPasteConnectionConfig posts the pasted callback URL to the proxy', async () => {
+    const adapter = new GatewayAdapter()
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { ok: true }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await adapter.oauthPasteConnectionConfig(
+      'http://127.0.0.1:9119',
+      'http://127.0.0.1:6722/auth/native/callback?code=gw-code&state=st1',
+    )
+
+    expect(result).toEqual({
+      ok: true,
+      baseUrl: 'http://127.0.0.1:9119',
+      connected: true,
+    })
+    expect(fetchMock.mock.calls[0][0]).toBe('http://127.0.0.1:6722/auth/native/paste')
+    expect(fetchMock.mock.calls[0][1].credentials).toBe('include')
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+      target: 'http://127.0.0.1:9119',
+      url: 'http://127.0.0.1:6722/auth/native/callback?code=gw-code&state=st1',
+    })
+  })
+
+  it('oauthPasteConnectionConfig surfaces the proxy detail on failure', async () => {
+    const adapter = new GatewayAdapter()
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        jsonResponse(400, { detail: 'Unknown or expired login state' }),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(
+      adapter.oauthPasteConnectionConfig('http://127.0.0.1:9119', '?code=x&state=forged'),
+    ).rejects.toThrow('Unknown or expired login state')
+  })
+
   it('getConnectionConfig prefills default gateway from /api/proxy/meta (untouched registry)', async () => {
     const adapter = new GatewayAdapter()
     const fetchMock = vi.fn().mockResolvedValueOnce(
@@ -484,6 +521,19 @@ describe('M3 OAuth (proxy mode)', () => {
 
   it('getConnectionConfig queries oauth session status for oauth connections', async () => {
     const adapter = new GatewayAdapter()
+    // save 现在也查实时会话（M5 修复）——先给她一个空会话 stub，测试保持封闭。
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse(200, {
+          connected: false,
+          provider: '',
+          userId: '',
+          expiresAt: 0,
+          tokenPreview: null,
+        }),
+      ),
+    )
     await adapter.saveConnectionConfig({
       mode: 'remote',
       remoteUrl: 'http://127.0.0.1:9119',
@@ -511,6 +561,19 @@ describe('M3 OAuth (proxy mode)', () => {
     // M4 错误/重连态：代理重启后内存 token set 清空，但浏览器 httpOnly cookie
     // 仍在——session 查询必须如实回未连接（UI 回到 Sign in，而不是假 connected）。
     const adapter = new GatewayAdapter()
+    // save 现在也查实时会话（M5 修复）——先给她一个空会话 stub，测试保持封闭。
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse(200, {
+          connected: false,
+          provider: '',
+          userId: '',
+          expiresAt: 0,
+          tokenPreview: null,
+        }),
+      ),
+    )
     await adapter.saveConnectionConfig({
       mode: 'remote',
       remoteUrl: 'http://127.0.0.1:9119',
@@ -547,6 +610,19 @@ describe('M3 OAuth (proxy mode)', () => {
       remoteAuthMode: 'token',
       remoteToken: 'fresh-token',
     })
+    // save 现在也查实时会话（M5 修复）——补空会话 stub，测试保持封闭。
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse(200, {
+          connected: false,
+          provider: '',
+          userId: '',
+          expiresAt: 0,
+          tokenPreview: null,
+        }),
+      ),
+    )
     const switched = await adapter.saveConnectionConfig({
       mode: 'remote',
       remoteUrl: 'http://127.0.0.1:5199',
@@ -555,6 +631,121 @@ describe('M3 OAuth (proxy mode)', () => {
 
     expect(switched.remoteTokenSet).toBe(false)
     expect(loadRegistry().connections[0].token).toBe('')
+  })
+
+  it('saveConnectionConfig refreshes the live oauth session (no false disconnected after save)', async () => {
+    const adapter = new GatewayAdapter()
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse(200, {
+        connected: true,
+        provider: 'nous',
+        userId: 'u1',
+        expiresAt: 9999,
+        tokenPreview: 'mock…',
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const saved = await adapter.saveConnectionConfig({
+      mode: 'remote',
+      remoteUrl: 'http://127.0.0.1:9119',
+      remoteAuthMode: 'oauth',
+    })
+
+    expect(saved.remoteOauthConnected).toBe(true)
+    expect(saved.remoteTokenPreview).toBe('mock…')
+    expect(saved.remoteTokenSet).toBe(false)
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      'http://127.0.0.1:6722/auth/native/session?target=http%3A%2F%2F127.0.0.1%3A9119',
+    )
+    vi.unstubAllGlobals()
+  })
+
+  it('saveConnectionConfig reports connected via a live password session (dashboard login)', async () => {
+    const adapter = new GatewayAdapter()
+    const fetchMock = vi
+      .fn()
+      // /auth/native/session → OAuth 会话空
+      .mockResolvedValueOnce(
+        jsonResponse(200, {
+          connected: false,
+          provider: '',
+          userId: '',
+          expiresAt: 0,
+          tokenPreview: null,
+        }),
+      )
+      // /api/proxy/session/status → 密码会话已连接
+      .mockResolvedValueOnce(
+        jsonResponse(200, { connected: true, provider: 'password', username: 'alice' }),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const saved = await adapter.saveConnectionConfig({
+      mode: 'remote',
+      remoteUrl: 'http://127.0.0.1:9119',
+      remoteAuthMode: 'oauth',
+    })
+
+    expect(saved.remoteOauthConnected).toBe(true)
+    expect(fetchMock.mock.calls[1][0]).toBe(
+      'http://127.0.0.1:6722/api/proxy/session/status?target=http%3A%2F%2F127.0.0.1%3A9119',
+    )
+    vi.unstubAllGlobals()
+  })
+
+  it('applyConnectionConfig (save-and-reconnect) keeps the live connected state', async () => {
+    const adapter = new GatewayAdapter()
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse(200, {
+        connected: true,
+        provider: 'nous',
+        userId: 'u1',
+        expiresAt: 9999,
+        tokenPreview: 'mock…',
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const applied = await adapter.applyConnectionConfig({
+      mode: 'remote',
+      remoteUrl: 'http://127.0.0.1:9119',
+      remoteAuthMode: 'oauth',
+    })
+
+    expect(applied.remoteOauthConnected).toBe(true)
+    // 应用即保存：registry 同步更新。
+    expect(loadRegistry().connections[0].url).toBe('http://127.0.0.1:9119')
+    vi.unstubAllGlobals()
+  })
+
+  it('saveConnectionConfig reports disconnected when no proxy session exists', async () => {
+    const adapter = new GatewayAdapter()
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse(200, {
+          connected: false,
+          provider: '',
+          userId: '',
+          expiresAt: 0,
+          tokenPreview: null,
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse(200, { connected: false, provider: '', username: '' }),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const saved = await adapter.saveConnectionConfig({
+      mode: 'remote',
+      remoteUrl: 'http://127.0.0.1:9119',
+      remoteAuthMode: 'oauth',
+    })
+
+    expect(saved.remoteOauthConnected).toBe(false)
+    expect(saved.remoteTokenPreview).toBe(null)
+    vi.unstubAllGlobals()
   })
 })
 

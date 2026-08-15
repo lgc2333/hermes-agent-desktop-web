@@ -60,6 +60,8 @@ export function buildWebBridge(options: WebBridgeOptions = {}): Bridge {
     testConnectionConfig: (payload) => gateway.testConnectionConfig(payload),
     probeConnectionConfig: (url) => gateway.probeConnectionConfig(url),
     oauthLoginConnectionConfig: (url) => gateway.oauthLoginConnectionConfig(url),
+    oauthPasteConnectionConfig: (url, pasted) =>
+      gateway.oauthPasteConnectionConfig(url, pasted),
     oauthLogoutConnectionConfig: () => gateway.oauthLogoutConnectionConfig(),
     passwordLoginConnectionConfig: (url, provider, username, password) =>
       gateway.passwordLoginConnectionConfig(url, provider, username, password),

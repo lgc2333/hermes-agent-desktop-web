@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { BrandMark } from '@/components/brand-mark'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import type { DesktopConnectionProbeResult } from '@/global'
 import { useI18n } from '@/i18n'
 import { deriveRemoteAuthProviderShape } from '@/lib/desktop-remote-auth'
@@ -28,6 +29,9 @@ export function FirstRunRemoteForm({ onBack }: FirstRunRemoteFormProps) {
   // M5: password ("dashboard login") gateways — username/password form state.
   const [authUsername, setAuthUsername] = useState('')
   const [authPassword, setAuthPassword] = useState('')
+  // ADR-0017: remote deployments paste the address-bar callback URL back.
+  const [pastedUrl, setPastedUrl] = useState('')
+  const [pasteSubmitting, setPasteSubmitting] = useState(false)
   const [probeStatus, setProbeStatus] = useState<ProbeStatus>('idle')
   const [probe, setProbe] = useState<DesktopConnectionProbeResult | null>(null)
   const [oauthConnected, setOauthConnected] = useState(false)
@@ -147,6 +151,32 @@ export function FirstRunRemoteForm({ onBack }: FirstRunRemoteFormProps) {
       setError(errorMessage(err))
     } finally {
       setSigningIn(false)
+    }
+  }
+
+  // ADR-0017: remote deployments — after signing in, the browser lands on a
+  // failed 127.0.0.1 page (the proxy's loopback redirect is unreachable). The
+  // user copies the address-bar URL and pastes it here; the proxy completes
+  // the same code exchange as the popup callback.
+  const pasteSignIn = async () => {
+    if (!trimmedUrl || !pastedUrl.trim()) {
+      return
+    }
+
+    setPasteSubmitting(true)
+    setError(null)
+
+    try {
+      const result = await window.hermesDesktop.oauthPasteConnectionConfig(
+        trimmedUrl,
+        pastedUrl,
+      )
+      invalidateTest()
+      setOauthConnected(Boolean(result.connected))
+    } catch (err) {
+      setError(errorMessage(err))
+    } finally {
+      setPasteSubmitting(false)
     }
   }
 
@@ -331,6 +361,34 @@ export function FirstRunRemoteForm({ onBack }: FirstRunRemoteFormProps) {
                   </Button>
                 )}
               </div>
+            </div>
+          ) : null}
+
+          {/* ADR-0017: tunnel-free fallback — after signing in, a remote browser
+              lands on a failed 127.0.0.1 page (expected). Paste the address-bar
+              URL here; the proxy completes the same code exchange. */}
+          {authResolved && authMode === 'oauth' && !isPasswordProvider && !oauthConnected ? (
+            <div className="grid gap-2 rounded-md border border-(--ui-stroke-tertiary) p-3">
+              <p className="text-xs text-muted-foreground">{copy.authPasteHint}</p>
+              <Textarea
+                className="min-h-16 resize-y"
+                disabled={signingIn || applying}
+                onChange={event => {
+                  invalidateTest()
+                  setPastedUrl(event.target.value)
+                }}
+                placeholder={copy.authPastePlaceholder}
+                value={pastedUrl}
+              />
+              <Button
+                disabled={signingIn || applying || !trimmedUrl || !pastedUrl.trim()}
+                onClick={() => void pasteSignIn()}
+                size="sm"
+                variant="outline"
+              >
+                {pasteSubmitting ? <Loader2 className="size-3 animate-spin" /> : null}
+                {copy.authPasteSubmit}
+              </Button>
             </div>
           ) : null}
 
