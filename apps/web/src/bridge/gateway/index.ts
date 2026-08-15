@@ -66,7 +66,11 @@ import {
   wsUrlFor,
 } from './rest'
 
-export const WEB_VERSION = '0.1.0-web-m3'
+// 构建期注入（ADR-0014）：<上游桌面版本>+web.<项目标识>。
+// 项目标识：HEAD 打 tag → 版本号（如 0.17.0+web.0.1.0）；否则 → g<短sha>（如 0.17.0+web.gd8aa0fe）；
+// 无 git（Docker 构建）→ apps/web/package.json 版本。无 define 的冷路径退回 dev 占位。
+export const WEB_VERSION =
+  typeof __HERMES_WEB_VERSION__ === 'string' ? __HERMES_WEB_VERSION__ : '0.0.0+web.dev'
 
 // 保持 './gateway' 既有导入面（gateway.test.ts / adapter.ts）。
 export { toHermesConnection, webApi } from './rest'

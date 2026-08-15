@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { GatewayAdapter, toHermesConnection, webApi } from './index'
+import { GatewayAdapter, WEB_VERSION, toHermesConnection, webApi } from './index'
 import { loadRegistry } from '../registry'
 
 function jsonResponse(status: number, body: unknown): Response {
@@ -873,5 +873,12 @@ describe('M5 password login ("dashboard login", proxy mode)', () => {
     const config = await adapter.getConnectionConfig()
 
     expect(config.remoteOauthConnected).toBe(false)
+  })
+})
+
+describe('WEB_VERSION (build-injected client identity, ADR-0014)', () => {
+  // 项目标识：HEAD 打 tag → 版本号；否则 → g<短sha>（无 git 时退回项目版本号）。
+  it('follows the <desktop version>+web.<tag version | g<sha>> shape', () => {
+    expect(WEB_VERSION).toMatch(/^\d+\.\d+\.\d+\+web\.(?:g[0-9a-f]+|\d+\.\d+\.\d+)$/)
   })
 })

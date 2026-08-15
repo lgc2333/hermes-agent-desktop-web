@@ -4,6 +4,8 @@ import tailwindcss from '@tailwindcss/vite'
 import path from 'node:path'
 import fs from 'node:fs'
 
+import { webVersionString } from './scripts/build-version.mjs'
+
 // The web app builds the vendored desktop renderer directly (no fork):
 //   vendor/hermes-desktop/src  → aliased as '@'
 //   vendor/hermes-shared/src   → aliased as '@hermes/shared'
@@ -39,6 +41,10 @@ export default defineConfig(({ command }) => ({
   // no copy to reconcile after a subtree pull.
   publicDir: path.join(vendorDesktop, 'public'),
   plugins: [react(), tailwindcss()],
+  // ADR-0014：构建期注入客户端版本标识（上游桌面版本 + 项目版本）。
+  define: {
+    __HERMES_WEB_VERSION__: JSON.stringify(webVersionString(import.meta.dirname)),
+  },
   css: {
     postcss: { plugins: [] },
   },
