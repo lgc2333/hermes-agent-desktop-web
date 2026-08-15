@@ -51,7 +51,10 @@ git subtree merge --prefix=vendor/hermes-desktop $NEW_FILTERED --squash
 
 ## 4. 当前 vendor 原位改动清单
 
-（暂无改动 —— M0 只引入，未 patch。M1 起在此登记。）
+| 文件 | 改动 | 原因 | 同步注意 |
+|------|------|------|----------|
+| vendor/hermes-desktop/src/styles.css | `@import 'tailwindcss'` 后加两行 `@source '../../hermes-desktop/src'` 与 `@source '../../hermes-shared/src'` | Tailwind v4 自动扫描只覆盖 vite root（apps/web），vendor 源码的类名不生成 CSS 规则（M0 验证时发现界面下半部无样式崩坏）；@source 让 Tailwind 扫描 vendor 源码 | 路径相对 styles.css（位于 vendor/hermes-desktop/src），指向 vendor 自身，subtree pull 后依旧有效；若上游改 styles.css 头部导致 @source 行丢失，按此表恢复 |
+
 
 ## 5. 同步后必做
 

@@ -1,4 +1,6 @@
 @import 'tailwindcss';
+@source '../../hermes-desktop/src';
+@source '../../hermes-shared/src';
 @plugin '@tailwindcss/typography';
 @import 'tw-shimmer';
 @import 'katex/dist/katex.min.css';
