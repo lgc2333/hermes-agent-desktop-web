@@ -27,7 +27,9 @@ const configPath = path.join(webRoot, 'tsconfig.json')
 const configFile = ts.readConfigFile(configPath, ts.sys.readFile)
 
 if (configFile.error) {
-  console.error(`[typecheck] failed to read tsconfig: ${ts.flattenDiagnosticMessageText(configFile.error.messageText, '\n')}`)
+  console.error(
+    `[typecheck] failed to read tsconfig: ${ts.flattenDiagnosticMessageText(configFile.error.messageText, '\n')}`,
+  )
   process.exit(1)
 }
 
@@ -36,7 +38,7 @@ const program = ts.createProgram(parsed.fileNames, parsed.options)
 const diagnostics = ts.getPreEmitDiagnostics(program)
 
 // TS5101: the pre-existing baseUrl deprecation (see the header comment).
-const real = diagnostics.filter(d => d.code !== 5101)
+const real = diagnostics.filter((d) => d.code !== 5101)
 
 for (const diagnostic of real) {
   const where =

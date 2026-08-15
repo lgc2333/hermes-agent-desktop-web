@@ -12,7 +12,12 @@
  * 因为 boot 侧 store 在模块作用域就读 window.hermesDesktop。
  */
 
-import type { BackendExit, HermesApiRequest, HermesWindowState, DesktopBootProgress } from '@/global'
+import type {
+  BackendExit,
+  HermesApiRequest,
+  HermesWindowState,
+  DesktopBootProgress,
+} from '@/global'
 
 import { BrowserAdapter } from './browser'
 import { DeniedAdapter } from './denied'
@@ -37,48 +42,51 @@ export function buildWebBridge(options: WebBridgeOptions = {}): Bridge {
 
     // ── boot 面（类 2）─────────────────────────────────────────────────────
     getBootProgress: () => gateway.getBootProgress(),
-    onBootProgress: (cb: (payload: DesktopBootProgress) => void) => gateway.onBootProgress(cb),
+    onBootProgress: (cb: (payload: DesktopBootProgress) => void) =>
+      gateway.onBootProgress(cb),
     onBackendExit: (cb: (payload: BackendExit) => void) => gateway.onBackendExit(cb),
-    onConnectionApplied: cb => gateway.onConnectionApplied(cb),
-    onPowerResume: cb => gateway.onPowerResume(cb),
-    onWindowStateChanged: (cb: (payload: HermesWindowState) => void) => gateway.onWindowStateChanged(cb),
+    onConnectionApplied: (cb) => gateway.onConnectionApplied(cb),
+    onPowerResume: (cb) => gateway.onPowerResume(cb),
+    onWindowStateChanged: (cb: (payload: HermesWindowState) => void) =>
+      gateway.onWindowStateChanged(cb),
     // onPreviewFileChanged 由 GatewayAdapter 提供（类型面要求回调参数）。
-    onPreviewFileChanged: (cb: (payload: never) => void) => gateway.onPreviewFileChanged(cb),
+    onPreviewFileChanged: (cb: (payload: never) => void) =>
+      gateway.onPreviewFileChanged(cb),
 
     // ── 连接设置面（类 2）──────────────────────────────────────────────────
     getConnectionConfig: () => gateway.getConnectionConfig(),
-    saveConnectionConfig: payload => gateway.saveConnectionConfig(payload),
-    applyConnectionConfig: payload => gateway.applyConnectionConfig(payload),
-    testConnectionConfig: payload => gateway.testConnectionConfig(payload),
-    probeConnectionConfig: url => gateway.probeConnectionConfig(url),
-    oauthLoginConnectionConfig: url => gateway.oauthLoginConnectionConfig(url),
+    saveConnectionConfig: (payload) => gateway.saveConnectionConfig(payload),
+    applyConnectionConfig: (payload) => gateway.applyConnectionConfig(payload),
+    testConnectionConfig: (payload) => gateway.testConnectionConfig(payload),
+    probeConnectionConfig: (url) => gateway.probeConnectionConfig(url),
+    oauthLoginConnectionConfig: (url) => gateway.oauthLoginConnectionConfig(url),
     oauthLogoutConnectionConfig: () => gateway.oauthLogoutConnectionConfig(),
     connections: {
       list: () => gateway.connectionsList(),
-      save: payload => gateway.connectionsSave(payload),
-      remove: id => gateway.connectionsRemove(id),
-      setPrimary: id => gateway.connectionsSetPrimary(id),
-      test: id => gateway.connectionsTest(id)
+      save: (payload) => gateway.connectionsSave(payload),
+      remove: (id) => gateway.connectionsRemove(id),
+      setPrimary: (id) => gateway.connectionsSetPrimary(id),
+      test: (id) => gateway.connectionsTest(id),
     },
     sshConfigHosts: () => gateway.sshConfigHosts(),
-    sshResolveHost: host => gateway.sshResolveHost(host),
+    sshResolveHost: (host) => gateway.sshResolveHost(host),
     cloud: {
       status: () => gateway.cloudStatus(),
       login: async () => ({ ...(await gateway.cloudStatus()), ok: false }),
       logout: async () => ({ ...(await gateway.cloudStatus()), ok: false }),
       discover: async () => ({ agents: [] }),
-      agentSignIn: async () => ({ baseUrl: '', connected: false })
+      agentSignIn: async () => ({ baseUrl: '', connected: false }),
     },
     profile: {
       get: () => gateway.getProfile(),
-      set: name => gateway.setProfile(name)
+      set: (name) => gateway.setProfile(name),
     },
 
     // ── 版本 / bootstrap（类 2）────────────────────────────────────────────
     getVersion: () => gateway.getVersion(),
     getRemoteDisplayReason: () => gateway.getRemoteDisplayReason(),
     getBootstrapState: () => gateway.getBootstrapState(),
-    onBootstrapEvent: cb => gateway.onBootstrapEvent(cb),
+    onBootstrapEvent: (cb) => gateway.onBootstrapEvent(cb),
     continueBootstrapLocal: () => denied.continueBootstrapLocal(),
     resetBootstrap: () => denied.resetBootstrap(),
     repairBootstrap: () => denied.repairBootstrap(),
@@ -86,58 +94,59 @@ export function buildWebBridge(options: WebBridgeOptions = {}): Bridge {
 
     // ── 浏览器等价（类 1）──────────────────────────────────────────────────
     readClipboard: () => browser.readClipboard(),
-    writeClipboard: text => browser.writeClipboard(text),
-    openExternal: url => browser.openExternal(url),
-    openPreviewInBrowser: url => browser.openPreviewInBrowser(url),
-    fetchLinkTitle: url => browser.fetchLinkTitle(url),
-    notify: payload => browser.notify(payload),
+    writeClipboard: (text) => browser.writeClipboard(text),
+    openExternal: (url) => browser.openExternal(url),
+    openPreviewInBrowser: (url) => browser.openPreviewInBrowser(url),
+    fetchLinkTitle: (url) => browser.fetchLinkTitle(url),
+    notify: (payload) => browser.notify(payload),
     selectPaths: () => browser.selectPaths(),
     selectSavePath: () => browser.selectSavePath(),
     getPathForFile: () => browser.getPathForFile(),
     zoom: {
       get: () => browser.getZoom(),
-      setPercent: percent => browser.setZoomPercent(percent),
-      onChanged: cb => browser.onZoomChanged(cb)
+      setPercent: (percent) => browser.setZoomPercent(percent),
+      onChanged: (cb) => browser.onZoomChanged(cb),
     },
-    reportRendererError: report => browser.reportRendererError(report),
+    reportRendererError: (report) => browser.reportRendererError(report),
     revealLogs: () => denied.revealLogs(),
     getRecentLogs: async () => browser.getRecentLogs(),
 
     // ── 布尔门空实现（类 3）────────────────────────────────────────────────
-    openSessionWindow: sessionId => denied.openSessionWindow(sessionId),
-    openSessionInTerminal: (sessionId, opts) => denied.openSessionInTerminal(sessionId, opts),
+    openSessionWindow: (sessionId) => denied.openSessionWindow(sessionId),
+    openSessionInTerminal: (sessionId, opts) =>
+      denied.openSessionInTerminal(sessionId, opts),
     openWindow: () => denied.openWindow(),
-    claimAmbientCue: key => denied.claimAmbientCue(key),
+    claimAmbientCue: (key) => denied.claimAmbientCue(key),
     wakeIndicator: denied.wakeIndicator,
     petOverlay: denied.petOverlay,
     hud: denied.hud,
     quickEntry: denied.quickEntry,
     requestMicrophoneAccess: () => denied.requestMicrophoneAccess(),
-    readFileDataUrl: path => denied.readFileDataUrl(path),
-    readFileText: path => denied.readFileText(path),
-    saveImageFromUrl: url => denied.saveImageFromUrl(url),
+    readFileDataUrl: (path) => denied.readFileDataUrl(path),
+    readFileText: (path) => denied.readFileText(path),
+    saveImageFromUrl: (url) => denied.saveImageFromUrl(url),
     saveImageBuffer: (data, ext) => denied.saveImageBuffer(data, ext),
     saveClipboardImage: () => denied.saveClipboardImage(),
-    normalizePreviewTarget: target => denied.normalizePreviewTarget(target),
-    watchPreviewFile: url => denied.watchPreviewFile(url),
-    stopPreviewFileWatch: id => denied.stopPreviewFileWatch(id),
-    readDir: path => denied.readDir(path),
-    gitRoot: path => denied.gitRoot(path),
-    revealPath: path => denied.revealPath(path),
-    openDir: path => denied.openDir(path),
+    normalizePreviewTarget: (target) => denied.normalizePreviewTarget(target),
+    watchPreviewFile: (url) => denied.watchPreviewFile(url),
+    stopPreviewFileWatch: (id) => denied.stopPreviewFileWatch(id),
+    readDir: (path) => denied.readDir(path),
+    gitRoot: (path) => denied.gitRoot(path),
+    revealPath: (path) => denied.revealPath(path),
+    openDir: (path) => denied.openDir(path),
     desktopPluginsRoot: () => denied.desktopPluginsRoot(),
     agentPluginsRoot: () => denied.agentPluginsRoot(),
     renamePath: (path, newName) => denied.renamePath(path, newName),
     writeTextFile: (path, content) => denied.writeTextFile(path, content),
-    trashPath: path => denied.trashPath(path),
+    trashPath: (path) => denied.trashPath(path),
     git: denied.git,
     terminal: denied.terminal,
-    sanitizeWorkspaceCwd: cwd => denied.sanitizeWorkspaceCwd(cwd),
+    sanitizeWorkspaceCwd: (cwd) => denied.sanitizeWorkspaceCwd(cwd),
     settings: denied.settings,
     updates: denied.updates,
     uninstall: denied.uninstall,
     themes: denied.themes,
-    findInPage: query => denied.findInPage(query),
+    findInPage: (query) => denied.findInPage(query),
     stopFindInPage: () => denied.stopFindInPage(),
     // denied 的 on* 订阅成员是 0 参 noopUnsub；直接透传（少参数函数可赋值给
     // 带参签名），避免包一层再把回调吞掉。
@@ -151,13 +160,13 @@ export function buildWebBridge(options: WebBridgeOptions = {}): Bridge {
     onNotificationAction: denied.onNotificationAction,
     getOnBattery: () => denied.getOnBattery(),
     onBatteryChanged: denied.onBatteryChanged,
-    setActiveWork: payload => denied.setActiveWork(payload),
-    setTitleBarTheme: payload => denied.setTitleBarTheme(payload),
-    setNativeTheme: mode => denied.setNativeTheme(mode),
-    setTranslucency: payload => denied.setTranslucency(payload),
-    setKeepAwake: on => denied.setKeepAwake(on),
-    setPreviewShortcutActive: active => denied.setPreviewShortcutActive(active),
-    readWindowBelow: async () => null
+    setActiveWork: (payload) => denied.setActiveWork(payload),
+    setTitleBarTheme: (payload) => denied.setTitleBarTheme(payload),
+    setNativeTheme: (mode) => denied.setNativeTheme(mode),
+    setTranslucency: (payload) => denied.setTranslucency(payload),
+    setKeepAwake: (on) => denied.setKeepAwake(on),
+    setPreviewShortcutActive: (active) => denied.setPreviewShortcutActive(active),
+    readWindowBelow: async () => null,
   }
 
   return bridge

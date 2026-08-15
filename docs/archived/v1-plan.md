@@ -24,19 +24,19 @@
 
 ### 关键决策记录
 
-| # | 决策 | 结论 |
-|---|------|------|
-| Q1 | 目标用户 | 个人/小团队 + 移动浏览器（A+C） |
-| Q2 | 连接模型 | 纯远程，手填 URL 连任意 gateway |
-| Q3 | 运行时依赖 | 只依赖 gateway/dashboard 接口；配置同步用外挂 API |
-| Q4 | 前端代码基 | 桌面渲染层（`apps/desktop/src`）为基座 |
-| Q5 | voice/终端 | 移出计划 |
-| Q6 | 部署 | 仅薄代理模式（先只支持 remote gateway） |
-| Q7 | 认证 | 全部方式：token + OAuth（native PKCE）；无 QR 配对（上游不存在此机制） |
-| — | 会话来源标签 | 复用 `source: 'desktop'`（零 Python patch） |
-| Q8 | 代理技术栈 | Deno（原生零依赖，TS 源码直跑；`deno compile` 可选） |
-| Q9 | 非核心页面 | 布尔门关闭，代码保留 |
-| — | 部署拓扑 | hermes + webui 双容器 compose（bridge 网络）；默认远端 URL 经 /api/proxy/meta 运行时下发前端 |
+| #   | 决策         | 结论                                                                                         |
+| --- | ------------ | -------------------------------------------------------------------------------------------- |
+| Q1  | 目标用户     | 个人/小团队 + 移动浏览器（A+C）                                                              |
+| Q2  | 连接模型     | 纯远程，手填 URL 连任意 gateway                                                              |
+| Q3  | 运行时依赖   | 只依赖 gateway/dashboard 接口；配置同步用外挂 API                                            |
+| Q4  | 前端代码基   | 桌面渲染层（`apps/desktop/src`）为基座                                                       |
+| Q5  | voice/终端   | 移出计划                                                                                     |
+| Q6  | 部署         | 仅薄代理模式（先只支持 remote gateway）                                                      |
+| Q7  | 认证         | 全部方式：token + OAuth（native PKCE）；无 QR 配对（上游不存在此机制）                       |
+| —   | 会话来源标签 | 复用 `source: 'desktop'`（零 Python patch）                                                  |
+| Q8  | 代理技术栈   | Deno（原生零依赖，TS 源码直跑；`deno compile` 可选）                                         |
+| Q9  | 非核心页面   | 布尔门关闭，代码保留                                                                         |
+| —   | 部署拓扑     | hermes + webui 双容器 compose（bridge 网络）；默认远端 URL 经 /api/proxy/meta 运行时下发前端 |
 
 ## 2. 上游事实（已核实，标注出处）
 
@@ -93,13 +93,13 @@ git subtree pull --prefix=vendor/hermes-shared  upstream <TAG> --squash
 
 **原则**：vendor 内原位修改收敛到最少文件；能新加文件就不改旧文件；所有 vendor 改动登记在 `PATCHES.md`。
 
-| 类别 | 位置 | 方式 |
-|------|------|------|
-| 入口替换 | vendor/hermes-desktop/src/main.tsx | 原位改（小而稳），或 web 入口文件 import 原渲染树 |
-| 能力桥类型 | src/global.d.ts（window.hermesDesktop 类型） | 保持不动，WebCapabilityAdapter 按同一类型实现 |
-| 布尔门 | apps/web/src/gates.ts + 导航/路由调用点 | 新增文件为主；少数路由表/侧边栏入口原位加 `if (false)`（登记 PATCHES.md） |
-| 连接启动 | 桌面 boot/连接状态机 | web 端用新文件重写（探测→拨号→re-home 语义照搬 `connection-apply.ts` 纯逻辑） |
-| Python 侧 | 无（source 复用 'desktop'，代理同源无 CORS 问题） | 零 patch |
+| 类别       | 位置                                              | 方式                                                                          |
+| ---------- | ------------------------------------------------- | ----------------------------------------------------------------------------- |
+| 入口替换   | vendor/hermes-desktop/src/main.tsx                | 原位改（小而稳），或 web 入口文件 import 原渲染树                             |
+| 能力桥类型 | src/global.d.ts（window.hermesDesktop 类型）      | 保持不动，WebCapabilityAdapter 按同一类型实现                                 |
+| 布尔门     | apps/web/src/gates.ts + 导航/路由调用点           | 新增文件为主；少数路由表/侧边栏入口原位加 `if (false)`（登记 PATCHES.md）     |
+| 连接启动   | 桌面 boot/连接状态机                              | web 端用新文件重写（探测→拨号→re-home 语义照搬 `connection-apply.ts` 纯逻辑） |
+| Python 侧  | 无（source 复用 'desktop'，代理同源无 CORS 问题） | 零 patch                                                                      |
 
 ## 6. 代理协议设计（v1）——单通配 handler，无状态
 

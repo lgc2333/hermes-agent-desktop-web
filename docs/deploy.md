@@ -13,8 +13,8 @@
 ```
 
 - **hermes**：上游 `hermes-agent` 镜像，`gateway run`（s6 监督，崩溃自重启），
-  `HERMES_DASHBOARD=1` 让 s6 额外监督 dashboard——**API 载点**（/api/*、/api/ws、
-  /auth/native/*）。绑定 0.0.0.0:9119，仅映射宿主 loopback。
+  `HERMES_DASHBOARD=1` 让 s6 额外监督 dashboard——**API 载点**（/api/_、/api/ws、
+  /auth/native/_）。绑定 0.0.0.0:9119，仅映射宿主 loopback。
 - **webui**：`apps/proxy/Dockerfile`（deno:alpine 薄镜像），映射宿主机
   `WEBUI_PORT`（默认 8080）。`HERMES_DEFAULT_GATEWAY_URL` 经
   `/api/proxy/meta` 运行时下发前端设置页预填。
@@ -68,11 +68,11 @@ webui 的 API 认证走 native OAuth（见 4.2），两者独立。
 
 浏览器 → webui 全程同源；代理按 httpOnly cookie 会话注入凭证：
 
-| 面 | 凭证 | 上游接受点 |
-|----|------|-----------|
-| REST /api/* | `Authorization: Bearer <access_token>` | gate 的 bearer 校验（native token） |
-| WS /api/ws | 单次 `?ticket=`（30s TTL，代理先 POST /api/auth/ws-ticket 用 Bearer 换） | ws_tickets 单次消费 |
-| PKCE 交换 | /auth/native/{authorize,token,refresh} | gate 公开前缀 |
+| 面          | 凭证                                                                     | 上游接受点                          |
+| ----------- | ------------------------------------------------------------------------ | ----------------------------------- |
+| REST /api/* | `Authorization: Bearer <access_token>`                                   | gate 的 bearer 校验（native token） |
+| WS /api/ws  | 单次 `?ticket=`（30s TTL，代理先 POST /api/auth/ws-ticket 用 Bearer 换） | ws_tickets 单次消费                 |
+| PKCE 交换   | /auth/native/{authorize,token,refresh}                                   | gate 公开前缀                       |
 
 代理重启 → 内存 token set 清空（PLAN §6：无持久化）→ 浏览器下次请求
 401/未连接 → 重新登录即可（M3 坑 #9）。
@@ -87,7 +87,7 @@ webui 的 API 认证走 native OAuth（见 4.2），两者独立。
   OAuth 开箱即用。compose 已把 hermes 的 9119 映射到宿主 loopback，
   授权弹窗直达 127.0.0.1:9119。
 - **SSH 隧道**（远端浏览器访问）：`ssh -L 8080:localhost:8080 -L
-  9119:localhost:9119 user@server` 后本地打开 `http://127.0.0.1:8080`，
+9119:localhost:9119 user@server` 后本地打开 `http://127.0.0.1:8080`，
   效果等同同机。
 - **纯公网浏览器访问**（如手机经域名访问）：redirect_uri 非 loopback →
   gateway 拒绝授权。上游无配置可放宽；若你的 gateway 未来支持
@@ -127,13 +127,13 @@ webui 容器 (proxy) ── /api/proxy/meta ──> { defaultGatewayUrl, require
 
 ## 7. 运维
 
-| 操作 | 命令 |
-|------|------|
-| 看日志 | `docker compose logs -f hermes webui` |
-| 重启 webui | `docker compose restart webui`（OAuth 会话会失效，重新登录） |
-| 更新 webui | `docker compose up -d --build webui` |
-| 更新 hermes | `docker compose pull hermes && docker compose up -d hermes` |
-| 健康检查 | `curl http://<host>:8080/api/proxy/meta` 应回 `{"defaultGatewayUrl":...,"requiresPassphrase":true}` |
+| 操作        | 命令                                                                                                |
+| ----------- | --------------------------------------------------------------------------------------------------- |
+| 看日志      | `docker compose logs -f hermes webui`                                                               |
+| 重启 webui  | `docker compose restart webui`（OAuth 会话会失效，重新登录）                                        |
+| 更新 webui  | `docker compose up -d --build webui`                                                                |
+| 更新 hermes | `docker compose pull hermes && docker compose up -d hermes`                                         |
+| 健康检查    | `curl http://<host>:8080/api/proxy/meta` 应回 `{"defaultGatewayUrl":...,"requiresPassphrase":true}` |
 
 ## 8. 已知限制（如实登记）
 

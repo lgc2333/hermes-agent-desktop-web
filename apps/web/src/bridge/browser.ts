@@ -103,7 +103,10 @@ export class BrowserAdapter {
 
   async fetchLinkTitle(url: string): Promise<string> {
     try {
-      const res = await fetch(url, { mode: 'cors', signal: AbortSignal.timeout(10_000) })
+      const res = await fetch(url, {
+        mode: 'cors',
+        signal: AbortSignal.timeout(10_000),
+      })
 
       if (!res.ok) {
         return ''
@@ -130,7 +133,7 @@ export class BrowserAdapter {
         new Notification(payload.title ?? 'Hermes', {
           body: payload.body,
           silent: payload.silent ?? true,
-          tag: payload.tag
+          tag: payload.tag,
         })
 
         return true
@@ -143,7 +146,7 @@ export class BrowserAdapter {
           new Notification(payload.title ?? 'Hermes', {
             body: payload.body,
             silent: payload.silent ?? true,
-            tag: payload.tag
+            tag: payload.tag,
           })
 
           return true
@@ -179,7 +182,9 @@ export class BrowserAdapter {
     // stays truthful (always 100%).
   }
 
-  onZoomChanged(_callback: (payload: { level: number; percent: number }) => void): () => void {
+  onZoomChanged(
+    _callback: (payload: { level: number; percent: number }) => void,
+  ): () => void {
     return () => undefined
   }
 
@@ -189,10 +194,16 @@ export class BrowserAdapter {
     message: string
     componentStack: string
   }): void {
-    console.error('[hermes-web renderer error]', report.label, report.boundary, report.message, report.componentStack)
+    console.error(
+      '[hermes-web renderer error]',
+      report.label,
+      report.boundary,
+      report.message,
+      report.componentStack,
+    )
     safeLocalStorageSet(
       'hermes-web.last-renderer-error',
-      JSON.stringify({ ...report, at: Date.now() }).slice(0, 4000)
+      JSON.stringify({ ...report, at: Date.now() }).slice(0, 4000),
     )
   }
 
@@ -201,7 +212,7 @@ export class BrowserAdapter {
 
     return {
       path: 'localStorage://hermes-web.last-renderer-error',
-      lines: raw ? [raw] : []
+      lines: raw ? [raw] : [],
     }
   }
 }

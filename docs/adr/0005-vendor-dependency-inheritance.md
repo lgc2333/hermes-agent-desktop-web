@@ -5,6 +5,7 @@ apps/web 需要桌面渲染层的全部运行时依赖。最初方案是复制 v
 **Status**: accepted
 
 **Considered Options**:
+
 - 复制 dependencies 到 apps/web：清单显式、可裁剪（只装渲染层需要的），但每次 subtree pull 后需手动同步版本
 - `file:` 引用 vendor 包：pnpm 只装其 dependencies（devDeps 不进来），但上游 `file:../shared` 相对路径在改名后的 vendor 布局下解析错误，需 overrides 修补
 - `workspace:*`（选定）：语义最直接，依赖随上游自动演进，零同步负担

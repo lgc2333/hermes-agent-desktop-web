@@ -59,7 +59,7 @@ const STRIP_HEADERS = new Set([
   'host',
   'content-length',
   'x-hermes-target',
-  'x-hermes-proxy-passphrase'
+  'x-hermes-proxy-passphrase',
 ])
 
 /** 构造上游 REST URL：target + 请求的 pathname/search。 */
@@ -96,7 +96,11 @@ export interface RelayRestOptions {
   bearer?: string | null
 }
 
-export async function relayRest(request: Request, target: string, opts: RelayRestOptions = {}): Promise<Response> {
+export async function relayRest(
+  request: Request,
+  target: string,
+  opts: RelayRestOptions = {},
+): Promise<Response> {
   const headers = new Headers()
   request.headers.forEach((value, key) => {
     if (!STRIP_HEADERS.has(key.toLowerCase())) {
@@ -114,13 +118,18 @@ export async function relayRest(request: Request, target: string, opts: RelayRes
     upstream = await fetch(upstreamUrl(target, request), {
       method: request.method,
       headers,
-      body: request.method === 'GET' || request.method === 'HEAD' ? undefined : request.body,
-      redirect: 'manual'
+      body:
+        request.method === 'GET' || request.method === 'HEAD'
+          ? undefined
+          : request.body,
+      redirect: 'manual',
     })
   } catch (error) {
     return new Response(
-      JSON.stringify({ detail: `proxy upstream error: ${error instanceof Error ? error.message : String(error)}` }),
-      { status: 502, headers: { 'Content-Type': 'application/json' } }
+      JSON.stringify({
+        detail: `proxy upstream error: ${error instanceof Error ? error.message : String(error)}`,
+      }),
+      { status: 502, headers: { 'Content-Type': 'application/json' } },
     )
   }
 
@@ -131,7 +140,11 @@ export async function relayRest(request: Request, target: string, opts: RelayRes
     }
   })
 
-  return new Response(upstream.body, { status: upstream.status, statusText: upstream.statusText, headers: outHeaders })
+  return new Response(upstream.body, {
+    status: upstream.status,
+    statusText: upstream.statusText,
+    headers: outHeaders,
+  })
 }
 
 /** socket 缓冲：CONNECTING 期间入队，OPEN 后统一 flush。 */
@@ -166,8 +179,12 @@ function forward(event: MessageEvent, to: WebSocket): void {
     enqueue(to, data)
   } else if (data instanceof ArrayBuffer) {
     enqueue(to, data)
-  } else if (data && typeof data === 'object' && typeof (data as Blob).arrayBuffer === 'function') {
-    void (data as Blob).arrayBuffer().then(buf => enqueue(to, buf))
+  } else if (
+    data &&
+    typeof data === 'object' &&
+    typeof (data as Blob).arrayBuffer === 'function'
+  ) {
+    void (data as Blob).arrayBuffer().then((buf) => enqueue(to, buf))
   } else {
     drain(to)
   }
@@ -183,7 +200,12 @@ export interface RelayWsOptions {
   ticket?: string | null
 }
 
-export function relayWs(browserSocket: WebSocket, proxyUrl: URL, target: string, opts: RelayWsOptions = {}): void {
+export function relayWs(
+  browserSocket: WebSocket,
+  proxyUrl: URL,
+  target: string,
+  opts: RelayWsOptions = {},
+): void {
   const upstream = upstreamWsUrl(target, proxyUrl)
   if (opts.ticket) {
     upstream.searchParams.set('ticket', opts.ticket)
@@ -195,10 +217,10 @@ export function relayWs(browserSocket: WebSocket, proxyUrl: URL, target: string,
     drain(upstreamSocket)
     drain(browserSocket)
   }
-  upstreamSocket.onmessage = event => {
+  upstreamSocket.onmessage = (event) => {
     forward(event, browserSocket)
   }
-  upstreamSocket.onclose = event => {
+  upstreamSocket.onclose = (event) => {
     try {
       browserSocket.close(event.code === 1006 ? 1001 : event.code, event.reason ?? '')
     } catch {
@@ -213,10 +235,10 @@ export function relayWs(browserSocket: WebSocket, proxyUrl: URL, target: string,
     }
   }
 
-  browserSocket.onmessage = event => {
+  browserSocket.onmessage = (event) => {
     forward(event, upstreamSocket)
   }
-  browserSocket.onclose = event => {
+  browserSocket.onclose = (event) => {
     try {
       upstreamSocket.close(event.code === 1006 ? 1001 : event.code, event.reason ?? '')
     } catch {

@@ -11,14 +11,28 @@ export default defineConfig({
     alias: {
       '@': path.join(root, 'vendor', 'hermes-desktop', 'src'),
       '@hermes/shared': path.join(root, 'vendor', 'hermes-shared', 'src'),
-      '@hermes/plugin-sdk': path.join(root, 'vendor', 'hermes-desktop', 'src', 'sdk', 'index.ts'),
-      '@/debug/dev-only': path.join(root, 'vendor', 'hermes-desktop', 'src', 'debug', 'dev-only.noop.ts')
-    }
+      '@hermes/plugin-sdk': path.join(
+        root,
+        'vendor',
+        'hermes-desktop',
+        'src',
+        'sdk',
+        'index.ts',
+      ),
+      '@/debug/dev-only': path.join(
+        root,
+        'vendor',
+        'hermes-desktop',
+        'src',
+        'debug',
+        'dev-only.noop.ts',
+      ),
+    },
   },
   test: {
     environment: 'jsdom',
     include: ['src/**/*.test.ts'],
     globals: true,
-    testTimeout: 10_000
-  }
+    testTimeout: 10_000,
+  },
 })

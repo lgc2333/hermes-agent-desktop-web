@@ -34,7 +34,7 @@ import type {
   DesktopVersionInfo,
   HermesApiRequest,
   HermesConnection,
-  HermesWindowState
+  HermesWindowState,
 } from '@/global'
 import type { GatewayWsUrlResult } from '@hermes/shared'
 
@@ -49,7 +49,7 @@ import {
   setPrimaryConnection,
   upsertConnection,
   writeProfilePreference,
-  type WebConnectionRecord
+  type WebConnectionRecord,
 } from './registry'
 
 export const WEB_VERSION = '0.1.0-web-m3'
@@ -135,7 +135,7 @@ export function toHermesConnection(conn: WebConnectionRecord): HermesConnection 
     token: conn.token,
     wsUrl: wsUrlFor(conn),
     logs: [],
-    windowButtonPosition: null
+    windowButtonPosition: null,
   }
 }
 
@@ -174,8 +174,10 @@ export async function webApi<T>(request: HermesApiRequest): Promise<T> {
     const form = new FormData()
     form.append(
       'file',
-      new Blob([request.upload.bytes], { type: request.upload.contentType ?? 'application/octet-stream' }),
-      request.upload.filename
+      new Blob([request.upload.bytes], {
+        type: request.upload.contentType ?? 'application/octet-stream',
+      }),
+      request.upload.filename,
     )
     init = { method, body: form }
   } else {
@@ -183,7 +185,7 @@ export async function webApi<T>(request: HermesApiRequest): Promise<T> {
       method,
       ...(request.body !== undefined && method !== 'GET' && method !== 'HEAD'
         ? { body: JSON.stringify(request.body) }
-        : {})
+        : {}),
     }
   }
 
@@ -194,7 +196,7 @@ export async function webApi<T>(request: HermesApiRequest): Promise<T> {
     ...(init.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
     ...(oauth ? {} : { 'X-Hermes-Session-Token': conn.token }),
     // M2：目标 gateway 由每次请求携带（代理无状态，见 PLAN §6）。
-    'X-Hermes-Target': conn.url.replace(/\/+$/, '')
+    'X-Hermes-Target': conn.url.replace(/\/+$/, ''),
   }
 
   const controller = new AbortController()
@@ -203,7 +205,10 @@ export async function webApi<T>(request: HermesApiRequest): Promise<T> {
     : undefined
 
   try {
-    const res = await proxyFetch(`${base}${path}`, { ...init, signal: controller.signal })
+    const res = await proxyFetch(`${base}${path}`, {
+      ...init,
+      signal: controller.signal,
+    })
 
     if (!res.ok) {
       const body = await res.text().catch(() => '')
@@ -279,7 +284,7 @@ export class GatewayAdapter {
       phase: 'idle',
       progress: 0,
       running: false,
-      timestamp: Date.now()
+      timestamp: Date.now(),
     }
   }
 
@@ -313,7 +318,8 @@ export class GatewayAdapter {
   private toConfig(conn: WebConnectionRecord): DesktopConnectionConfig {
     return {
       envOverride: false,
-      mode: conn.kind === 'local' ? 'local' : conn.kind === 'remote' ? 'remote' : conn.kind,
+      mode:
+        conn.kind === 'local' ? 'local' : conn.kind === 'remote' ? 'remote' : conn.kind,
       profile: null,
       remoteAuthMode: conn.authMode,
       remoteOauthConnected: conn.authMode === 'oauth' && Boolean(conn.token),
@@ -328,7 +334,7 @@ export class GatewayAdapter {
       sshPort: null,
       sshKeyPath: '',
       sshRemoteHermesPath: '',
-      sshRemoteProfile: ''
+      sshRemoteProfile: '',
     }
   }
 
@@ -362,7 +368,9 @@ export class GatewayAdapter {
     return config
   }
 
-  async saveConnectionConfig(payload: DesktopConnectionConfigInput): Promise<DesktopConnectionConfig> {
+  async saveConnectionConfig(
+    payload: DesktopConnectionConfigInput,
+  ): Promise<DesktopConnectionConfig> {
     const current = getPrimaryConnection()
     const next = this.applyConfigToRecord(current, payload)
     upsertConnection(next)
@@ -370,16 +378,22 @@ export class GatewayAdapter {
     return this.toConfig(next)
   }
 
-  async applyConnectionConfig(payload: DesktopConnectionConfigInput): Promise<DesktopConnectionConfig> {
+  async applyConnectionConfig(
+    payload: DesktopConnectionConfigInput,
+  ): Promise<DesktopConnectionConfig> {
     // M1：保存即应用（浏览器无进程需要重启；M2 换代理后此处触发重连）。
     return this.saveConnectionConfig(payload)
   }
 
-  async testConnectionConfig(payload: DesktopConnectionConfigInput): Promise<DesktopConnectionTestResult> {
+  async testConnectionConfig(
+    payload: DesktopConnectionConfigInput,
+  ): Promise<DesktopConnectionTestResult> {
     return this.probe(payload.remoteUrl ?? getPrimaryConnection().url)
   }
 
-  async probeConnectionConfig(remoteUrl: string): Promise<DesktopConnectionProbeResult> {
+  async probeConnectionConfig(
+    remoteUrl: string,
+  ): Promise<DesktopConnectionProbeResult> {
     try {
       // M2：探测也走代理（dev 跨源 / 生产同源都通），转发正确性一并验证。
       const proxy = proxyBaseUrl()
@@ -387,8 +401,8 @@ export class GatewayAdapter {
       const status = await fetch(`${base}/api/status`, {
         headers: {
           'X-Hermes-Session-Token': getPrimaryConnection().token,
-          ...(proxy ? { 'X-Hermes-Target': remoteUrl.replace(/\/+$/, '') } : {})
-        }
+          ...(proxy ? { 'X-Hermes-Target': remoteUrl.replace(/\/+$/, '') } : {}),
+        },
       })
 
       if (!status.ok) {
@@ -398,7 +412,7 @@ export class GatewayAdapter {
           authMode: 'unknown',
           providers: [],
           version: null,
-          error: `HTTP ${status.status}`
+          error: `HTTP ${status.status}`,
         }
       }
 
@@ -425,10 +439,12 @@ export class GatewayAdapter {
               : json?.auth_mode === 'token'
                 ? 'token'
                 : 'unknown'
-      const providers: DesktopAuthProvider[] = (json?.auth_providers ?? []).map(name => ({
-        name,
-        displayName: name
-      }))
+      const providers: DesktopAuthProvider[] = (json?.auth_providers ?? []).map(
+        (name) => ({
+          name,
+          displayName: name,
+        }),
+      )
 
       return {
         baseUrl: remoteUrl,
@@ -436,7 +452,7 @@ export class GatewayAdapter {
         authMode,
         providers,
         version: json?.version ?? null,
-        error: null
+        error: null,
       }
     } catch (error) {
       return {
@@ -445,7 +461,7 @@ export class GatewayAdapter {
         authMode: 'unknown',
         providers: [],
         version: null,
-        error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
       }
     }
   }
@@ -458,7 +474,9 @@ export class GatewayAdapter {
    * 代理换 token set 并存 httpOnly cookie → 本窗口轮询 /auth/native/session
    * 直到 connected（或窗口关闭 / 超时）。
    */
-  async oauthLoginConnectionConfig(remoteUrl: string): Promise<DesktopOauthLoginResult> {
+  async oauthLoginConnectionConfig(
+    remoteUrl: string,
+  ): Promise<DesktopOauthLoginResult> {
     const proxy = proxyBaseUrl()
     const baseUrl = remoteUrl.replace(/\/+$/, '')
 
@@ -478,7 +496,7 @@ export class GatewayAdapter {
       const start = await proxyFetch(`${proxy}/auth/native/start`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ target: baseUrl })
+        body: JSON.stringify({ target: baseUrl }),
       })
 
       if (!start.ok) {
@@ -512,7 +530,9 @@ export class GatewayAdapter {
     }
   }
 
-  async oauthLogoutConnectionConfig(remoteUrl?: string): Promise<DesktopOauthLogoutResult> {
+  async oauthLogoutConnectionConfig(
+    remoteUrl?: string,
+  ): Promise<DesktopOauthLogoutResult> {
     const proxy = proxyBaseUrl()
 
     if (!proxy) {
@@ -529,15 +549,18 @@ export class GatewayAdapter {
   }
 
   /** 轮询代理会话状态：窗口关闭即停（最后一查）；最多 OAUTH_POLL_TIMEOUT_MS。 */
-  private async pollOauthSession(remoteUrl: string, win: Window | null): Promise<boolean> {
+  private async pollOauthSession(
+    remoteUrl: string,
+    win: Window | null,
+  ): Promise<boolean> {
     const deadline = Date.now() + OAUTH_POLL_TIMEOUT_MS
 
     while (Date.now() < deadline) {
-      await new Promise(resolve => window.setTimeout(resolve, OAUTH_POLL_INTERVAL_MS))
+      await new Promise((resolve) => window.setTimeout(resolve, OAUTH_POLL_INTERVAL_MS))
 
       if (win && win.closed) {
         // 窗口已关闭：最后一查确认结果（登录成功时 callback 页自动关闭）。
-        return this.oauthSessionStatus(remoteUrl).then(s => s.connected)
+        return this.oauthSessionStatus(remoteUrl).then((s) => s.connected)
       }
 
       const session = await this.oauthSessionStatus(remoteUrl)
@@ -560,16 +583,28 @@ export class GatewayAdapter {
     const proxy = proxyBaseUrl()
 
     if (!proxy) {
-      return { connected: false, provider: '', userId: '', expiresAt: 0, tokenPreview: null }
+      return {
+        connected: false,
+        provider: '',
+        userId: '',
+        expiresAt: 0,
+        tokenPreview: null,
+      }
     }
 
     try {
       const res = await proxyFetch(
-        `${proxy}/auth/native/session?target=${encodeURIComponent(remoteUrl.replace(/\/+$/, ''))}`
+        `${proxy}/auth/native/session?target=${encodeURIComponent(remoteUrl.replace(/\/+$/, ''))}`,
       )
 
       if (!res.ok) {
-        return { connected: false, provider: '', userId: '', expiresAt: 0, tokenPreview: null }
+        return {
+          connected: false,
+          provider: '',
+          userId: '',
+          expiresAt: 0,
+          tokenPreview: null,
+        }
       }
 
       const json = (await res.json()) as {
@@ -585,15 +620,24 @@ export class GatewayAdapter {
         provider: json.provider ?? '',
         userId: json.userId ?? '',
         expiresAt: json.expiresAt ?? 0,
-        tokenPreview: json.tokenPreview ?? null
+        tokenPreview: json.tokenPreview ?? null,
       }
     } catch {
-      return { connected: false, provider: '', userId: '', expiresAt: 0, tokenPreview: null }
+      return {
+        connected: false,
+        provider: '',
+        userId: '',
+        expiresAt: 0,
+        tokenPreview: null,
+      }
     }
   }
 
   /** 读代理 /api/proxy/meta（默认 gateway URL 预填）。 */
-  private async fetchProxyMeta(): Promise<{ defaultGatewayUrl: string | null; requiresPassphrase: boolean } | null> {
+  private async fetchProxyMeta(): Promise<{
+    defaultGatewayUrl: string | null
+    requiresPassphrase: boolean
+  } | null> {
     const proxy = proxyBaseUrl()
 
     if (!proxy) {
@@ -606,7 +650,10 @@ export class GatewayAdapter {
         return null
       }
 
-      return (await res.json()) as { defaultGatewayUrl: string | null; requiresPassphrase: boolean }
+      return (await res.json()) as {
+        defaultGatewayUrl: string | null
+        requiresPassphrase: boolean
+      }
     } catch {
       return null
     }
@@ -631,8 +678,12 @@ export class GatewayAdapter {
   }
 
   async connectionsSave(
-    payload: DesktopRegistryConnectionInput
-  ): Promise<{ ok: boolean; connection: DesktopRegistryConnection; registry: DesktopConnectionsRegistry }> {
+    payload: DesktopRegistryConnectionInput,
+  ): Promise<{
+    ok: boolean
+    connection: DesktopRegistryConnection
+    registry: DesktopConnectionsRegistry
+  }> {
     const id = payload.id ?? `conn-${Date.now().toString(36)}`
     const record: WebConnectionRecord = {
       id,
@@ -640,7 +691,10 @@ export class GatewayAdapter {
       label: payload.label,
       url: payload.url ?? '',
       authMode: payload.authMode ?? 'token',
-      token: payload.authMode === 'oauth' ? '' : (payload.token ?? getPrimaryConnection().token)
+      token:
+        payload.authMode === 'oauth'
+          ? ''
+          : (payload.token ?? getPrimaryConnection().token),
     }
     upsertConnection(record)
 
@@ -653,39 +707,45 @@ export class GatewayAdapter {
         url: record.url,
         authMode: record.authMode,
         tokenSet: Boolean(record.token),
-        tokenPreview: record.token ? `${record.token.slice(0, 4)}…` : null
+        tokenPreview: record.token ? `${record.token.slice(0, 4)}…` : null,
       },
-      registry: await this.connectionsList()
+      registry: await this.connectionsList(),
     }
   }
 
-  private toRegistry(store: import('./registry').WebConnectionsStore): DesktopConnectionsRegistry {
+  private toRegistry(
+    store: import('./registry').WebConnectionsStore,
+  ): DesktopConnectionsRegistry {
     return {
       version: store.version,
       primary: store.primary,
       secureTokenStorage: true,
-      connections: store.connections.map(c => ({
+      connections: store.connections.map((c) => ({
         id: c.id,
         kind: c.kind,
         label: c.label,
         url: c.url,
         authMode: c.authMode,
         tokenSet: Boolean(c.token),
-        tokenPreview: c.token ? `${c.token.slice(0, 4)}…` : null
-      }))
+        tokenPreview: c.token ? `${c.token.slice(0, 4)}…` : null,
+      })),
     }
   }
 
-  async connectionsRemove(id: string): Promise<{ ok: boolean; registry: DesktopConnectionsRegistry }> {
+  async connectionsRemove(
+    id: string,
+  ): Promise<{ ok: boolean; registry: DesktopConnectionsRegistry }> {
     return { ok: true, registry: this.toRegistry(removeConnection(id)) }
   }
 
-  async connectionsSetPrimary(id: string): Promise<{ ok: boolean; registry: DesktopConnectionsRegistry }> {
+  async connectionsSetPrimary(
+    id: string,
+  ): Promise<{ ok: boolean; registry: DesktopConnectionsRegistry }> {
     return { ok: true, registry: this.toRegistry(setPrimaryConnection(id)) }
   }
 
   async connectionsTest(id: string): Promise<DesktopConnectionTestResult> {
-    const record = loadRegistry().connections.find(c => c.id === id)
+    const record = loadRegistry().connections.find((c) => c.id === id)
 
     if (!record) {
       return { ok: false, error: 'unknown connection', reachable: false, version: null }
@@ -716,7 +776,7 @@ export class GatewayAdapter {
       electronVersion: 'web',
       nodeVersion: 'web',
       platform: 'web',
-      hermesRoot: ''
+      hermesRoot: '',
     }
   }
 
@@ -734,7 +794,7 @@ export class GatewayAdapter {
       startedAt: null,
       completedAt: null,
       setupChoice: null,
-      unsupportedPlatform: null
+      unsupportedPlatform: null,
     }
   }
 
@@ -744,8 +804,18 @@ export class GatewayAdapter {
 
   // ── helpers ──────────────────────────────────────────────────────────────
 
-  private applyConfigToRecord(record: WebConnectionRecord, payload: DesktopConnectionConfigInput): WebConnectionRecord {
-    const mode = payload.mode === 'local' ? 'local' : payload.mode === 'ssh' ? 'ssh' : payload.mode === 'cloud' ? 'cloud' : 'remote'
+  private applyConfigToRecord(
+    record: WebConnectionRecord,
+    payload: DesktopConnectionConfigInput,
+  ): WebConnectionRecord {
+    const mode =
+      payload.mode === 'local'
+        ? 'local'
+        : payload.mode === 'ssh'
+          ? 'ssh'
+          : payload.mode === 'cloud'
+            ? 'cloud'
+            : 'remote'
     const next: WebConnectionRecord = { ...record }
 
     if (payload.remoteUrl !== undefined) {
@@ -777,7 +847,7 @@ export class GatewayAdapter {
       baseUrl: remoteUrl,
       version: probe.version,
       reachable: probe.reachable,
-      error: probe.error
+      error: probe.error,
     }
   }
 }

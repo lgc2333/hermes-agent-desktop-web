@@ -26,7 +26,11 @@ const real = (p: string): string | null => {
 }
 
 const fsAllow = [
-  ...new Set([root, real(path.join(root, 'node_modules'))].filter((p): p is string => p !== null))
+  ...new Set(
+    [root, real(path.join(root, 'node_modules'))].filter(
+      (p): p is string => p !== null,
+    ),
+  ),
 ]
 
 export default defineConfig(({ command }) => ({
@@ -36,20 +40,21 @@ export default defineConfig(({ command }) => ({
   publicDir: path.join(vendorDesktop, 'public'),
   plugins: [react(), tailwindcss()],
   css: {
-    postcss: { plugins: [] }
+    postcss: { plugins: [] },
   },
   resolve: {
     alias: {
       // Same debug counters wiring as upstream (dev-only.ts / noop in build).
-      '@/debug/dev-only': command === 'serve'
-        ? path.join(vendorDesktop, 'src/debug/dev-only.ts')
-        : path.join(vendorDesktop, 'src/debug/dev-only.noop.ts'),
+      '@/debug/dev-only':
+        command === 'serve'
+          ? path.join(vendorDesktop, 'src/debug/dev-only.ts')
+          : path.join(vendorDesktop, 'src/debug/dev-only.noop.ts'),
       '@': path.join(vendorDesktop, 'src'),
       '@hermes/plugin-sdk': path.join(vendorDesktop, 'src/sdk/index.ts'),
       '@hermes/shared/billing': path.join(vendorShared, 'src/billing-types.ts'),
-      '@hermes/shared': path.join(vendorShared, 'src')
+      '@hermes/shared': path.join(vendorShared, 'src'),
     },
-    dedupe: ['react', 'react-dom', 'react-router']
+    dedupe: ['react', 'react-dom', 'react-router'],
   },
   server: {
     host: '127.0.0.1',
@@ -59,11 +64,11 @@ export default defineConfig(({ command }) => ({
     // Windows: pnpm drops .package.json.*.tmpdir dirs under the app root;
     // chokidar watching them crashes vite with EBUSY when they get removed.
     watch: {
-      ignored: ['**/.package.json.*', '**/*.tmpdir/**']
-    }
+      ignored: ['**/.package.json.*', '**/*.tmpdir/**'],
+    },
   },
   preview: {
     host: '127.0.0.1',
-    port: 4173
-  }
+    port: 4173,
+  },
 }))

@@ -9,7 +9,7 @@ import {
   upsertConnection,
   writeProfilePreference,
   readProfilePreference,
-  DEFAULT_CONNECTION_ID
+  DEFAULT_CONNECTION_ID,
 } from './registry'
 
 describe('connection registry (ADR-0002: credentials in browser)', () => {
@@ -35,11 +35,11 @@ describe('connection registry (ADR-0002: credentials in browser)', () => {
       kind: 'remote',
       url: 'https://hermes.example',
       authMode: 'token',
-      token: 'secret-1'
+      token: 'secret-1',
     })
 
     const reloaded = loadRegistry()
-    expect(reloaded.connections.find(c => c.id === 'prod')?.token).toBe('secret-1')
+    expect(reloaded.connections.find((c) => c.id === 'prod')?.token).toBe('secret-1')
   })
 
   it('getPrimaryConnection falls back to the seeded default when registry is empty', () => {
@@ -54,14 +54,28 @@ describe('connection registry (ADR-0002: credentials in browser)', () => {
     const registry = setPrimaryConnection('nope')
     expect(registry.primary).toBe(DEFAULT_CONNECTION_ID)
 
-    upsertConnection({ id: 'a', label: 'A', kind: 'remote', url: 'http://a', authMode: 'token', token: '' })
+    upsertConnection({
+      id: 'a',
+      label: 'A',
+      kind: 'remote',
+      url: 'http://a',
+      authMode: 'token',
+      token: '',
+    })
     const switched = setPrimaryConnection('a')
     expect(switched.primary).toBe('a')
   })
 
   it('removeConnection re-points primary to the remaining entry', () => {
     loadRegistry()
-    upsertConnection({ id: 'a', label: 'A', kind: 'remote', url: 'http://a', authMode: 'token', token: '' })
+    upsertConnection({
+      id: 'a',
+      label: 'A',
+      kind: 'remote',
+      url: 'http://a',
+      authMode: 'token',
+      token: '',
+    })
     setPrimaryConnection('a')
 
     const registry = removeConnection('a')

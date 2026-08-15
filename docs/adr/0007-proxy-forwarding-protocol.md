@@ -7,6 +7,7 @@ M2 落地代理转发面（apps/proxy）。浏览器只见代理同源：REST �
 **Status**: accepted
 
 **Context**:
+
 - 桌面端桥 REST 走 baseUrl + token 头，WS 拨号 URL 由桥 mint；Web 端要
   "切换目标无需代理配置"（PLAN §6），目标必须随每个请求携带。
 - 浏览器 `new WebSocket(url)` 不能设置自定义 header（`Authorization`
@@ -19,6 +20,7 @@ M2 落地代理转发面（apps/proxy）。浏览器只见代理同源：REST �
   在 public paths 中公开。
 
 **Decision**:
+
 - REST 转发：代理对非静态请求要求 `X-Hermes-Target`（http/https，
   否则 400）；拼接 `target + pathname + search` 原样转发
   method/headers/body，响应体流式回传；剔除 hop-by-hop 头与代理私有头。
@@ -33,6 +35,7 @@ M2 落地代理转发面（apps/proxy）。浏览器只见代理同源：REST �
   `ws://proxy/api/ws?token=..&target=<encoded>`。
 
 **Consequences**:
+
 - 代理无状态可水平扩展；切换 gateway 只改浏览器注册表，代理零配置。
 - 渲染层直拼 `connection.baseUrl` 的 URL（插件 WS、媒体下载）在代理
   模式下指向代理但缺 target——Web 版这些面被布尔门关闭，M2 不验证；

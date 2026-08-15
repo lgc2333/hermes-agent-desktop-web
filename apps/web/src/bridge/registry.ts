@@ -34,7 +34,9 @@ export interface WebConnectionsStore {
 }
 
 export function defaultMockConnection(): WebConnectionRecord {
-  const ws = (import.meta.env.VITE_MOCK_GATEWAY_WS as string | undefined) ?? 'ws://127.0.0.1:5180/gateway'
+  const ws =
+    (import.meta.env.VITE_MOCK_GATEWAY_WS as string | undefined) ??
+    'ws://127.0.0.1:5180/gateway'
   const base = ws.replace(/^ws/, 'http').replace(/\/gateway$/, '')
 
   return {
@@ -43,7 +45,7 @@ export function defaultMockConnection(): WebConnectionRecord {
     kind: 'remote',
     url: base,
     authMode: 'token',
-    token: 'mock-token'
+    token: 'mock-token',
   }
 }
 
@@ -82,7 +84,7 @@ export function loadRegistry(): WebConnectionsStore {
   const seeded: WebConnectionsStore = {
     version: 1,
     primary: DEFAULT_CONNECTION_ID,
-    connections: [defaultMockConnection()]
+    connections: [defaultMockConnection()],
   }
   writeRaw(seeded)
 
@@ -93,7 +95,7 @@ export function getPrimaryConnection(): WebConnectionRecord {
   const registry = loadRegistry()
 
   return (
-    registry.connections.find(c => c.id === registry.primary) ??
+    registry.connections.find((c) => c.id === registry.primary) ??
     registry.connections[0] ??
     defaultMockConnection()
   )
@@ -105,7 +107,7 @@ export function saveRegistry(store: WebConnectionsStore): void {
 
 export function upsertConnection(record: WebConnectionRecord): WebConnectionsStore {
   const registry = loadRegistry()
-  const index = registry.connections.findIndex(c => c.id === record.id)
+  const index = registry.connections.findIndex((c) => c.id === record.id)
 
   if (index >= 0) {
     registry.connections[index] = record
@@ -119,7 +121,7 @@ export function upsertConnection(record: WebConnectionRecord): WebConnectionsSto
 
 export function removeConnection(id: string): WebConnectionsStore {
   const registry = loadRegistry()
-  registry.connections = registry.connections.filter(c => c.id !== id)
+  registry.connections = registry.connections.filter((c) => c.id !== id)
 
   if (registry.primary === id) {
     registry.primary = registry.connections[0]?.id ?? DEFAULT_CONNECTION_ID
@@ -131,7 +133,9 @@ export function removeConnection(id: string): WebConnectionsStore {
 
 export function setPrimaryConnection(id: string): WebConnectionsStore {
   const registry = loadRegistry()
-  registry.primary = registry.connections.some(c => c.id === id) ? id : registry.primary
+  registry.primary = registry.connections.some((c) => c.id === id)
+    ? id
+    : registry.primary
   saveRegistry(registry)
 
   return registry

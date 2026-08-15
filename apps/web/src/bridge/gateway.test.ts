@@ -6,7 +6,7 @@ import { loadRegistry } from './registry'
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { 'Content-Type': 'application/json' }
+    headers: { 'Content-Type': 'application/json' },
   })
 }
 
@@ -37,28 +37,40 @@ describe('webApi (REST forwarding)', () => {
   })
 
   it('normalizes 404 into the desktop endpoint-missing error shape', async () => {
-    fetchMock.mockResolvedValue(jsonResponse(404, { detail: 'No such API endpoint: /api/nope' }))
+    fetchMock.mockResolvedValue(
+      jsonResponse(404, { detail: 'No such API endpoint: /api/nope' }),
+    )
 
-    await expect(webApi({ path: '/api/nope' })).rejects.toThrow('404: {"detail":"No such API endpoint: /api/nope"}')
+    await expect(webApi({ path: '/api/nope' })).rejects.toThrow(
+      '404: {"detail":"No such API endpoint: /api/nope"}',
+    )
   })
 
   it('normalizes other HTTP errors with status + detail', async () => {
     fetchMock.mockResolvedValue(jsonResponse(500, { detail: 'boom' }))
 
-    await expect(webApi({ path: '/api/boom' })).rejects.toThrow('HTTP 500: {"detail":"boom"}')
+    await expect(webApi({ path: '/api/boom' })).rejects.toThrow(
+      'HTTP 500: {"detail":"boom"}',
+    )
   })
 
   it('parses JSON bodies and returns them', async () => {
     fetchMock.mockResolvedValue(jsonResponse(200, { sessions: [], total: 0 }))
 
-    const result = await webApi<{ sessions: unknown[]; total: number }>({ path: '/api/sessions' })
+    const result = await webApi<{ sessions: unknown[]; total: number }>({
+      path: '/api/sessions',
+    })
     expect(result.total).toBe(0)
   })
 
   it('POSTs JSON bodies with the JSON content type', async () => {
     fetchMock.mockResolvedValue(jsonResponse(200, { ok: true }))
 
-    await webApi({ path: '/api/sessions/s1', method: 'PATCH', body: { archived: true } })
+    await webApi({
+      path: '/api/sessions/s1',
+      method: 'PATCH',
+      body: { archived: true },
+    })
 
     const [url, init] = fetchMock.mock.calls[0]
     expect(url).toBe('http://127.0.0.1:5180/api/sessions/s1')
@@ -72,7 +84,11 @@ describe('webApi (REST forwarding)', () => {
     await webApi({
       path: '/api/attach',
       method: 'POST',
-      upload: { filename: 'a.png', contentType: 'image/png', bytes: new Uint8Array([1, 2, 3]).buffer }
+      upload: {
+        filename: 'a.png',
+        contentType: 'image/png',
+        bytes: new Uint8Array([1, 2, 3]).buffer,
+      },
     })
 
     const [, init] = fetchMock.mock.calls[0]
@@ -106,7 +122,10 @@ describe('GatewayAdapter', () => {
     const adapter = new GatewayAdapter()
     const result = await adapter.getGatewayWsUrl()
 
-    expect(result).toEqual({ ok: true, wsUrl: expect.stringContaining('/api/ws?token=') })
+    expect(result).toEqual({
+      ok: true,
+      wsUrl: expect.stringContaining('/api/ws?token='),
+    })
   })
 
   it('revalidate/touch are cheap no-ops with ok:true', async () => {
@@ -131,7 +150,7 @@ describe('GatewayAdapter', () => {
       mode: 'remote',
       remoteUrl: 'http://127.0.0.1:5199',
       remoteAuthMode: 'token',
-      remoteToken: 'fresh-token'
+      remoteToken: 'fresh-token',
     })
 
     expect(saved.remoteUrl).toBe('http://127.0.0.1:5199')
@@ -171,7 +190,7 @@ describe('toHermesConnection', () => {
       kind: 'remote',
       url: 'http://h:9119/',
       authMode: 'oauth',
-      token: 't'
+      token: 't',
     })
 
     expect(conn.baseUrl).toBe('http://h:9119')
@@ -212,21 +231,24 @@ describe('proxy mode (VITE_PROXY_URL set)', () => {
 
     expect(conn.baseUrl).toBe('http://127.0.0.1:8787')
     expect(conn.wsUrl).toBe(
-      'ws://127.0.0.1:8787/api/ws?token=mock-token&target=' + encodeURIComponent('http://127.0.0.1:5180')
+      'ws://127.0.0.1:8787/api/ws?token=mock-token&target=' +
+        encodeURIComponent('http://127.0.0.1:5180'),
     )
   })
 
   it('probeConnectionConfig goes through the proxy', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      jsonResponse(200, { version: '0.19.1', auth_mode: 'token' })
-    )
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(jsonResponse(200, { version: '0.19.1', auth_mode: 'token' }))
     vi.stubGlobal('fetch', fetchMock)
 
     const adapter = new GatewayAdapter()
     const result = await adapter.probeConnectionConfig('http://127.0.0.1:9119')
 
     expect(fetchMock.mock.calls[0][0]).toBe('http://127.0.0.1:8787/api/status')
-    expect(fetchMock.mock.calls[0][1].headers['X-Hermes-Target']).toBe('http://127.0.0.1:9119')
+    expect(fetchMock.mock.calls[0][1].headers['X-Hermes-Target']).toBe(
+      'http://127.0.0.1:9119',
+    )
     expect(result.reachable).toBe(true)
     expect(result.version).toBe('0.19.1')
     vi.unstubAllGlobals()
@@ -251,8 +273,8 @@ describe('M3 OAuth (proxy mode)', () => {
         version: '0.19.1',
         auth_required: true,
         auth_flows: ['cookie', 'native_pkce'],
-        auth_providers: ['nous']
-      })
+        auth_providers: ['nous'],
+      }),
     )
     vi.stubGlobal('fetch', fetchMock)
 
@@ -264,7 +286,14 @@ describe('M3 OAuth (proxy mode)', () => {
   })
 
   it('probeConnectionConfig: loopback gateway (no gate) reports token', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(200, { version: '0.19.1', auth_required: false })))
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValue(
+          jsonResponse(200, { version: '0.19.1', auth_required: false }),
+        ),
+    )
 
     const adapter = new GatewayAdapter()
     const result = await adapter.probeConnectionConfig('http://127.0.0.1:9119')
@@ -277,7 +306,7 @@ describe('M3 OAuth (proxy mode)', () => {
     await adapter.saveConnectionConfig({
       mode: 'remote',
       remoteUrl: 'http://127.0.0.1:9119',
-      remoteAuthMode: 'oauth'
+      remoteAuthMode: 'oauth',
     })
 
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { ok: true }))
@@ -297,11 +326,14 @@ describe('M3 OAuth (proxy mode)', () => {
     await adapter.saveConnectionConfig({
       mode: 'remote',
       remoteUrl: 'http://127.0.0.1:9119',
-      remoteAuthMode: 'oauth'
+      remoteAuthMode: 'oauth',
     })
     const conn = await adapter.getConnection()
 
-    expect(conn.wsUrl).toBe('ws://127.0.0.1:6722/api/ws?target=' + encodeURIComponent('http://127.0.0.1:9119'))
+    expect(conn.wsUrl).toBe(
+      'ws://127.0.0.1:6722/api/ws?target=' +
+        encodeURIComponent('http://127.0.0.1:9119'),
+    )
     expect(conn.wsUrl.includes('token=')).toBe(false)
   })
 
@@ -310,7 +342,11 @@ describe('M3 OAuth (proxy mode)', () => {
     const adapter = new GatewayAdapter()
     const result = await adapter.oauthLoginConnectionConfig('http://127.0.0.1:9119')
 
-    expect(result).toEqual({ ok: false, baseUrl: 'http://127.0.0.1:9119', connected: false })
+    expect(result).toEqual({
+      ok: false,
+      baseUrl: 'http://127.0.0.1:9119',
+      connected: false,
+    })
   })
 
   it('oauthLoginConnectionConfig: start → open window → poll session until connected', async () => {
@@ -318,7 +354,7 @@ describe('M3 OAuth (proxy mode)', () => {
     const fakeWin = {
       closed: false,
       close: vi.fn(),
-      location: { href: '' }
+      location: { href: '' },
     }
     const openMock = vi.fn(() => fakeWin)
     vi.stubGlobal('open', openMock)
@@ -327,11 +363,21 @@ describe('M3 OAuth (proxy mode)', () => {
     const fetchMock = vi
       .fn()
       // start
-      .mockResolvedValueOnce(jsonResponse(200, { authorizeUrl: 'http://127.0.0.1:9119/auth/native/authorize?state=s1' }))
+      .mockResolvedValueOnce(
+        jsonResponse(200, {
+          authorizeUrl: 'http://127.0.0.1:9119/auth/native/authorize?state=s1',
+        }),
+      )
       // session 轮询：第一次未连接，第二次已连接
       .mockResolvedValueOnce(jsonResponse(200, { connected: false }))
       .mockResolvedValueOnce(
-        jsonResponse(200, { connected: true, provider: 'nous', userId: 'u1', expiresAt: 9999, tokenPreview: 'mock…' })
+        jsonResponse(200, {
+          connected: true,
+          provider: 'nous',
+          userId: 'u1',
+          expiresAt: 9999,
+          tokenPreview: 'mock…',
+        }),
       )
     vi.stubGlobal('fetch', fetchMock)
     vi.useFakeTimers()
@@ -344,12 +390,20 @@ describe('M3 OAuth (proxy mode)', () => {
 
     vi.useRealTimers()
 
-    expect(result).toEqual({ ok: true, baseUrl: 'http://127.0.0.1:9119', connected: true })
+    expect(result).toEqual({
+      ok: true,
+      baseUrl: 'http://127.0.0.1:9119',
+      connected: true,
+    })
     // start 请求形状
     expect(fetchMock.mock.calls[0][0]).toBe('http://127.0.0.1:6722/auth/native/start')
-    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ target: 'http://127.0.0.1:9119' })
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+      target: 'http://127.0.0.1:9119',
+    })
     // 授权窗口导航到 authorize URL
-    expect(fakeWin.location.href).toBe('http://127.0.0.1:9119/auth/native/authorize?state=s1')
+    expect(fakeWin.location.href).toBe(
+      'http://127.0.0.1:9119/auth/native/authorize?state=s1',
+    )
   })
 
   it('oauthLogoutConnectionConfig posts logout to the proxy', async () => {
@@ -368,7 +422,12 @@ describe('M3 OAuth (proxy mode)', () => {
     const adapter = new GatewayAdapter()
     const fetchMock = vi
       .fn()
-      .mockResolvedValueOnce(jsonResponse(200, { defaultGatewayUrl: 'http://hermes:9119', requiresPassphrase: true }))
+      .mockResolvedValueOnce(
+        jsonResponse(200, {
+          defaultGatewayUrl: 'http://hermes:9119',
+          requiresPassphrase: true,
+        }),
+      )
     vi.stubGlobal('fetch', fetchMock)
 
     const config = await adapter.getConnectionConfig()
@@ -384,11 +443,19 @@ describe('M3 OAuth (proxy mode)', () => {
     await adapter.saveConnectionConfig({
       mode: 'remote',
       remoteUrl: 'http://127.0.0.1:9119',
-      remoteAuthMode: 'oauth'
+      remoteAuthMode: 'oauth',
     })
-    const fetchMock = vi.fn().mockResolvedValue(
-      jsonResponse(200, { connected: true, provider: 'nous', userId: 'u1', expiresAt: 9999, tokenPreview: 'mock…' })
-    )
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        jsonResponse(200, {
+          connected: true,
+          provider: 'nous',
+          userId: 'u1',
+          expiresAt: 9999,
+          tokenPreview: 'mock…',
+        }),
+      )
     vi.stubGlobal('fetch', fetchMock)
 
     const config = await adapter.getConnectionConfig()
@@ -405,11 +472,19 @@ describe('M3 OAuth (proxy mode)', () => {
     await adapter.saveConnectionConfig({
       mode: 'remote',
       remoteUrl: 'http://127.0.0.1:9119',
-      remoteAuthMode: 'oauth'
+      remoteAuthMode: 'oauth',
     })
     const fetchMock = vi
       .fn()
-      .mockResolvedValue(jsonResponse(200, { connected: false, provider: '', userId: '', expiresAt: 0, tokenPreview: null }))
+      .mockResolvedValue(
+        jsonResponse(200, {
+          connected: false,
+          provider: '',
+          userId: '',
+          expiresAt: 0,
+          tokenPreview: null,
+        }),
+      )
     vi.stubGlobal('fetch', fetchMock)
 
     const config = await adapter.getConnectionConfig()
@@ -418,7 +493,9 @@ describe('M3 OAuth (proxy mode)', () => {
     expect(config.remoteTokenPreview).toBe(null)
     expect(config.remoteTokenSet).toBe(false)
     // 会话查询走代理同源（credentials include 随 cookie），带 target 匹配。
-    expect(fetchMock.mock.calls[0][0]).toBe('http://127.0.0.1:6722/auth/native/session?target=http%3A%2F%2F127.0.0.1%3A9119')
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      'http://127.0.0.1:6722/auth/native/session?target=http%3A%2F%2F127.0.0.1%3A9119',
+    )
     expect(fetchMock.mock.calls[0][1].credentials).toBe('include')
   })
 
@@ -428,12 +505,12 @@ describe('M3 OAuth (proxy mode)', () => {
       mode: 'remote',
       remoteUrl: 'http://127.0.0.1:5199',
       remoteAuthMode: 'token',
-      remoteToken: 'fresh-token'
+      remoteToken: 'fresh-token',
     })
     const switched = await adapter.saveConnectionConfig({
       mode: 'remote',
       remoteUrl: 'http://127.0.0.1:5199',
-      remoteAuthMode: 'oauth'
+      remoteAuthMode: 'oauth',
     })
 
     expect(switched.remoteTokenSet).toBe(false)

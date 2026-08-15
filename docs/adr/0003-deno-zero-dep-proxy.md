@@ -5,6 +5,7 @@
 **Status**: accepted
 
 **Considered Options**:
+
 - Node 零依赖原生：可行，但 WS 要手工 upgrade + socket pipe
 - Node + Hono（~15KB）：依赖很小，但 WS 仍需手工处理或引入 ws 包
 - Bun：开发体验好，但镜像偏大

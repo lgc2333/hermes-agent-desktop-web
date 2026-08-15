@@ -16,9 +16,9 @@ function startTargetHttp(): { url: string; close: () => Promise<void> } {
           method: request.method,
           token: request.headers.get('x-hermes-session-token'),
           hasBody: request.body !== null,
-          query: url.search
+          query: url.search,
         }),
-        { status: 200, headers: { 'Content-Type': 'application/json' } }
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
       )
     }
     if (url.pathname === '/api/stream') {
@@ -31,14 +31,19 @@ function startTargetHttp(): { url: string; close: () => Promise<void> } {
             return
           }
           controller.enqueue(encoder.encode(`chunk${i++}; `))
-        }
+        },
       })
 
       return new Response(body, { status: 200 })
     }
-    return new Response(JSON.stringify({ detail: 'No such API endpoint' }), { status: 404 })
+    return new Response(JSON.stringify({ detail: 'No such API endpoint' }), {
+      status: 404,
+    })
   }
-  const server = Deno.serve({ port: 0, hostname: '127.0.0.1', onListen: () => {} }, handler)
+  const server = Deno.serve(
+    { port: 0, hostname: '127.0.0.1', onListen: () => {} },
+    handler,
+  )
 
   return {
     get url() {
@@ -46,7 +51,7 @@ function startTargetHttp(): { url: string; close: () => Promise<void> } {
     },
     close: async () => {
       await server.shutdown()
-    }
+    },
   }
 }
 
@@ -56,13 +61,16 @@ function startTargetWs(): { url: string; close: () => Promise<void> } {
       return new Response('not ws', { status: 400 })
     }
     const { socket, response } = Deno.upgradeWebSocket(request)
-    socket.onmessage = event => {
+    socket.onmessage = (event) => {
       socket.send(`echo:${String(event.data)}`)
     }
 
     return response
   }
-  const server = Deno.serve({ port: 0, hostname: '127.0.0.1', onListen: () => {} }, handler)
+  const server = Deno.serve(
+    { port: 0, hostname: '127.0.0.1', onListen: () => {} },
+    handler,
+  )
 
   return {
     get url() {
@@ -70,17 +78,26 @@ function startTargetWs(): { url: string; close: () => Promise<void> } {
     },
     close: async () => {
       await server.shutdown()
-    }
+    },
   }
 }
 
 /** 起一个完整代理实例。 */
-async function startProxy(opts: { passphrase?: string; webDist?: string; defaultGatewayUrl?: string } = {}): Promise<{
+async function startProxy(
+  opts: { passphrase?: string; webDist?: string; defaultGatewayUrl?: string } = {},
+): Promise<{
   url: string
   close: () => Promise<void>
 }> {
-  const handler = createProxyHandler({ passphrase: opts.passphrase, webDist: opts.webDist, defaultGatewayUrl: opts.defaultGatewayUrl })
-  const server = Deno.serve({ port: 0, hostname: '127.0.0.1', onListen: () => {} }, handler)
+  const handler = createProxyHandler({
+    passphrase: opts.passphrase,
+    webDist: opts.webDist,
+    defaultGatewayUrl: opts.defaultGatewayUrl,
+  })
+  const server = Deno.serve(
+    { port: 0, hostname: '127.0.0.1', onListen: () => {} },
+    handler,
+  )
 
   return {
     get url() {
@@ -88,43 +105,46 @@ async function startProxy(opts: { passphrase?: string; webDist?: string; default
     },
     close: async () => {
       await server.shutdown()
-    }
+    },
   }
 }
 
 // ── REST 转发 ──────────────────────────────────────────────────────────────
 
-Deno.test('proxy: forwards REST with X-Hermes-Target (method/body/headers/query)', async () => {
-  const target = startTargetHttp()
-  const proxy = await startProxy()
-  try {
-    const res = await fetch(`${proxy.url}/api/echo?q=1`, {
-      method: 'POST',
-      headers: {
-        'x-hermes-target': target.url,
-        'x-hermes-session-token': 'tok123',
-        'content-type': 'application/json'
-      },
-      body: JSON.stringify({ a: 1 })
-    })
-    assertEquals(res.status, 200)
-    const json = await res.json()
-    assertEquals(json.method, 'POST')
-    assertEquals(json.token, 'tok123')
-    assertEquals(json.hasBody, true)
-    assertEquals(json.query, '?q=1')
-  } finally {
-    await proxy.close()
-    await target.close()
-  }
-})
+Deno.test(
+  'proxy: forwards REST with X-Hermes-Target (method/body/headers/query)',
+  async () => {
+    const target = startTargetHttp()
+    const proxy = await startProxy()
+    try {
+      const res = await fetch(`${proxy.url}/api/echo?q=1`, {
+        method: 'POST',
+        headers: {
+          'x-hermes-target': target.url,
+          'x-hermes-session-token': 'tok123',
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ a: 1 }),
+      })
+      assertEquals(res.status, 200)
+      const json = await res.json()
+      assertEquals(json.method, 'POST')
+      assertEquals(json.token, 'tok123')
+      assertEquals(json.hasBody, true)
+      assertEquals(json.query, '?q=1')
+    } finally {
+      await proxy.close()
+      await target.close()
+    }
+  },
+)
 
 Deno.test('proxy: streams response bodies without buffering', async () => {
   const target = startTargetHttp()
   const proxy = await startProxy()
   try {
     const res = await fetch(`${proxy.url}/api/stream`, {
-      headers: { 'x-hermes-target': target.url }
+      headers: { 'x-hermes-target': target.url },
     })
     assertEquals(res.status, 200)
     assertEquals(await res.text(), 'chunk0; chunk1; chunk2; chunk3; chunk4; ')
@@ -139,7 +159,7 @@ Deno.test('proxy: passes through 404 and other statuses', async () => {
   const proxy = await startProxy()
   try {
     const res = await fetch(`${proxy.url}/api/missing`, {
-      headers: { 'x-hermes-target': target.url }
+      headers: { 'x-hermes-target': target.url },
     })
     assertEquals(res.status, 404)
     assertEquals((await res.json()).detail, 'No such API endpoint')
@@ -164,7 +184,7 @@ Deno.test('proxy: upstream down -> 502 with detail', async () => {
   const proxy = await startProxy()
   try {
     const res = await fetch(`${proxy.url}/api/x`, {
-      headers: { 'x-hermes-target': 'http://127.0.0.1:1' }
+      headers: { 'x-hermes-target': 'http://127.0.0.1:1' },
     })
     assertEquals(res.status, 502)
     assertEquals((await res.json()).detail.startsWith('proxy upstream error:'), true)
@@ -180,12 +200,15 @@ Deno.test('proxy: passphrase gate rejects and accepts', async () => {
   const proxy = await startProxy({ passphrase: 'secret-pass' })
   try {
     const denied = await fetch(`${proxy.url}/api/echo`, {
-      headers: { 'x-hermes-target': target.url }
+      headers: { 'x-hermes-target': target.url },
     })
     assertEquals(denied.status, 401)
 
     const ok = await fetch(`${proxy.url}/api/echo`, {
-      headers: { 'x-hermes-target': target.url, 'x-hermes-proxy-passphrase': 'secret-pass' }
+      headers: {
+        'x-hermes-target': target.url,
+        'x-hermes-proxy-passphrase': 'secret-pass',
+      },
     })
     assertEquals(ok.status, 200)
   } finally {
@@ -200,36 +223,45 @@ function tempWebDist(): string {
   const dir = Deno.makeTempDirSync()
   const root = `file:///${dir.replace(/\\\\/g, '/')}/`
   Deno.mkdirSync(new URL('assets', root))
-  Deno.writeFileSync(new URL('index.html', root), new TextEncoder().encode('<html>SPA</html>'))
-  Deno.writeFileSync(new URL('assets/app.js', root), new TextEncoder().encode('console.log(1)'))
+  Deno.writeFileSync(
+    new URL('index.html', root),
+    new TextEncoder().encode('<html>SPA</html>'),
+  )
+  Deno.writeFileSync(
+    new URL('assets/app.js', root),
+    new TextEncoder().encode('console.log(1)'),
+  )
 
   return root
 }
 
-Deno.test('proxy: serves static files and SPA-falls back for client routes', async () => {
-  const webDist = tempWebDist()
-  const proxy = await startProxy({ webDist })
-  try {
-    const index = await fetch(`${proxy.url}/`)
-    assertEquals(index.status, 200)
-    assertEquals(await index.text(), '<html>SPA</html>')
+Deno.test(
+  'proxy: serves static files and SPA-falls back for client routes',
+  async () => {
+    const webDist = tempWebDist()
+    const proxy = await startProxy({ webDist })
+    try {
+      const index = await fetch(`${proxy.url}/`)
+      assertEquals(index.status, 200)
+      assertEquals(await index.text(), '<html>SPA</html>')
 
-    const js = await fetch(`${proxy.url}/assets/app.js`)
-    assertEquals(js.status, 200)
-    assertEquals(await js.text(), 'console.log(1)')
+      const js = await fetch(`${proxy.url}/assets/app.js`)
+      assertEquals(js.status, 200)
+      assertEquals(await js.text(), 'console.log(1)')
 
-    // 未知客户端路由 → index.html（SPA fallback）
-    const route = await fetch(`${proxy.url}/chat/some-session`)
-    assertEquals(route.status, 200)
-    assertEquals(await route.text(), '<html>SPA</html>')
+      // 未知客户端路由 → index.html（SPA fallback）
+      const route = await fetch(`${proxy.url}/chat/some-session`)
+      assertEquals(route.status, 200)
+      assertEquals(await route.text(), '<html>SPA</html>')
 
-    // API 前缀不落静态面
-    const api = await fetch(`${proxy.url}/api/status`)
-    assertEquals(api.status, 400)
-  } finally {
-    await proxy.close()
-  }
-})
+      // API 前缀不落静态面
+      const api = await fetch(`${proxy.url}/api/status`)
+      assertEquals(api.status, 400)
+    } finally {
+      await proxy.close()
+    }
+  },
+)
 Deno.test('defaultWebDist: resolves to repo apps/web/dist (M4 regression)', () => {
   // M4 生产服务器测试抓出的 bug：默认值曾是 '../web/dist/'，相对 src/main.ts
   // 解析到 apps/proxy/web/dist（不存在）→ 生产静态托管静默 400（dev 走 vite
@@ -239,10 +271,9 @@ Deno.test('defaultWebDist: resolves to repo apps/web/dist (M4 regression)', () =
   assertEquals(parsed.protocol, 'file:')
   assert(
     parsed.pathname.endsWith('/apps/web/dist/'),
-    `expected .../apps/web/dist/, got ${parsed.pathname}`
+    `expected .../apps/web/dist/, got ${parsed.pathname}`,
   )
 })
-
 
 // ── WS 中继 ────────────────────────────────────────────────────────────────
 
@@ -260,7 +291,7 @@ Deno.test('proxy: relays WebSocket bidirectionally with ?target=', async () => {
       ws.onopen = () => {
         ws.send('ping-1')
       }
-      ws.onmessage = event => {
+      ws.onmessage = (event) => {
         messages.push(String(event.data))
         if (messages.length === 2) {
           clearTimeout(timer)
@@ -287,7 +318,7 @@ Deno.test('proxy: ws upgrade without target fails fast (error or close)', async 
   const proxy = await startProxy()
   try {
     const ws = new WebSocket(`${proxy.url.replace(/^http/, 'ws')}/api/ws?token=x`)
-    const outcome = await new Promise<'error' | 'close' | 'timeout'>(resolve => {
+    const outcome = await new Promise<'error' | 'close' | 'timeout'>((resolve) => {
       ws.onerror = () => resolve('error')
       ws.onclose = () => resolve('close')
       setTimeout(() => resolve('timeout'), 3000)
@@ -303,7 +334,13 @@ Deno.test('proxy: ws upgrade without target fails fast (error or close)', async 
 // ── M3：OAuth 中转端到端 ───────────────────────────────────────────────────
 
 /** 目标服务：实现 gateway 的 native OAuth 面（authorize/token/refresh/ws-ticket）+ WS。 */
-function startOauthTarget(): { url: string; close: () => Promise<void>; tickets: string[]; authHeaders: string[]; wsSeen: string[] } {
+function startOauthTarget(): {
+  url: string
+  close: () => Promise<void>
+  tickets: string[]
+  authHeaders: string[]
+  wsSeen: string[]
+} {
   const tickets: string[] = []
   const authHeaders: string[] = []
   const wsSeen: string[] = []
@@ -319,7 +356,8 @@ function startOauthTarget(): { url: string; close: () => Promise<void>; tickets:
       const token = url.searchParams.get('token') ?? ''
       wsSeen.push(ticket)
       const { socket, response } = Deno.upgradeWebSocket(request)
-      socket.onopen = () => socket.send(`ticket=${ticket || 'none'} token=${token || 'none'}`)
+      socket.onopen = () =>
+        socket.send(`ticket=${ticket || 'none'} token=${token || 'none'}`)
 
       return response
     }
@@ -348,9 +386,9 @@ function startOauthTarget(): { url: string; close: () => Promise<void>; tickets:
           refresh_token: 'refresh-oauth-1',
           expires_at: Math.floor(Date.now() / 1000) + 3600,
           provider: 'nous',
-          user_id: 'u-oauth'
+          user_id: 'u-oauth',
         }),
-        { status: 200, headers: { 'Content-Type': 'application/json' } }
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
       )
     }
 
@@ -361,9 +399,9 @@ function startOauthTarget(): { url: string; close: () => Promise<void>; tickets:
           refresh_token: 'refresh-oauth-2',
           expires_at: Math.floor(Date.now() / 1000) + 3600,
           provider: 'nous',
-          user_id: 'u-oauth'
+          user_id: 'u-oauth',
         }),
-        { status: 200, headers: { 'Content-Type': 'application/json' } }
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
       )
     }
 
@@ -375,7 +413,7 @@ function startOauthTarget(): { url: string; close: () => Promise<void>; tickets:
 
       return new Response(JSON.stringify({ ticket, ttl_seconds: 30 }), {
         status: 200,
-        headers: { 'Content-Type': 'application/json' }
+        headers: { 'Content-Type': 'application/json' },
       })
     }
 
@@ -383,14 +421,19 @@ function startOauthTarget(): { url: string; close: () => Promise<void>; tickets:
     if (path === '/api/echo') {
       return new Response(
         JSON.stringify({ auth: request.headers.get('authorization') ?? null }),
-        { status: 200, headers: { 'Content-Type': 'application/json' } }
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
       )
     }
 
-    return new Response(JSON.stringify({ detail: 'No such API endpoint' }), { status: 404 })
+    return new Response(JSON.stringify({ detail: 'No such API endpoint' }), {
+      status: 404,
+    })
   }
 
-  const server = Deno.serve({ port: 0, hostname: '127.0.0.1', onListen: () => {} }, handler)
+  const server = Deno.serve(
+    { port: 0, hostname: '127.0.0.1', onListen: () => {} },
+    handler,
+  )
 
   return {
     get url() {
@@ -401,17 +444,20 @@ function startOauthTarget(): { url: string; close: () => Promise<void>; tickets:
     },
     tickets,
     authHeaders,
-    wsSeen
+    wsSeen,
   }
 }
 
 /** 走完整 OAuth 登录：start → 模拟浏览器跟随 authorize 302 → 代理 callback → 返回 cookie。 */
-async function oauthLogin(proxyUrl: string, targetUrl: string): Promise<{ cookie: string; setCookie: string }> {
+async function oauthLogin(
+  proxyUrl: string,
+  targetUrl: string,
+): Promise<{ cookie: string; setCookie: string }> {
   // 1) 浏览器 fetch start（模拟页面同源请求）。
   const start = await fetch(`${proxyUrl}/auth/native/start`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ target: targetUrl })
+    body: JSON.stringify({ target: targetUrl }),
   })
   assertEquals(start.status, 200)
   const { authorizeUrl } = await start.json()
@@ -433,54 +479,57 @@ async function oauthLogin(proxyUrl: string, targetUrl: string): Promise<{ cookie
   return { cookie, setCookie }
 }
 
-Deno.test('proxy: full OAuth login flow through the proxy (cookie + bearer injection)', async () => {
-  const target = startOauthTarget()
-  const proxy = await startProxy()
-  try {
-    const { cookie } = await oauthLogin(proxy.url, target.url)
+Deno.test(
+  'proxy: full OAuth login flow through the proxy (cookie + bearer injection)',
+  async () => {
+    const target = startOauthTarget()
+    const proxy = await startProxy()
+    try {
+      const { cookie } = await oauthLogin(proxy.url, target.url)
 
-    // 会话查询（免 passphrase、带 cookie + target）。
-    const session = await fetch(
-      `${proxy.url}/auth/native/session?target=${encodeURIComponent(target.url)}`,
-      { headers: { cookie } }
-    )
-    const info = await session.json()
-    assertEquals(info.connected, true)
-    assertEquals(info.provider, 'nous')
-    assertEquals(info.userId, 'u-oauth')
-    assertEquals(info.tokenPreview, 'acce…')
+      // 会话查询（免 passphrase、带 cookie + target）。
+      const session = await fetch(
+        `${proxy.url}/auth/native/session?target=${encodeURIComponent(target.url)}`,
+        { headers: { cookie } },
+      )
+      const info = await session.json()
+      assertEquals(info.connected, true)
+      assertEquals(info.provider, 'nous')
+      assertEquals(info.userId, 'u-oauth')
+      assertEquals(info.tokenPreview, 'acce…')
 
-    // 带 cookie 的 REST 请求 → 代理注入 Authorization: Bearer。
-    const echo = await fetch(`${proxy.url}/api/echo`, {
-      headers: { 'x-hermes-target': target.url, cookie }
-    })
-    assertEquals(echo.status, 200)
-    assertEquals((await echo.json()).auth, 'Bearer access-oauth-1')
+      // 带 cookie 的 REST 请求 → 代理注入 Authorization: Bearer。
+      const echo = await fetch(`${proxy.url}/api/echo`, {
+        headers: { 'x-hermes-target': target.url, cookie },
+      })
+      assertEquals(echo.status, 200)
+      assertEquals((await echo.json()).auth, 'Bearer access-oauth-1')
 
-    // 无 cookie 的 REST 请求 → 不注入。
-    const echo2 = await fetch(`${proxy.url}/api/echo`, {
-      headers: { 'x-hermes-target': target.url }
-    })
-    assertEquals((await echo2.json()).auth, null)
+      // 无 cookie 的 REST 请求 → 不注入。
+      const echo2 = await fetch(`${proxy.url}/api/echo`, {
+        headers: { 'x-hermes-target': target.url },
+      })
+      assertEquals((await echo2.json()).auth, null)
 
-    // 登出：清会话 + 清 cookie。
-    const logout = await fetch(`${proxy.url}/auth/native/logout`, {
-      method: 'POST',
-      headers: { cookie }
-    })
-    assertEquals(logout.status, 200)
-    assertEquals((logout.headers.get('set-cookie') ?? '').includes('Max-Age=0'), true)
+      // 登出：清会话 + 清 cookie。
+      const logout = await fetch(`${proxy.url}/auth/native/logout`, {
+        method: 'POST',
+        headers: { cookie },
+      })
+      assertEquals(logout.status, 200)
+      assertEquals((logout.headers.get('set-cookie') ?? '').includes('Max-Age=0'), true)
 
-    const session2 = await fetch(
-      `${proxy.url}/auth/native/session?target=${encodeURIComponent(target.url)}`,
-      { headers: { cookie } }
-    )
-    assertEquals((await session2.json()).connected, false)
-  } finally {
-    await proxy.close()
-    await target.close()
-  }
-})
+      const session2 = await fetch(
+        `${proxy.url}/auth/native/session?target=${encodeURIComponent(target.url)}`,
+        { headers: { cookie } },
+      )
+      assertEquals((await session2.json()).connected, false)
+    } finally {
+      await proxy.close()
+      await target.close()
+    }
+  },
+)
 
 Deno.test('proxy: OAuth WS dial mints a ticket and replaces token', async () => {
   const target = startOauthTarget()
@@ -495,7 +544,7 @@ Deno.test('proxy: OAuth WS dial mints a ticket and replaces token', async () => 
 
     const first = await new Promise<string>((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error('ws ticket timeout')), 5000)
-      ws.onmessage = event => {
+      ws.onmessage = (event) => {
         clearTimeout(timer)
         resolve(String(event.data))
         ws.close()
@@ -517,64 +566,82 @@ Deno.test('proxy: OAuth WS dial mints a ticket and replaces token', async () => 
   }
 })
 
-Deno.test('proxy: /api/proxy/meta reports default gateway + passphrase flag (public)', async () => {
-  const proxy = await startProxy({ passphrase: 'secret', defaultGatewayUrl: 'http://hermes:9119' })
-  try {
-    // 免 passphrase 可读（默认 URL 预填是 boot 期能力）。
-    const res = await fetch(`${proxy.url}/api/proxy/meta`)
-    assertEquals(res.status, 200)
-    const meta = await res.json()
-    assertEquals(meta.defaultGatewayUrl, 'http://hermes:9119')
-    assertEquals(meta.requiresPassphrase, true)
-
-    // 未配置 defaultGatewayUrl → null。
-    const proxy2 = await startProxy()
+Deno.test(
+  'proxy: /api/proxy/meta reports default gateway + passphrase flag (public)',
+  async () => {
+    const proxy = await startProxy({
+      passphrase: 'secret',
+      defaultGatewayUrl: 'http://hermes:9119',
+    })
     try {
-      const meta2 = await (await fetch(`${proxy2.url}/api/proxy/meta`)).json()
-      assertEquals(meta2.defaultGatewayUrl, null)
-      assertEquals(meta2.requiresPassphrase, false)
+      // 免 passphrase 可读（默认 URL 预填是 boot 期能力）。
+      const res = await fetch(`${proxy.url}/api/proxy/meta`)
+      assertEquals(res.status, 200)
+      const meta = await res.json()
+      assertEquals(meta.defaultGatewayUrl, 'http://hermes:9119')
+      assertEquals(meta.requiresPassphrase, true)
+
+      // 未配置 defaultGatewayUrl → null。
+      const proxy2 = await startProxy()
+      try {
+        const meta2 = await (await fetch(`${proxy2.url}/api/proxy/meta`)).json()
+        assertEquals(meta2.defaultGatewayUrl, null)
+        assertEquals(meta2.requiresPassphrase, false)
+      } finally {
+        await proxy2.close()
+      }
     } finally {
-      await proxy2.close()
+      await proxy.close()
     }
-  } finally {
-    await proxy.close()
-  }
-})
+  },
+)
 
-Deno.test('proxy: CORS reflects Origin with credentials for cross-port dev', async () => {
-  const target = startOauthTarget()
-  const proxy = await startProxy()
-  try {
-    // 带 Origin 的跨源请求 → 回显 Origin + Allow-Credentials（cookie 需要）。
-    const res = await fetch(`${proxy.url}/api/echo`, {
-      headers: {
-        'x-hermes-target': target.url,
-        origin: 'http://127.0.0.1:5173'
-      }
-    })
-    assertEquals(res.headers.get('access-control-allow-origin'), 'http://127.0.0.1:5173')
-    assertEquals(res.headers.get('access-control-allow-credentials'), 'true')
+Deno.test(
+  'proxy: CORS reflects Origin with credentials for cross-port dev',
+  async () => {
+    const target = startOauthTarget()
+    const proxy = await startProxy()
+    try {
+      // 带 Origin 的跨源请求 → 回显 Origin + Allow-Credentials（cookie 需要）。
+      const res = await fetch(`${proxy.url}/api/echo`, {
+        headers: {
+          'x-hermes-target': target.url,
+          origin: 'http://127.0.0.1:5173',
+        },
+      })
+      assertEquals(
+        res.headers.get('access-control-allow-origin'),
+        'http://127.0.0.1:5173',
+      )
+      assertEquals(res.headers.get('access-control-allow-credentials'), 'true')
 
-    // OPTIONS 预检同样回显。
-    const preflight = await fetch(`${proxy.url}/api/echo`, {
-      method: 'OPTIONS',
-      headers: {
-        origin: 'http://127.0.0.1:5173',
-        'access-control-request-method': 'POST',
-        'access-control-request-headers': 'x-hermes-target'
-      }
-    })
-    assertEquals(preflight.status, 204)
-    assertEquals(preflight.headers.get('access-control-allow-origin'), 'http://127.0.0.1:5173')
-    assertEquals(preflight.headers.get('access-control-allow-credentials'), 'true')
+      // OPTIONS 预检同样回显。
+      const preflight = await fetch(`${proxy.url}/api/echo`, {
+        method: 'OPTIONS',
+        headers: {
+          origin: 'http://127.0.0.1:5173',
+          'access-control-request-method': 'POST',
+          'access-control-request-headers': 'x-hermes-target',
+        },
+      })
+      assertEquals(preflight.status, 204)
+      assertEquals(
+        preflight.headers.get('access-control-allow-origin'),
+        'http://127.0.0.1:5173',
+      )
+      assertEquals(preflight.headers.get('access-control-allow-credentials'), 'true')
 
-    // OAuth session 端点也带 CORS（跨端口轮询）。
-    const session = await fetch(`${proxy.url}/auth/native/session`, {
-      headers: { origin: 'http://127.0.0.1:5173' }
-    })
-    assertEquals(session.headers.get('access-control-allow-origin'), 'http://127.0.0.1:5173')
-  } finally {
-    await proxy.close()
-    await target.close()
-  }
-})
+      // OAuth session 端点也带 CORS（跨端口轮询）。
+      const session = await fetch(`${proxy.url}/auth/native/session`, {
+        headers: { origin: 'http://127.0.0.1:5173' },
+      })
+      assertEquals(
+        session.headers.get('access-control-allow-origin'),
+        'http://127.0.0.1:5173',
+      )
+    } finally {
+      await proxy.close()
+      await target.close()
+    }
+  },
+)

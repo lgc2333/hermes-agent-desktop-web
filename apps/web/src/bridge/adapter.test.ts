@@ -55,7 +55,9 @@ describe('buildWebBridge / installWebBridge', () => {
   it('denied terminal.start rejects with a clear message (callers show an error state)', async () => {
     const bridge = buildWebBridge()
 
-    await expect(bridge.terminal.start()).rejects.toThrow(/not available in the browser/)
+    await expect(bridge.terminal.start()).rejects.toThrow(
+      /not available in the browser/,
+    )
   })
 
   it('subscription members return unsubscribe functions', () => {

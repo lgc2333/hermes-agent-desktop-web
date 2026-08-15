@@ -34,7 +34,7 @@ import type {
   HermesReviewList,
   HermesReviewScope,
   HermesReviewShipInfo,
-  HermesTitleBarTheme
+  HermesTitleBarTheme,
 } from '@/global'
 import type { WakeIndicatorState } from '@/lib/wake-indicator'
 // global.d.ts 只 import 这些类型而不 re-export —— 直接从源模块取。
@@ -42,30 +42,46 @@ import type {
   PetOverlayBounds,
   PetOverlayControl,
   PetOverlayOpenRequest,
-  PetOverlayStatePayload
+  PetOverlayStatePayload,
 } from '@/store/pet-overlay'
-import type { QuickEntryStatePush, QuickEntryStatus, QuickEntrySubmitPayload } from '@/store/quick-entry'
+import type {
+  QuickEntryStatePush,
+  QuickEntryStatus,
+  QuickEntrySubmitPayload,
+} from '@/store/quick-entry'
 
-const UNAVAILABLE = (what: string) => new Error(`Hermes Web: ${what} is not available in the browser`)
+const UNAVAILABLE = (what: string) =>
+  new Error(`Hermes Web: ${what} is not available in the browser`)
 
 const noopUnsub = () => () => undefined
 
 export class DeniedAdapter {
   // ── 窗口 ─────────────────────────────────────────────────────────────────
 
-  async openSessionWindow(_sessionId: string): Promise<{ error?: string; ok: boolean }> {
-    return { ok: false, error: 'Hermes Web: multi-window is not available in the browser' }
+  async openSessionWindow(
+    _sessionId: string,
+  ): Promise<{ error?: string; ok: boolean }> {
+    return {
+      ok: false,
+      error: 'Hermes Web: multi-window is not available in the browser',
+    }
   }
 
   async openSessionInTerminal(
     _sessionId: string,
-    _opts?: { cwd?: string; profile?: string }
+    _opts?: { cwd?: string; profile?: string },
   ): Promise<{ error?: string; ok: boolean }> {
-    return { ok: false, error: 'Hermes Web: the external terminal is not available in the browser' }
+    return {
+      ok: false,
+      error: 'Hermes Web: the external terminal is not available in the browser',
+    }
   }
 
   async openWindow(): Promise<{ error?: string; ok: boolean }> {
-    return { ok: false, error: 'Hermes Web: multi-window is not available in the browser' }
+    return {
+      ok: false,
+      error: 'Hermes Web: multi-window is not available in the browser',
+    }
   }
 
   async claimAmbientCue(_key: string): Promise<boolean> {
@@ -79,11 +95,13 @@ export class DeniedAdapter {
     setState(_state: WakeIndicatorState): void {
       // no-op
     },
-    onState: noopUnsub
+    onState: noopUnsub,
   }
 
   petOverlay = {
-    async open(_request: PetOverlayOpenRequest): Promise<{ bounds?: PetOverlayBounds; ok: boolean }> {
+    async open(
+      _request: PetOverlayOpenRequest,
+    ): Promise<{ bounds?: PetOverlayBounds; ok: boolean }> {
       return { ok: false }
     },
     async close(): Promise<{ ok: boolean }> {
@@ -105,7 +123,7 @@ export class DeniedAdapter {
       // no-op
     },
     onState: noopUnsub,
-    onControl: noopUnsub
+    onControl: noopUnsub,
   }
 
   hud = {
@@ -132,15 +150,23 @@ export class DeniedAdapter {
     },
     onGoto: noopUnsub,
     onChanged: noopUnsub,
-    onCursor: noopUnsub
+    onCursor: noopUnsub,
   }
 
   quickEntry = {
     async getSettings(): Promise<QuickEntryStatus> {
       return { enabled: false, error: null, registered: false, shortcut: '' }
     },
-    async setSettings(patch: { enabled?: boolean; shortcut?: string }): Promise<QuickEntryStatus> {
-      return { enabled: patch.enabled ?? false, error: null, registered: false, shortcut: patch.shortcut ?? '' }
+    async setSettings(patch: {
+      enabled?: boolean
+      shortcut?: string
+    }): Promise<QuickEntryStatus> {
+      return {
+        enabled: patch.enabled ?? false,
+        error: null,
+        registered: false,
+        shortcut: patch.shortcut ?? '',
+      }
     },
     submit(_payload: QuickEntrySubmitPayload): void {
       // no-op
@@ -153,7 +179,7 @@ export class DeniedAdapter {
     },
     onState: noopUnsub,
     onSubmit: noopUnsub,
-    onShown: noopUnsub
+    onShown: noopUnsub,
   }
 
   // ── 语音 ─────────────────────────────────────────────────────────────────
@@ -176,7 +202,10 @@ export class DeniedAdapter {
     return false
   }
 
-  async saveImageBuffer(_data: ArrayBuffer | Uint8Array, _ext: string): Promise<string> {
+  async saveImageBuffer(
+    _data: ArrayBuffer | Uint8Array,
+    _ext: string,
+  ): Promise<string> {
     return ''
   }
 
@@ -207,7 +236,11 @@ export class DeniedAdapter {
   }
 
   settings = {
-    async getDefaultProjectDir(): Promise<{ defaultLabel: string; dir: null | string; resolvedCwd: string }> {
+    async getDefaultProjectDir(): Promise<{
+      defaultLabel: string
+      dir: null | string
+      resolvedCwd: string
+    }> {
       return { defaultLabel: 'Web', dir: null, resolvedCwd: '' }
     },
     async pickDefaultProjectDir(): Promise<{ canceled: boolean; dir: null | string }> {
@@ -215,10 +248,12 @@ export class DeniedAdapter {
     },
     async setDefaultProjectDir(_dir: null | string): Promise<{ dir: null | string }> {
       return { dir: null }
-    }
+    },
   }
 
-  async sanitizeWorkspaceCwd(cwd?: null | string): Promise<{ cwd: string; sanitized: boolean }> {
+  async sanitizeWorkspaceCwd(
+    cwd?: null | string,
+  ): Promise<{ cwd: string; sanitized: boolean }> {
     return { cwd: cwd ?? '', sanitized: false }
   }
 
@@ -263,14 +298,20 @@ export class DeniedAdapter {
       return []
     },
     async worktreeAdd(
-      _repoPath: string
+      _repoPath: string,
     ): Promise<{ branch: string; path: string; repoRoot: string }> {
       throw UNAVAILABLE('git worktrees')
     },
-    async worktreeRemove(_repoPath: string, _worktreePath: string): Promise<{ removed: string }> {
+    async worktreeRemove(
+      _repoPath: string,
+      _worktreePath: string,
+    ): Promise<{ removed: string }> {
       throw UNAVAILABLE('git worktrees')
     },
-    async branchSwitch(_repoPath: string, _branch: string): Promise<{ branch: string }> {
+    async branchSwitch(
+      _repoPath: string,
+      _branch: string,
+    ): Promise<{ branch: string }> {
       throw UNAVAILABLE('git branches')
     },
     async branchList(_repoPath: string): Promise<HermesGitBranch[]> {
@@ -287,7 +328,10 @@ export class DeniedAdapter {
       return ''
     },
     review: {
-      async list(_repoPath: string, _scope: HermesReviewScope): Promise<HermesReviewList> {
+      async list(
+        _repoPath: string,
+        _scope: HermesReviewScope,
+      ): Promise<HermesReviewList> {
         return { files: [], base: null }
       },
       async diff(_repoPath: string, _filePath: string): Promise<string> {
@@ -305,10 +349,16 @@ export class DeniedAdapter {
       async revParse(): Promise<string | null> {
         return null
       },
-      async commit(_repoPath: string, _message: string, _push: boolean): Promise<{ ok: boolean }> {
+      async commit(
+        _repoPath: string,
+        _message: string,
+        _push: boolean,
+      ): Promise<{ ok: boolean }> {
         return { ok: false }
       },
-      async commitContext(_repoPath: string): Promise<{ diff: string; recent: string }> {
+      async commitContext(
+        _repoPath: string,
+      ): Promise<{ diff: string; recent: string }> {
         return { diff: '', recent: '' }
       },
       async push(): Promise<{ ok: boolean }> {
@@ -317,7 +367,10 @@ export class DeniedAdapter {
       async shipInfo(_repoPath: string): Promise<HermesReviewShipInfo> {
         return { ghReady: false, pr: null }
       },
-      async prList(_repoPath: string, _branches: string[]): Promise<HermesRepoPullRequests> {
+      async prList(
+        _repoPath: string,
+        _branches: string[],
+      ): Promise<HermesRepoPullRequests> {
         return { ghReady: false, prs: [] }
       },
       async fetchPrComment(_repoPath: string, _url: string) {
@@ -325,11 +378,11 @@ export class DeniedAdapter {
       },
       async createPr(_repoPath: string): Promise<{ url: string }> {
         throw UNAVAILABLE('pull requests')
-      }
+      },
     },
     async scanRepos(_roots: string[]): Promise<{ label: string; root: string }[]> {
       return []
-    }
+    },
   }
 
   // ── 终端 ─────────────────────────────────────────────────────────────────
@@ -351,7 +404,7 @@ export class DeniedAdapter {
     },
     async write(_id: string, _data: string): Promise<boolean> {
       return false
-    }
+    },
   }
 
   // ── 事件（桌面侧驱动的通道，浏览器永不触发）──────────────────────────────
@@ -405,7 +458,10 @@ export class DeniedAdapter {
 
   updates = {
     async check(): Promise<DesktopUpdateStatus> {
-      return { supported: false, error: 'Hermes Web: updates are managed by the deployment' }
+      return {
+        supported: false,
+        error: 'Hermes Web: updates are managed by the deployment',
+      }
     },
     async apply(): Promise<DesktopUpdateApplyResult> {
       return { ok: false, error: 'Hermes Web: updates are managed by the deployment' }
@@ -418,7 +474,7 @@ export class DeniedAdapter {
     },
     onProgress(_callback: (payload: DesktopUpdateProgress) => void): () => void {
       return () => undefined
-    }
+    },
   }
 
   uninstall = {
@@ -431,12 +487,12 @@ export class DeniedAdapter {
         packaged_app_paths: [],
         userdata_dir: '',
         userdata_exists: false,
-        platform: 'web'
+        platform: 'web',
       }
     },
     async run(_mode: DesktopUninstallMode): Promise<DesktopUninstallResult> {
       return { ok: false, error: 'Hermes Web: nothing to uninstall' }
-    }
+    },
   }
 
   themes = {
@@ -445,7 +501,7 @@ export class DeniedAdapter {
     },
     async searchMarketplace(_query: string): Promise<DesktopMarketplaceSearchItem[]> {
       return []
-    }
+    },
   }
 
   async findInPage(_query: string): Promise<{ count: number }> {

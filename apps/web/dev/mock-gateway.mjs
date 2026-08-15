@@ -36,7 +36,11 @@ const oauthCodes = new Map()
 let oauthSeq = 1
 
 function b64url(raw) {
-  return Buffer.from(raw).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+  return Buffer.from(raw)
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '')
 }
 
 function s256(verifier) {
@@ -50,7 +54,7 @@ function oauthTokenSet(seed = oauthSeq++) {
     token_type: 'Bearer',
     expires_at: Math.floor(Date.now() / 1000) + 3600,
     provider: 'nous',
-    user_id: `mock-user-${seed}`
+    user_id: `mock-user-${seed}`,
   }
 }
 
@@ -67,7 +71,10 @@ function mintId(prefix) {
 function sessionInfoRow(session, runtime) {
   const messages = session.messages
   const lastMessage = messages[messages.length - 1]
-  const preview = lastMessage && lastMessage.role === 'assistant' ? String(lastMessage.text ?? '') : null
+  const preview =
+    lastMessage && lastMessage.role === 'assistant'
+      ? String(lastMessage.text ?? '')
+      : null
 
   return {
     archived: false,
@@ -89,7 +96,7 @@ function sessionInfoRow(session, runtime) {
     source: session.source ?? 'desktop',
     started_at: session.startedAt,
     title: session.title || null,
-    tool_call_count: 0
+    tool_call_count: 0,
   }
 }
 
@@ -115,7 +122,7 @@ function runtimeInfo(session) {
     version: '0.0.0-mock',
     desktop_contract: 1,
     tools: {},
-    skills: []
+    skills: [],
   }
 }
 
@@ -132,12 +139,13 @@ function createSession(params = {}) {
     model: typeof params.model === 'string' ? params.model : MODEL,
     provider: typeof params.provider === 'string' ? params.provider : PROVIDER,
     fast: Boolean(params.fast),
-    reasoningEffort: typeof params.reasoning_effort === 'string' ? params.reasoning_effort : '',
+    reasoningEffort:
+      typeof params.reasoning_effort === 'string' ? params.reasoning_effort : '',
     messages: [],
     startedAt: Math.floor(Date.now() / 1000),
     lastActive: Date.now() / 1000,
     endedAt: null,
-    isActive: false
+    isActive: false,
   }
   sessions.set(storedId, session)
   byRuntime.set(runtimeId, storedId)
@@ -153,7 +161,7 @@ function sessionResumePayload(session) {
     messages: session.messages,
     running: false,
     status: 'idle',
-    info: runtimeInfo(session)
+    info: runtimeInfo(session),
   }
 }
 
@@ -163,7 +171,7 @@ function sessionCreatePayload(session) {
     stored_session_id: session.storedId,
     message_count: 0,
     messages: [],
-    info: runtimeInfo(session)
+    info: runtimeInfo(session),
   }
 }
 
@@ -171,7 +179,7 @@ function sessionInfoPayload(session) {
   return {
     ...runtimeInfo(session),
     stored_session_id: session.storedId,
-    usage: { calls: 0, input: 0, output: 0, total: 0 }
+    usage: { calls: 0, input: 0, output: 0, total: 0 },
   }
 }
 
@@ -182,7 +190,7 @@ const REPLY = [
   'The M1 bridge swap is working: ',
   'this reply was streamed over the JSON-RPC WebSocket, ',
   'word by word, exactly like a real Hermes gateway would. ',
-  'You can now send another message.'
+  'You can now send another message.',
 ].join('')
 
 const STREAM_WORD_MS = 40
@@ -193,11 +201,21 @@ function streamTurn(socket, session, userText) {
     if (socket.readyState !== socket.OPEN) {
       return
     }
-    socket.send(JSON.stringify({ method: 'event', params: { type, session_id: runtimeId, payload } }))
+    socket.send(
+      JSON.stringify({
+        method: 'event',
+        params: { type, session_id: runtimeId, payload },
+      }),
+    )
   }
 
   const now = Math.floor(Date.now() / 1000)
-  session.messages.push({ role: 'user', text: userText, timestamp: now, content: userText })
+  session.messages.push({
+    role: 'user',
+    text: userText,
+    timestamp: now,
+    content: userText,
+  })
   session.lastActive = Date.now() / 1000
   session.isActive = true
   session.endedAt = null
@@ -220,7 +238,7 @@ function streamTurn(socket, session, userText) {
         content: full,
         timestamp: now,
         model: session.model || MODEL,
-        provider: session.provider || PROVIDER
+        provider: session.provider || PROVIDER,
       })
       session.endedAt = Date.now() / 1000
       session.lastActive = Date.now() / 1000
@@ -247,8 +265,8 @@ const RPC_HANDLERS = {
   'setup.runtime_check': () => ({ ok: true }),
   'config.get': () => ({}),
   'config.set': () => ({ ok: true }),
-  'session.create': params => sessionCreatePayload(createSession(params ?? {})),
-  'session.resume': params => {
+  'session.create': (params) => sessionCreatePayload(createSession(params ?? {})),
+  'session.resume': (params) => {
     const storedId = params?.session_id
     const session = sessions.get(storedId)
 
@@ -261,7 +279,7 @@ const RPC_HANDLERS = {
 
     return sessionResumePayload(session)
   },
-  'session.info': params => {
+  'session.info': (params) => {
     const runtimeId = params?.session_id
     const session = runtimeId ? getSessionByRuntime(runtimeId) : null
 
@@ -271,9 +289,10 @@ const RPC_HANDLERS = {
 
     return sessionInfoPayload(session)
   },
-  'session.activate': params => {
+  'session.activate': (params) => {
     const storedId = params?.session_id
-    const session = sessions.get(storedId) ?? (params?.session_id ? createSession({}) : null)
+    const session =
+      sessions.get(storedId) ?? (params?.session_id ? createSession({}) : null)
 
     if (!session) {
       throw new Error(`session not found: ${storedId}`)
@@ -281,7 +300,7 @@ const RPC_HANDLERS = {
 
     return sessionInfoPayload(session)
   },
-  'session.delete': params => {
+  'session.delete': (params) => {
     const storedId = params?.session_id
     const session = sessions.get(storedId)
 
@@ -303,15 +322,19 @@ const RPC_HANDLERS = {
         request_id: mintId('apr'),
         command: 'rm -rf /tmp/demo-artifacts',
         description: 'dangerous command (mock approval)',
-        allow_permanent: true
+        allow_permanent: true,
       }
       session.pendingText = text
       setTimeout(() => {
         socket.send(
           JSON.stringify({
             method: 'event',
-            params: { type: 'approval.request', session_id: session.runtimeId, payload: session.approvalPending }
-          })
+            params: {
+              type: 'approval.request',
+              session_id: session.runtimeId,
+              payload: session.approvalPending,
+            },
+          }),
         )
       }, 80)
 
@@ -345,7 +368,7 @@ const RPC_HANDLERS = {
   'clarify.respond': () => ({ ok: true }),
   'reload.env': () => ({ ok: true }),
   'reload.mcp': () => ({ ok: true }),
-  'wake.pause': () => ({ ok: true })
+  'wake.pause': () => ({ ok: true }),
 }
 
 function handleRpc(socket, frame) {
@@ -355,8 +378,8 @@ function handleRpc(socket, frame) {
     socket.send(
       JSON.stringify({
         id: frame.id,
-        error: { message: `No such RPC method: ${frame.method}` }
-      })
+        error: { message: `No such RPC method: ${frame.method}` },
+      }),
     )
 
     return
@@ -369,8 +392,8 @@ function handleRpc(socket, frame) {
     socket.send(
       JSON.stringify({
         id: frame.id,
-        error: { message: error instanceof Error ? error.message : String(error) }
-      })
+        error: { message: error instanceof Error ? error.message : String(error) },
+      }),
     )
   }
 }
@@ -383,7 +406,7 @@ function json(res, status, body) {
     'Content-Type': 'application/json',
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS'
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
   })
   res.end(text)
 }
@@ -392,22 +415,22 @@ function queryParams(url) {
   const query = new URL(url, 'http://mock').searchParams
 
   return {
-    get: name => query.get(name),
+    get: (name) => query.get(name),
     int: (name, fallback) => {
       const raw = query.get(name)
       const n = Number(raw)
 
       return Number.isFinite(n) ? n : fallback
-    }
+    },
   }
 }
 
 function sessionList(limit) {
   const rows = [...sessions.values()]
-    .filter(s => s.messages.length >= 1)
+    .filter((s) => s.messages.length >= 1)
     .sort((a, b) => b.lastActive - a.lastActive)
     .slice(0, limit)
-    .map(s => sessionInfoRow(s))
+    .map((s) => sessionInfoRow(s))
 
   return rows
 }
@@ -427,7 +450,7 @@ function routeRest(req, res) {
           auth_mode: 'oauth',
           auth_required: true,
           auth_flows: ['cookie', 'native_pkce'],
-          auth_providers: ['nous']
+          auth_providers: ['nous'],
         }
       : { ok: true, version: '0.0.0-mock', auth_mode: 'token', auth_required: false }
     json(res, 200, status)
@@ -467,9 +490,9 @@ function routeRest(req, res) {
           authenticated: true,
           auth_type: 'api_key',
           is_current: true,
-          capabilities: { [MODEL]: { fast: true, reasoning: true } }
-        }
-      ]
+          capabilities: { [MODEL]: { fast: true, reasoning: true } },
+        },
+      ],
     })
 
     return
@@ -480,7 +503,7 @@ function routeRest(req, res) {
     json(res, 200, {
       recents: { sessions: sessionList(limit), profiles_truncated: {} },
       cron: { sessions: [] },
-      messaging: { sessions: [] }
+      messaging: { sessions: [] },
     })
 
     return
@@ -570,7 +593,6 @@ function routeRest(req, res) {
     return
   }
 
-
   // ── M3：native OAuth 模拟面（对齐真 gateway 的 dashboard_auth/native_flow）──
 
   if (url === '/auth/native/authorize' && method === 'GET') {
@@ -597,8 +619,14 @@ function routeRest(req, res) {
       return
     }
     const parsedRedirect = new URL(redirectUri)
-    if (parsedRedirect.protocol !== 'http:' || !['127.0.0.1', '::1'].includes(parsedRedirect.hostname)) {
-      json(res, 400, { detail: 'native redirect_uri host must be a loopback IP literal (127.0.0.1 / ::1)' })
+    if (
+      parsedRedirect.protocol !== 'http:' ||
+      !['127.0.0.1', '::1'].includes(parsedRedirect.hostname)
+    ) {
+      json(res, 400, {
+        detail:
+          'native redirect_uri host must be a loopback IP literal (127.0.0.1 / ::1)',
+      })
 
       return
     }
@@ -610,15 +638,15 @@ function routeRest(req, res) {
       code_challenge: challenge,
       redirect_uri: redirectUri,
       client_state: state,
-      expires_at: Math.floor(Date.now() / 1000) + 600
+      expires_at: Math.floor(Date.now() / 1000) + 600,
     })
     oauthCodes.set(code, {
       code_challenge: challenge,
-      expires_at: Math.floor(Date.now() / 1000) + 120
+      expires_at: Math.floor(Date.now() / 1000) + 120,
     })
     const sep = redirectUri.includes('?') ? '&' : '?'
     res.writeHead(302, {
-      Location: `${redirectUri}${sep}code=${code}&state=${encodeURIComponent(state)}`
+      Location: `${redirectUri}${sep}code=${code}&state=${encodeURIComponent(state)}`,
     })
     res.end()
 
@@ -662,7 +690,10 @@ function routeRest(req, res) {
       body = {}
     }
     if (!String(body.refresh_token ?? '').startsWith('mock-oauth-refresh-')) {
-      json(res, 401, { error: 'session_expired', detail: 'Refresh token expired or invalid; start a new sign-in.' })
+      json(res, 401, {
+        error: 'session_expired',
+        detail: 'Refresh token expired or invalid; start a new sign-in.',
+      })
 
       return
     }
@@ -687,7 +718,7 @@ const httpServer = http.createServer((req, res) => {
     res.writeHead(204, {
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Headers': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS'
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
     })
     res.end()
 
@@ -696,7 +727,7 @@ const httpServer = http.createServer((req, res) => {
 
   // 收集请求体（OAuth token/refresh 是 POST JSON）。
   let body = ''
-  req.on('data', chunk => {
+  req.on('data', (chunk) => {
     body += chunk
     if (body.length > 1_000_000) {
       req.destroy()
@@ -718,10 +749,10 @@ httpServer.listen(PORT, '127.0.0.1', () => {
 // token 经 query 传入（真 gateway 恒时比对 _SESSION_TOKEN；mock 宽松接受）。
 const wss = new WebSocketServer({ server: httpServer, path: '/api/ws' })
 
-wss.on('connection', socket => {
+wss.on('connection', (socket) => {
   console.log('[mock-gateway] client connected')
 
-  socket.on('message', raw => {
+  socket.on('message', (raw) => {
     let frame
     try {
       frame = JSON.parse(String(raw))
@@ -739,7 +770,7 @@ wss.on('connection', socket => {
   })
 
   socket.on('close', () => console.log('[mock-gateway] client disconnected'))
-  socket.on('error', err => console.error('[mock-gateway] socket error', err.message))
+  socket.on('error', (err) => console.error('[mock-gateway] socket error', err.message))
 })
 
 wss.on('listening', () => {

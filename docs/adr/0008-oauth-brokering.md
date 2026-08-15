@@ -8,6 +8,7 @@ Bearer / ws-ticket。
 **Status**: accepted
 
 **Context**:
+
 - 桌面端 native-oauth.ts 是 loopback 模式（127.0.0.1 临时监听 + 系统浏览器）；
   Web 端没有 loopback 进程，redirect_uri 必须落在**代理 origin**（浏览器
   同源回调），由代理完成 code 交换。
@@ -25,16 +26,17 @@ Bearer / ws-ticket。
   且 Allow-Origin 必须回显具体 origin（实测 Chrome 151）。
 
 **Decision**:
+
 - 代理新增 `/auth/native/{start,callback,session,logout}`：
-  * start（POST，需 passphrase）—— 生成 PKCE pair + state，返回 gateway
+  - start（POST，需 passphrase）—— 生成 PKCE pair + state，返回 gateway
     authorize URL（redirect_uri = 代理 origin + /auth/native/callback）；
-  * callback（GET，免 passphrase——只交换内存已登记 state 的 code）——
+  - callback（GET，免 passphrase——只交换内存已登记 state 的 code）——
     校验 state（CSRF）、POST /auth/native/token 换 token set、落内存、
     Set-Cookie `hermes_oauth_session`（HttpOnly; SameSite=Lax; Path=/），
     返回"可关闭窗口"页；
-  * session（GET，免检）—— 按 cookie + ?target= 回显连接状态
+  - session（GET，免检）—— 按 cookie + ?target= 回显连接状态
     （provider/userId/expiresAt/token 前 4 位预览，永不下发 token 本体）；
-  * logout（POST，需 passphrase）—— 清内存 + 清 cookie。
+  - logout（POST，需 passphrase）—— 清内存 + 清 cookie。
 - token set 生命周期：进程内存（重启失效，PLAN §6 无持久化）；REST 转发前
   bearerFor() 校验过期并自动经 /auth/native/refresh 轮换（并发去重），
   刷新失败（session_expired）即清会话；WS 拨号前 wsTicketFor() 以 Bearer
@@ -46,6 +48,7 @@ Bearer / ws-ticket。
   无 auth_mode 字段）；/api/proxy/meta（defaultGatewayUrl）预填连接表单。
 
 **Consequences**:
+
 - 浏览器无任何 OAuth 凭证（连 token 预览都只是前 4 位）；换浏览器/清 cookie
   需重新登录（与 ADR-0002 "凭证跟浏览器"一致，代价可接受）。
 - 代理重启即全部掉线（内存态）；刷新 token 只能覆盖进程生命周期内的过期。
@@ -55,5 +58,5 @@ Bearer / ws-ticket。
   （或部署隧道），M4 部署文档跟进。
 
 - mock gateway（dev）补齐 native OAuth 面（authorize/token/refresh/ws-ticket
-  + auth_required/auth_flows），MOCK_OAUTH=1 开启，语义与真 gateway 对齐
-  （loopback redirect_uri 校验、code 单次消费、PKCE 校验）。
+  - auth_required/auth_flows），MOCK_OAUTH=1 开启，语义与真 gateway 对齐
+    （loopback redirect_uri 校验、code 单次消费、PKCE 校验）。

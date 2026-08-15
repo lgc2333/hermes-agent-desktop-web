@@ -7,7 +7,7 @@ packages:
 # which resolves to vendor/shared in our layout — pin it to the vendored
 # shared workspace package.
 overrides:
-  "@hermes/shared": workspace:*
+  '@hermes/shared': workspace:*
 
 # Flat node_modules (like the upstream npm monorepo) so the vendored renderer
 # (vendor/hermes-desktop/src) resolves deps from the repo root.

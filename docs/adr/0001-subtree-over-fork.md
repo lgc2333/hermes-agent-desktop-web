@@ -7,6 +7,7 @@
 **修订（M0 落地）**: 上游是 monorepo，直接 `git subtree add/pull <upstream> <ref>` 会把**整个仓库**（Python 核心、gateway 等）挂到 prefix 下。实际引入/同步采用**过滤提交法**：先对上游子树路径做 `git commit-tree`（树 = 上游 `apps/desktop` / `apps/shared` 的树），再对该过滤提交执行 `git subtree add/merge --squash`。vendor 内容与上游对应路径逐字节一致（树 SHA 相等），`git-subtree-split` 指向本地可解析的过滤提交。操作细节见 PATCHES.md §2/§3，同步脚本 scripts/sync-upstream.sh。
 
 **Considered Options**:
+
 - fork + upstream remote：同步噪音大（无关目录全跟着动）
 - submodule + patches/：patch 维护对移植级改动太痛苦
 - vendor + 同步脚本：仓库最干净，但冲突完全自理

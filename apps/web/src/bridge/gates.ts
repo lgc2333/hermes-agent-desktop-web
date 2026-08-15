@@ -51,7 +51,7 @@ export const gates = {
   /** 窗口下方窗口元数据（read_window_below 工具）。bridge 拒绝。 */
   readWindowBelow: false,
   /** 本地文件 data-URL 读取上限设置。bridge 拒绝。 */
-  dataUrlRead: false
+  dataUrlRead: false,
 } as const
 
 export type GateName = keyof typeof gates

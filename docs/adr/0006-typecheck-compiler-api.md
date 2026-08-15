@@ -5,6 +5,7 @@ TS 6.0 下 `tsc --noEmit` CLI 对带 `baseUrl` 的 tsconfig 报 TS5101 配置错
 **Status**: accepted
 
 **Considered Options**:
+
 - 删 baseUrl 迁移到 TS6 paths 新语法：最"正统"，但 Windows 下模块身份重复，vendor 源码（依赖 `@/*`、`@hermes/shared/*` 别名）解析出现双实例伪错
 - CLI + 忽略 TS5101 错误码：`tsc` 报完配置错误就退出，无文件可检查，无法实现
 - 编译器 API in-process（选定）：`ts.parseJsonConfigFileContent` + `ts.createProgram` + `getPreEmitDiagnostics`，仅过滤 TS5101；保持 baseUrl + 旧 paths 语义，结果即真实诊断（M1 基线：0 错）

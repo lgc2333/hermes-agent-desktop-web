@@ -7,11 +7,15 @@
   "engines": {
     "node": ">=22.22.0"
   },
-  "packageManager": "pnpm@11.20.0",
+  "packageManager": "pnpm@11.21.0+sha512.521705bce689924eac72f5a3587122f362689ef6571e55ba80076fd637c11132ecffada26fad4ea79c485bfddbfd3d5a2a5b05805a77e893de71ec8a6cca3bb1",
   "scripts": {
     "dev": "pnpm --filter @hermes-web/web dev",
     "build": "pnpm --filter @hermes-web/web build",
     "typecheck": "pnpm --filter @hermes-web/web typecheck",
-    "sync:upstream": "bash scripts/sync-upstream.sh"
+    "sync:upstream": "bash scripts/sync-upstream.sh",
+    "format": "prettier -cw ."
+  },
+  "devDependencies": {
+    "prettier": "^3.9.5"
   }
 }

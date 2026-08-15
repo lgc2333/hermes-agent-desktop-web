@@ -19,7 +19,12 @@
  *         HERMES_DEFAULT_GATEWAY_URL  经 /api/proxy/meta 下发的默认 gateway URL
  *         OAUTH_REDIRECT_URI          OAuth redirect_uri 覆盖（部署场景）
  */
-import { createOauthEndpoints, OAuthStore, parseCookies, SESSION_COOKIE_NAME } from './oauth.ts'
+import {
+  createOauthEndpoints,
+  OAuthStore,
+  parseCookies,
+  SESSION_COOKIE_NAME,
+} from './oauth.ts'
 import { normalizeTarget, relayRest, relayWs, safeEqual } from './relay.ts'
 
 export interface ProxyOptions {
@@ -50,7 +55,7 @@ const MIME: Record<string, string> = {
   '.woff': 'font/woff',
   '.woff2': 'font/woff2',
   '.ttf': 'font/ttf',
-  '.txt': 'text/plain; charset=utf-8'
+  '.txt': 'text/plain; charset=utf-8',
 }
 
 /**
@@ -71,21 +76,21 @@ function corsHeaders(request: Request | null = null): Record<string, string> {
       'Access-Control-Allow-Headers':
         request?.headers.get('access-control-request-headers') ??
         'x-hermes-target, x-hermes-session-token, x-hermes-proxy-passphrase, content-type, authorization',
-      'Vary': 'Origin'
+      Vary: 'Origin',
     }
   }
 
   return {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': '*'
+    'Access-Control-Allow-Headers': '*',
   }
 }
 
 function jsonResponse(status: number, body: unknown, request?: Request): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { 'Content-Type': 'application/json', ...corsHeaders(request) }
+    headers: { 'Content-Type': 'application/json', ...corsHeaders(request) },
   })
 }
 
@@ -96,7 +101,11 @@ function withCors(response: Response, request: Request): Response {
     headers.set(key, value)
   }
 
-  return new Response(response.body, { status: response.status, statusText: response.statusText, headers })
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  })
 }
 
 function isWsUpgrade(request: Request): boolean {
@@ -161,23 +170,30 @@ async function serveStatic(request: Request, webDist: URL): Promise<Response | n
     status: 200,
     headers: {
       'Content-Type': MIME[ext] ?? 'application/octet-stream',
-      'Cache-Control': ext === '.html' ? 'no-store' : 'public, max-age=31536000, immutable',
-      ...corsHeaders(request)
-    }
+      'Cache-Control':
+        ext === '.html' ? 'no-store' : 'public, max-age=31536000, immutable',
+      ...corsHeaders(request),
+    },
   })
 }
 
 /** 生产 postJson（服务器到服务器，OAuthStore 注入面）。 */
-async function proxyPostJson(url: string, body: unknown, opts?: { timeoutMs?: number; headers?: Record<string, string> }): Promise<unknown> {
+async function proxyPostJson(
+  url: string,
+  body: unknown,
+  opts?: { timeoutMs?: number; headers?: Record<string, string> },
+): Promise<unknown> {
   const controller = new AbortController()
-  const timer = opts?.timeoutMs ? setTimeout(() => controller.abort(), opts.timeoutMs) : undefined
+  const timer = opts?.timeoutMs
+    ? setTimeout(() => controller.abort(), opts.timeoutMs)
+    : undefined
   try {
     const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...opts?.headers },
       body: JSON.stringify(body),
       signal: controller.signal,
-      redirect: 'manual'
+      redirect: 'manual',
     })
     const text = await res.text()
 
@@ -212,11 +228,16 @@ async function handleWs(request: Request, oauthStore: OAuthStore): Promise<Respo
   try {
     target = normalizeTarget(rawTarget)
   } catch (error) {
-    return jsonResponse(400, { detail: error instanceof Error ? error.message : String(error) }, request)
+    return jsonResponse(
+      400,
+      { detail: error instanceof Error ? error.message : String(error) },
+      request,
+    )
   }
 
   // OAuth 会话：为本次拨号 mint 单次 ws-ticket（gated gateway 拒绝 ?token=）。
-  const sessionKey = parseCookies(request.headers.get('cookie'))[SESSION_COOKIE_NAME] ?? null
+  const sessionKey =
+    parseCookies(request.headers.get('cookie'))[SESSION_COOKIE_NAME] ?? null
   const ticket = await oauthStore.wsTicketFor(sessionKey, target)
 
   let response: Response
@@ -225,9 +246,13 @@ async function handleWs(request: Request, oauthStore: OAuthStore): Promise<Respo
     response = upgraded.response
     relayWs(upgraded.socket, url, target, { ticket })
   } catch (error) {
-    return jsonResponse(502, {
-      detail: `proxy ws upgrade failed: ${error instanceof Error ? error.message : String(error)}`
-    }, request)
+    return jsonResponse(
+      502,
+      {
+        detail: `proxy ws upgrade failed: ${error instanceof Error ? error.message : String(error)}`,
+      },
+      request,
+    )
   }
 
   return response
@@ -244,7 +269,9 @@ export function defaultWebDist(metaUrl: string): string {
   return new URL('../../web/dist/', metaUrl).href
 }
 
-export function createProxyHandler(options: ProxyOptions = {}): (request: Request) => Promise<Response> {
+export function createProxyHandler(
+  options: ProxyOptions = {},
+): (request: Request) => Promise<Response> {
   const passphrase = options.passphrase ?? ''
   const defaultGatewayUrl = options.defaultGatewayUrl ?? ''
   let webDist: URL
@@ -255,12 +282,17 @@ export function createProxyHandler(options: ProxyOptions = {}): (request: Reques
   }
 
   const oauthStore = new OAuthStore({ postJson: proxyPostJson })
-  const oauth = createOauthEndpoints(oauthStore, {
-    readSessionKey: request => parseCookies(request.headers.get('cookie'))[SESSION_COOKIE_NAME] ?? null
-  }, {
-    origin: request => new URL(request.url).origin,
-    redirectUriOverride: () => options.oauthRedirectUri ?? ''
-  })
+  const oauth = createOauthEndpoints(
+    oauthStore,
+    {
+      readSessionKey: (request) =>
+        parseCookies(request.headers.get('cookie'))[SESSION_COOKIE_NAME] ?? null,
+    },
+    {
+      origin: (request) => new URL(request.url).origin,
+      redirectUriOverride: () => options.oauthRedirectUri ?? '',
+    },
+  )
 
   const isOauthPath = (path: string): boolean =>
     path === '/auth/native/start' ||
@@ -303,10 +335,14 @@ export function createProxyHandler(options: ProxyOptions = {}): (request: Reques
 
     // 分支 3：/api/proxy/meta（公开：默认 gateway URL 预填 + passphrase 开关）。
     if (url.pathname === '/api/proxy/meta' && request.method === 'GET') {
-      return jsonResponse(200, {
-        defaultGatewayUrl: defaultGatewayUrl || null,
-        requiresPassphrase: Boolean(passphrase)
-      }, request)
+      return jsonResponse(
+        200,
+        {
+          defaultGatewayUrl: defaultGatewayUrl || null,
+          requiresPassphrase: Boolean(passphrase),
+        },
+        request,
+      )
     }
 
     // 分支 4：访问控制（转发面 + OAuth 破坏性/启动面）。
@@ -332,11 +368,16 @@ export function createProxyHandler(options: ProxyOptions = {}): (request: Reques
     try {
       target = normalizeTarget(rawTarget)
     } catch (error) {
-      return jsonResponse(400, { detail: error instanceof Error ? error.message : String(error) }, request)
+      return jsonResponse(
+        400,
+        { detail: error instanceof Error ? error.message : String(error) },
+        request,
+      )
     }
 
     // M3：OAuth 会话存在且 target 匹配 → 注入 Bearer（浏览器不持静态 token）。
-    const sessionKey = parseCookies(request.headers.get('cookie'))[SESSION_COOKIE_NAME] ?? null
+    const sessionKey =
+      parseCookies(request.headers.get('cookie'))[SESSION_COOKIE_NAME] ?? null
     const bearer = await oauthStore.bearerFor(sessionKey, target)
     const response = await relayRest(request, target, { bearer })
 
@@ -353,7 +394,7 @@ if (import.meta.main) {
     webDist: Deno.env.get('WEB_DIST') ?? undefined,
     passphrase: Deno.env.get('PROXY_PASSPHRASE') ?? undefined,
     defaultGatewayUrl: Deno.env.get('HERMES_DEFAULT_GATEWAY_URL') ?? undefined,
-    oauthRedirectUri: Deno.env.get('OAUTH_REDIRECT_URI') ?? undefined
+    oauthRedirectUri: Deno.env.get('OAUTH_REDIRECT_URI') ?? undefined,
   })
   Deno.serve({ port: PORT, hostname: HOST }, handler)
 }

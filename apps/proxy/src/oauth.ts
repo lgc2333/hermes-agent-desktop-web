@@ -87,7 +87,11 @@ export interface OAuthSessionInfo {
 /** 注入面（测试可换）。 */
 export interface OAuthDeps {
   /** POST JSON 并返回解析后的 body（生产 = global fetch）。 */
-  postJson: (url: string, body: unknown, opts?: { timeoutMs?: number; headers?: Record<string, string> }) => Promise<unknown>
+  postJson: (
+    url: string,
+    body: unknown,
+    opts?: { timeoutMs?: number; headers?: Record<string, string> },
+  ) => Promise<unknown>
   /** 时钟（秒），测试可控。 */
   now?: () => number
   /** 刷新窗口提前量（秒），默认 60。 */
@@ -151,13 +155,13 @@ function joinBase(baseUrl: string, path: string): string {
 
 export function nativeAuthorizeUrl(
   target: string,
-  params: { challenge: string; redirectUri: string; state: string; provider?: string }
+  params: { challenge: string; redirectUri: string; state: string; provider?: string },
 ): string {
   const q = new URLSearchParams({
     code_challenge: params.challenge,
     code_challenge_method: 'S256',
     redirect_uri: params.redirectUri,
-    state: params.state
+    state: params.state,
   })
   if (params.provider) {
     q.set('provider', params.provider)
@@ -184,13 +188,18 @@ export function wsTicketUrl(target: string): string {
  * 解析 gateway 回跳（path+query）。返回 code；state 不匹配抛错（CSRF，
  * RFC 6749 §10.12）。gateway 拒绝时带 error 参数也抛错。
  */
-export function parseCallback(requestUrl: string, expectedState: string): { code: string } {
+export function parseCallback(
+  requestUrl: string,
+  expectedState: string,
+): { code: string } {
   const parsed = new URL(requestUrl, 'http://127.0.0.1')
   const error = parsed.searchParams.get('error')
 
   if (error) {
     const desc = parsed.searchParams.get('error_description') || ''
-    throw new Error(`Gateway rejected native login: ${error}${desc ? ` (${desc})` : ''}`)
+    throw new Error(
+      `Gateway rejected native login: ${error}${desc ? ` (${desc})` : ''}`,
+    )
   }
 
   const code = parsed.searchParams.get('code') || ''
@@ -223,12 +232,16 @@ export function parseTokenResponse(body: unknown): NativeTokenSet {
     refreshToken: String(b.refresh_token ?? ''),
     expiresAt: Number.isFinite(expiresAt) ? expiresAt : 0,
     provider: String(b.provider ?? ''),
-    userId: String(b.user_id ?? '')
+    userId: String(b.user_id ?? ''),
   }
 }
 
 /** access token 是否已到/临近过期（提前 skew 秒刷新，避免在途过期）。 */
-export function tokenNeedsRefresh(expiresAt: number, nowSeconds: number, skewSeconds = DEFAULT_REFRESH_SKEW_SECONDS): boolean {
+export function tokenNeedsRefresh(
+  expiresAt: number,
+  nowSeconds: number,
+  skewSeconds = DEFAULT_REFRESH_SKEW_SECONDS,
+): boolean {
   if (!Number.isFinite(expiresAt) || expiresAt <= 0) {
     // 未知过期时间 ⇒ 视为需要刷新，先验证再使用。
     return true
@@ -273,7 +286,7 @@ export function sessionCookieValue(sessionKey: string, maxAgeSeconds?: number): 
     `${SESSION_COOKIE_NAME}=${encodeURIComponent(sessionKey)}`,
     'Path=/',
     'HttpOnly',
-    'SameSite=Lax'
+    'SameSite=Lax',
   ]
   if (maxAgeSeconds !== undefined) {
     parts.push(`Max-Age=${maxAgeSeconds}`)
@@ -314,7 +327,11 @@ export class OAuthStore {
   }
 
   /** start：生成 PKCE/state，登记 pending，返回 authorize URL + sessionKey。 */
-  async begin(target: string, redirectUri: string, provider?: string): Promise<OAuthStartResult> {
+  async begin(
+    target: string,
+    redirectUri: string,
+    provider?: string,
+  ): Promise<OAuthStartResult> {
     const { verifier, challenge } = await generatePkcePair()
     const state = generateState()
     const sessionKey = generateSessionKey()
@@ -323,9 +340,14 @@ export class OAuthStore {
       verifier,
       redirectUri,
       sessionKey,
-      createdAt: Date.now()
+      createdAt: Date.now(),
     })
-    const authorizeUrl = nativeAuthorizeUrl(target, { challenge, redirectUri, state, provider })
+    const authorizeUrl = nativeAuthorizeUrl(target, {
+      challenge,
+      redirectUri,
+      state,
+      provider,
+    })
 
     return { authorizeUrl, sessionKey }
   }
@@ -415,7 +437,10 @@ export class OAuthStore {
       const body = (await this.deps.postJson(
         wsTicketUrl(target),
         {},
-        { timeoutMs: WS_TICKET_TIMEOUT_MS, headers: { authorization: `Bearer ${accessToken}` } }
+        {
+          timeoutMs: WS_TICKET_TIMEOUT_MS,
+          headers: { authorization: `Bearer ${accessToken}` },
+        },
       )) as { ticket?: unknown }
       const ticket = String(body?.ticket ?? '')
 
@@ -430,7 +455,13 @@ export class OAuthStore {
     const session = this.getSession(sessionKey, target)
 
     if (!session) {
-      return { connected: false, provider: '', userId: '', expiresAt: 0, tokenPreview: null }
+      return {
+        connected: false,
+        provider: '',
+        userId: '',
+        expiresAt: 0,
+        tokenPreview: null,
+      }
     }
 
     return {
@@ -438,12 +469,15 @@ export class OAuthStore {
       provider: session.tokenSet.provider,
       userId: session.tokenSet.userId,
       expiresAt: session.tokenSet.expiresAt,
-      tokenPreview: `${session.tokenSet.accessToken.slice(0, 4)}…`
+      tokenPreview: `${session.tokenSet.accessToken.slice(0, 4)}…`,
     }
   }
 
   /** 刷新（并发去重）：成功更新内存并返回新 token set；失败清会话。 */
-  private refresh(sessionKey: string, session: OAuthSession): Promise<NativeTokenSet | null> {
+  private refresh(
+    sessionKey: string,
+    session: OAuthSession,
+  ): Promise<NativeTokenSet | null> {
     const inflight = this.refreshing.get(sessionKey)
     if (inflight) {
       return inflight
@@ -453,8 +487,11 @@ export class OAuthStore {
       try {
         const body = (await this.deps.postJson(
           nativeRefreshUrl(session.target),
-          { refresh_token: session.tokenSet.refreshToken, provider: session.tokenSet.provider },
-          { timeoutMs: TOKEN_EXCHANGE_TIMEOUT_MS }
+          {
+            refresh_token: session.tokenSet.refreshToken,
+            provider: session.tokenSet.provider,
+          },
+          { timeoutMs: TOKEN_EXCHANGE_TIMEOUT_MS },
         )) as Record<string, unknown>
 
         if (body && typeof body === 'object' && body.error === 'session_expired') {
@@ -468,7 +505,7 @@ export class OAuthStore {
         this.sessions.set(sessionKey, {
           target: session.target,
           tokenSet: fresh,
-          createdAt: session.createdAt
+          createdAt: session.createdAt,
         })
 
         return fresh
@@ -519,10 +556,14 @@ const FAILED_HTML =
   '<h2>&#10007; Sign-in failed</h2><p>Close this window and try again.</p>' +
   '<script>if (window.opener) setTimeout(() => window.close(), 1500)</script>'
 
-function json(status: number, body: unknown, extraHeaders?: Record<string, string>): Response {
+function json(
+  status: number,
+  body: unknown,
+  extraHeaders?: Record<string, string>,
+): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { 'Content-Type': 'application/json', ...extraHeaders }
+    headers: { 'Content-Type': 'application/json', ...extraHeaders },
   })
 }
 
@@ -533,7 +574,9 @@ function json(status: number, body: unknown, extraHeaders?: Record<string, strin
 export function createOauthEndpoints(
   store: OAuthStore,
   ctx: OauthHandlerContext,
-  opts: { origin: (request: Request) => string; redirectUriOverride?: () => string } = { origin: () => '' }
+  opts: { origin: (request: Request) => string; redirectUriOverride?: () => string } = {
+    origin: () => '',
+  },
 ): OauthEndpoints {
   const redirectUriFor = (request: Request): string => {
     const override = opts.redirectUriOverride?.()
@@ -562,7 +605,9 @@ export function createOauthEndpoints(
       try {
         normalized = normalizeTargetUrl(target)
       } catch (error) {
-        return json(400, { detail: error instanceof Error ? error.message : String(error) })
+        return json(400, {
+          detail: error instanceof Error ? error.message : String(error),
+        })
       }
 
       try {
@@ -570,7 +615,9 @@ export function createOauthEndpoints(
 
         return json(200, { authorizeUrl })
       } catch (error) {
-        return json(500, { detail: error instanceof Error ? error.message : String(error) })
+        return json(500, {
+          detail: error instanceof Error ? error.message : String(error),
+        })
       }
     },
 
@@ -582,7 +629,7 @@ export function createOauthEndpoints(
       if (!pending) {
         return new Response(FAILED_HTML, {
           status: 400,
-          headers: { 'Content-Type': 'text/html; charset=utf-8' }
+          headers: { 'Content-Type': 'text/html; charset=utf-8' },
         })
       }
 
@@ -593,7 +640,7 @@ export function createOauthEndpoints(
         const body = await store.deps.postJson(
           nativeTokenUrl(pending.target),
           { code, code_verifier: pending.verifier },
-          { timeoutMs: TOKEN_EXCHANGE_TIMEOUT_MS }
+          { timeoutMs: TOKEN_EXCHANGE_TIMEOUT_MS },
         )
         const tokenSet = parseTokenResponse(body)
         store.storeSession(pending.sessionKey, pending.target, tokenSet)
@@ -604,18 +651,19 @@ export function createOauthEndpoints(
           headers: {
             'Content-Type': 'text/html; charset=utf-8',
             'Cache-Control': 'no-store',
-            'Set-Cookie': sessionCookieValue(pending.sessionKey)
-          }
+            'Set-Cookie': sessionCookieValue(pending.sessionKey),
+          },
         })
       } catch (error) {
         store.removePending(state)
 
         return new Response(
-          FAILED_HTML + `<p style="color:#b00">${escapeHtml(error instanceof Error ? error.message : String(error))}</p>`,
+          FAILED_HTML +
+            `<p style="color:#b00">${escapeHtml(error instanceof Error ? error.message : String(error))}</p>`,
           {
             status: 400,
-            headers: { 'Content-Type': 'text/html; charset=utf-8' }
-          }
+            headers: { 'Content-Type': 'text/html; charset=utf-8' },
+          },
         )
       }
     },
@@ -636,9 +684,9 @@ export function createOauthEndpoints(
       }
 
       return Promise.resolve(
-        json(200, { ok: true }, { 'Set-Cookie': clearSessionCookieValue() })
+        json(200, { ok: true }, { 'Set-Cookie': clearSessionCookieValue() }),
       )
-    }
+    },
   }
 }
 

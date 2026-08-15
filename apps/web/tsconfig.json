@@ -36,5 +36,9 @@
       "@/debug/dev-only": ["../../vendor/hermes-desktop/src/debug/dev-only.noop.ts"]
     }
   },
-  "include": ["src", "../../vendor/hermes-desktop/src", "../../vendor/hermes-shared/src"]
+  "include": [
+    "src",
+    "../../vendor/hermes-desktop/src",
+    "../../vendor/hermes-shared/src"
+  ]
 }

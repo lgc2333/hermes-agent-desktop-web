@@ -3,7 +3,7 @@ services:
     image: nousresearch/hermes-agent:latest
     container_name: hermes-agent
     restart: unless-stopped
-    command: ["gateway", "run"]
+    command: ['gateway', 'run']
     ports:
       - 9119:9119
     volumes:
@@ -27,7 +27,7 @@ services:
     depends_on:
       - hermes
     ports:
-      - "${WEBUI_PORT:-6722}:6722"
+      - '${WEBUI_PORT:-6722}:6722'
     environment:
       - HERMES_DEFAULT_GATEWAY_URL=http://hermes:9119
       - PROXY_PASSPHRASE=${PROXY_PASSPHRASE:?set PROXY_PASSPHRASE — public deployment requires it}

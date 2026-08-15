@@ -24,7 +24,7 @@ function run(name, command, args, env = {}) {
     cwd: appRoot,
     stdio: 'inherit',
     env: { ...process.env, ...env },
-    shell: false
+    shell: false,
   })
   children.push(child)
   child.on('exit', (code) => {
@@ -39,13 +39,30 @@ function run(name, command, args, env = {}) {
 }
 
 if (withProxy) {
-  run('proxy', 'deno', ['run', '--allow-net', '--allow-read', '--allow-env', path.join(repoRoot, 'apps/proxy/src/main.ts')])
+  run('proxy', 'deno', [
+    'run',
+    '--allow-net',
+    '--allow-read',
+    '--allow-env',
+    path.join(repoRoot, 'apps/proxy/src/main.ts'),
+  ])
 }
 
 run('mock-gateway', process.execPath, ['dev/mock-gateway.mjs'])
-run('vite', process.execPath, [path.join(appRoot, 'node_modules/vite/bin/vite.js'), '--host', '127.0.0.1', '--port', '5173'], {
-  ...(withProxy ? { VITE_PROXY_URL: 'http://127.0.0.1:6722' } : {}) // VITE_PROXY_URL 与 apps/proxy/src/main.ts 的 PORT 默认值一致
-})
+run(
+  'vite',
+  process.execPath,
+  [
+    path.join(appRoot, 'node_modules/vite/bin/vite.js'),
+    '--host',
+    '127.0.0.1',
+    '--port',
+    '5173',
+  ],
+  {
+    ...(withProxy ? { VITE_PROXY_URL: 'http://127.0.0.1:6722' } : {}), // VITE_PROXY_URL 与 apps/proxy/src/main.ts 的 PORT 默认值一致
+  },
+)
 
 process.on('SIGINT', () => {
   for (const child of children) {
