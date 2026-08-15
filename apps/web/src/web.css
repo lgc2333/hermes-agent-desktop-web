@@ -3,11 +3,11 @@
  *
  * vendor 渲染层是桌面优先；这里只修浏览器/移动端可见问题，全部收敛在
  * apps/web 新增文件（PLAN §5：能新加文件就不改 vendor）。
- *
- * 1. 底部状态栏：桌面端用 overflow-x-clip 防横向滚动条（桌面宽度下大量
- *    item 也放得下）；移动端 390px 会把 Gateway/backend 等标签截成
- *    “Gatew…”，改为允许横向滚动（触屏滚动条自动隐藏，信息不丢）。
  */
+
+/* 1. 底部状态栏：桌面端用 overflow-x-clip 防横向滚动条（桌面宽度下大量
+  item 也放得下）；移动端 390px 会把 Gateway/backend 等标签截成
+  “Gatew…”，改为允许横向滚动（触屏滚动条自动隐藏，信息不丢）。*/
 @media (max-width: 640px) {
   [data-slot='statusbar'] > div {
     overflow-x: auto !important;
@@ -19,10 +19,11 @@
     scrollbar-width: none;
   }
 }
+
 /* 2. Connection mode：web 只支持远程连接（PLAN §1 纯远程，local/cloud/ssh 无对应
-      后端形态）——隐藏其余三张卡片，只留 remote。auto-rows-fr 组合全库唯一
-      （vendor .../gateway-settings.tsx 的 mode 卡片容器），同一规则同时覆盖
-      设置页与 boot-failure embedded 视图（M4 起）。 */
+  后端形态）——隐藏其余三张卡片，只留 remote。auto-rows-fr 组合全库唯一
+  （vendor .../gateway-settings.tsx 的 mode 卡片容器），同一规则同时覆盖
+  设置页与 boot-failure embedded 视图（M4 起）。 */
 .grid.auto-rows-fr.grid-cols-1 > button:nth-child(1),
 .grid.auto-rows-fr.grid-cols-1 > button:nth-child(2),
 .grid.auto-rows-fr.grid-cols-1 > button:nth-child(4) {
@@ -30,9 +31,30 @@
 }
 
 /* 3. boot-failure recovery：隐藏 "Use local gateway"（web 没有本地后端进程）。
-      按钮行是纯 `flex flex-wrap gap-2`（全库唯一，其余均带 mt-* 前缀类），
-      local 按钮 = 行内倒数第二 + data-variant="secondary"；本地失败分支的
-      settings 按钮是 ghost variant，不会被命中。 */
-.z-\(--z-setup\) .flex.flex-wrap.gap-2 > button[data-variant="secondary"]:nth-last-child(2) {
+  按钮行是纯 `flex flex-wrap gap-2`（全库唯一，其余均带 mt-* 前缀类），
+  local 按钮 = 行内倒数第二 + data-variant="secondary"；本地失败分支的
+  settings 按钮是 ghost variant，不会被命中。 */
+.z-\(--z-setup\)
+  .flex.flex-wrap.gap-2
+  > button[data-variant='secondary']:nth-last-child(2) {
+  display: none;
+}
+
+/* 4. boot-failure recovery：隐藏 "Repair install"（web 无本地安装可修复）。
+  只出现在本地失败分支 [Retry, Repair(secondary), Settings(ghost), Open logs]：
+  倒数第三 + secondary + 紧邻下一个是 ghost（remote 分支同位置的 settings
+  下一个是 secondary/local，不会命中）。 */
+.z-\(--z-setup\)
+  .flex.flex-wrap.gap-2
+  > button[data-variant='secondary']:nth-last-child(3):has(
+    + button[data-variant='ghost']
+  ) {
+  display: none;
+}
+
+/* 5. boot-failure recovery：隐藏 "Open logs"（web 端日志在浏览器 console/devtools，
+  无桌面日志文件可打开；revealLogs 桥面为布尔门空实现）。openLogs 恒为
+  按钮行最后一个 + ghost variant（全分支通用）。 */
+.z-\(--z-setup\) .flex.flex-wrap.gap-2 > button:last-child[data-variant='ghost'] {
   display: none;
 }
