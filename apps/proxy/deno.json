@@ -1,12 +1,13 @@
 {
-  "name": "@hermes-web/proxy",
-  "version": "0.0.0",
   "tasks": {
-    "dev": "deno run --allow-net --allow-read --watch src/main.ts"
+    "dev": "deno run --allow-net --allow-read --allow-env --watch src/main.ts",
+    "test": "deno test --allow-net --allow-read --allow-env"
   },
-  "imports": {},
-  "permissions": {
-    "net": true,
-    "read": true
+  "compilerOptions": {
+    "strict": true
+  },
+  "fmt": {
+    "lineWidth": 110,
+    "singleQuote": true
   }
 }
