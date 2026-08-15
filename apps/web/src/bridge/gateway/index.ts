@@ -238,13 +238,12 @@ export class GatewayAdapter {
     remoteUrl: string,
   ): Promise<DesktopConnectionProbeResult> {
     try {
-      // M2：探测也走代理（dev 跨源 / 生产同源都通），转发正确性一并验证。
-      const proxy = proxyBaseUrl()
-      const base = proxy ?? remoteUrl.replace(/\/+$/, '')
-      const status = await fetch(`${base}/api/status`, {
+      // 探活恒经代理（ADR-0016）：白名单/CORS 以真实链路为准，直连会
+      // 假绿（绕过白名单）或假红（容器内网域名浏览器不可达）。
+      const status = await fetch(`${proxyBaseUrl()}/api/status`, {
         headers: {
           'X-Hermes-Session-Token': getPrimaryConnection().token,
-          ...(proxy ? { 'X-Hermes-Target': remoteUrl.replace(/\/+$/, '') } : {}),
+          'X-Hermes-Target': remoteUrl.replace(/\/+$/, ''),
         },
       })
 

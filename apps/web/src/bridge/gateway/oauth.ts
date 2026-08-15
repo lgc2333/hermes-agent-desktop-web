@@ -44,11 +44,6 @@ export class OauthBroker {
     const proxy = proxyBaseUrl()
     const baseUrl = remoteUrl.replace(/\/+$/, '')
 
-    if (!proxy) {
-      // 直连模式无代理中转（token 在浏览器侧才能转发）——OAuth 不可用。
-      return { ok: false, baseUrl, connected: false }
-    }
-
     // 同步段先开窗（保留用户手势，避免弹窗拦截），拿到 authorize URL 后再导航。
     const win = window.open('', OAUTH_WINDOW_NAME, 'popup,width=560,height=680')
 
@@ -96,10 +91,6 @@ export class OauthBroker {
 
   async logout(remoteUrl?: string): Promise<DesktopOauthLogoutResult> {
     const proxy = proxyBaseUrl()
-
-    if (!proxy) {
-      return { ok: false, connected: false }
-    }
 
     try {
       const res = await proxyFetch(`${proxy}/auth/native/logout`, { method: 'POST' })
@@ -163,10 +154,6 @@ export class OauthBroker {
   /** 查询代理 OAuth 会话状态（/auth/native/session）。 */
   private async oauthSession(remoteUrl: string): Promise<OauthSessionStatus> {
     const proxy = proxyBaseUrl()
-
-    if (!proxy) {
-      return DISCONNECTED
-    }
 
     try {
       const res = await proxyFetch(

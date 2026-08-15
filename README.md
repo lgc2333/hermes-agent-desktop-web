@@ -52,7 +52,7 @@
 
 ### 从源码运行
 
-适合开发者。需要 Node.js ≥ 22.22、pnpm 11，代理模式还需要 Deno：
+适合开发者。需要 Node.js ≥ 22.22、pnpm 11 与 Deno（SPA 恒经代理，dev 也会起代理，ADR-0016）：
 
 ```bash
 pnpm install

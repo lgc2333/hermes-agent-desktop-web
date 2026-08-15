@@ -34,7 +34,7 @@ describe('buildWebBridge / installWebBridge', () => {
     const bridge = buildWebBridge()
     const conn = await bridge.getConnection()
 
-    expect(conn.baseUrl).toBe('http://127.0.0.1:5180')
+    expect(conn.baseUrl).toBe(window.location.origin)
     expect(conn.token).toBe('mock-token')
   })
 
@@ -107,7 +107,7 @@ describe('browser virtual blob files (ADR-0010: saveImageBuffer/saveClipboardIma
     const dataUrl = await bridge.readFileDataUrl('/repo/a.png')
     expect(dataUrl).toBe('data:image/png;base64,AAAA')
     expect(fetchMock.mock.calls[0][0]).toBe(
-      'http://127.0.0.1:5180/api/fs/read-data-url?path=%2Frepo%2Fa.png',
+      `${window.location.origin}/api/fs/read-data-url?path=%2Frepo%2Fa.png`,
     )
     vi.unstubAllGlobals()
   })

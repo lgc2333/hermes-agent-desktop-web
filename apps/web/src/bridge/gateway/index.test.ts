@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { GatewayAdapter, WEB_VERSION, toHermesConnection, webApi } from './index'
+import { proxyBaseUrl } from './rest'
 import { loadRegistry } from '../registry'
 
 function jsonResponse(status: number, body: unknown): Response {
@@ -30,7 +31,7 @@ describe('webApi (REST forwarding)', () => {
     await webApi({ path: '/api/status' })
 
     const [url, init] = fetchMock.mock.calls[0]
-    expect(url).toBe('http://127.0.0.1:5180/api/status')
+    expect(url).toBe(`${window.location.origin}/api/status`)
     expect(init.headers['X-Hermes-Session-Token']).toBe('mock-token')
     expect(init.headers['X-Hermes-Target']).toBe('http://127.0.0.1:5180')
     expect(init.method).toBe('GET')
@@ -73,7 +74,7 @@ describe('webApi (REST forwarding)', () => {
     })
 
     const [url, init] = fetchMock.mock.calls[0]
-    expect(url).toBe('http://127.0.0.1:5180/api/sessions/s1')
+    expect(url).toBe(`${window.location.origin}/api/sessions/s1`)
     expect(init.method).toBe('PATCH')
     expect(JSON.parse(init.body)).toEqual({ archived: true })
   })
@@ -107,9 +108,11 @@ describe('GatewayAdapter', () => {
     const adapter = new GatewayAdapter()
     const conn = await adapter.getConnection()
 
-    expect(conn.baseUrl).toBe('http://127.0.0.1:5180')
+    expect(conn.baseUrl).toBe(window.location.origin)
     expect(conn.token).toBe('mock-token')
-    expect(conn.wsUrl).toMatch(/^ws:\/\/127\.0\.0\.1:5180\/api\/ws\?token=mock-token$/)
+    expect(conn.wsUrl).toBe(
+      `${window.location.origin.replace(/^http/, 'ws')}/api/ws?token=mock-token&target=${encodeURIComponent('http://127.0.0.1:5180')}`,
+    )
     expect(conn.authMode).toBe('token')
     expect(conn.mode).toBe('remote')
     expect(conn.nativeOverlayWidth).toBe(0)
@@ -193,11 +196,13 @@ describe('toHermesConnection', () => {
       token: 't',
     })
 
-    expect(conn.baseUrl).toBe('http://h:9119')
+    expect(conn.baseUrl).toBe(window.location.origin)
     expect(conn.authMode).toBe('oauth')
     expect(conn.remoteKind).toBe('url')
     expect(conn.source).toBe('settings')
-    expect(conn.wsUrl.startsWith('ws://h:9119/api/ws?token=')).toBe(true)
+    expect(conn.wsUrl).toBe(
+      `${window.location.origin.replace(/^http/, 'ws')}/api/ws?target=${encodeURIComponent('http://h:9119')}`,
+    )
   })
 })
 
@@ -251,6 +256,48 @@ describe('proxy mode (VITE_PROXY_URL set)', () => {
     )
     expect(result.reachable).toBe(true)
     expect(result.version).toBe('0.19.1')
+    vi.unstubAllGlobals()
+  })
+})
+
+describe('same-origin proxy (no VITE_PROXY_URL — ADR-0016)', () => {
+  beforeEach(() => {
+    window.localStorage.clear()
+    loadRegistry()
+  })
+
+  it('proxyBaseUrl falls back to window.location.origin (never null)', () => {
+    expect(proxyBaseUrl()).toBe(window.location.origin)
+  })
+
+  it('webApi targets same-origin proxy and carries X-Hermes-Target', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { ok: true }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await webApi({ path: '/api/status' })
+
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe(`${window.location.origin}/api/status`)
+    expect(init.headers['X-Hermes-Target']).toBe('http://127.0.0.1:5180')
+    vi.unstubAllGlobals()
+  })
+
+  it('getConnectionConfig prefills default gateway from same-origin /api/proxy/meta', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        jsonResponse(200, {
+          defaultGatewayUrl: 'http://hermes:9119',
+          allowedTargets: [],
+        }),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+    const adapter = new GatewayAdapter()
+
+    const config = await adapter.getConnectionConfig()
+
+    expect(fetchMock.mock.calls[0][0]).toBe(`${window.location.origin}/api/proxy/meta`)
+    expect(config.remoteUrl).toBe('http://hermes:9119')
     vi.unstubAllGlobals()
   })
 })
@@ -337,8 +384,7 @@ describe('M3 OAuth (proxy mode)', () => {
     expect(conn.wsUrl.includes('token=')).toBe(false)
   })
 
-  it('oauthLoginConnectionConfig: no proxy → rejected', async () => {
-    vi.unstubAllEnvs()
+  it('oauthLoginConnectionConfig: popup unavailable (window.open null) → ok:false', async () => {
     const adapter = new GatewayAdapter()
     const result = await adapter.oauthLoginConnectionConfig('http://127.0.0.1:9119')
 
@@ -536,7 +582,7 @@ describe('GatewayAdapter fs/git REST parity (remote-mode members, ADR-0010)', ()
     const result = await adapter.readDir('/repo')
 
     expect(fetchMock.mock.calls[0][0]).toBe(
-      'http://127.0.0.1:5180/api/fs/list?path=%2Frepo',
+      `${window.location.origin}/api/fs/list?path=%2Frepo`,
     )
     expect(result.entries).toEqual([{ name: 'a', path: '/repo/a', isDirectory: true }])
   })
@@ -549,7 +595,7 @@ describe('GatewayAdapter fs/git REST parity (remote-mode members, ADR-0010)', ()
     const result = await adapter.readFileText('/repo/a.txt')
 
     expect(fetchMock.mock.calls[0][0]).toBe(
-      'http://127.0.0.1:5180/api/fs/read-text?path=%2Frepo%2Fa.txt',
+      `${window.location.origin}/api/fs/read-text?path=%2Frepo%2Fa.txt`,
     )
     expect(result.text).toBe('hi')
   })
@@ -562,7 +608,7 @@ describe('GatewayAdapter fs/git REST parity (remote-mode members, ADR-0010)', ()
     const result = await adapter.writeTextFile('/repo/a.txt', 'hi')
 
     const [url, init] = fetchMock.mock.calls[0]
-    expect(url).toBe('http://127.0.0.1:5180/api/fs/write-text')
+    expect(url).toBe(`${window.location.origin}/api/fs/write-text`)
     expect(init.method).toBe('POST')
     expect(JSON.parse(init.body)).toEqual({ content: 'hi', path: '/repo/a.txt' })
     expect(result.path).toBe('/repo/a.txt')
@@ -576,7 +622,7 @@ describe('GatewayAdapter fs/git REST parity (remote-mode members, ADR-0010)', ()
     const result = await adapter.readFileDataUrl('/a.png')
 
     expect(fetchMock.mock.calls[0][0]).toBe(
-      'http://127.0.0.1:5180/api/fs/read-data-url?path=%2Fa.png',
+      `${window.location.origin}/api/fs/read-data-url?path=%2Fa.png`,
     )
     expect(result).toBe('data:image/png;base64,AAAA')
   })
@@ -587,7 +633,7 @@ describe('GatewayAdapter fs/git REST parity (remote-mode members, ADR-0010)', ()
 
     expect(await adapter.gitRoot('/repo/a')).toBe('/repo')
     expect(fetchMock.mock.calls[0][0]).toBe(
-      'http://127.0.0.1:5180/api/fs/git-root?path=%2Frepo%2Fa',
+      `${window.location.origin}/api/fs/git-root?path=%2Frepo%2Fa`,
     )
   })
 
@@ -597,7 +643,7 @@ describe('GatewayAdapter fs/git REST parity (remote-mode members, ADR-0010)', ()
     const status = await adapter.git!.repoStatus('/repo')
 
     expect(fetchMock.mock.calls[0][0]).toBe(
-      'http://127.0.0.1:5180/api/git/status?path=%2Frepo',
+      `${window.location.origin}/api/git/status?path=%2Frepo`,
     )
     expect(status).toEqual({ branch: 'main', changes: [] })
   })
@@ -608,7 +654,7 @@ describe('GatewayAdapter fs/git REST parity (remote-mode members, ADR-0010)', ()
     await adapter.git!.branchSwitch('/repo', 'feat')
 
     const [url, init] = fetchMock.mock.calls[0]
-    expect(url).toBe('http://127.0.0.1:5180/api/git/branch/switch')
+    expect(url).toBe(`${window.location.origin}/api/git/branch/switch`)
     expect(JSON.parse(init.body)).toEqual({ branch: 'feat', path: '/repo' })
   })
 
@@ -624,7 +670,7 @@ describe('GatewayAdapter fs/git REST parity (remote-mode members, ADR-0010)', ()
     const list = await adapter.git!.worktreeList('/repo')
 
     expect(fetchMock.mock.calls[0][0]).toBe(
-      'http://127.0.0.1:5180/api/git/worktrees?path=%2Frepo',
+      `${window.location.origin}/api/git/worktrees?path=%2Frepo`,
     )
     expect(list).toHaveLength(1)
     expect(list[0].path).toBe('/wt')
@@ -636,7 +682,7 @@ describe('GatewayAdapter fs/git REST parity (remote-mode members, ADR-0010)', ()
     await adapter.git!.review.list('/repo', 'branch', null)
 
     expect(fetchMock.mock.calls[0][0]).toBe(
-      'http://127.0.0.1:5180/api/git/review/list?path=%2Frepo&scope=branch',
+      `${window.location.origin}/api/git/review/list?path=%2Frepo&scope=branch`,
     )
   })
 
@@ -646,7 +692,7 @@ describe('GatewayAdapter fs/git REST parity (remote-mode members, ADR-0010)', ()
     await adapter.git!.review.commit('/repo', 'msg', false)
 
     const [url, init] = fetchMock.mock.calls[0]
-    expect(url).toBe('http://127.0.0.1:5180/api/git/review/commit')
+    expect(url).toBe(`${window.location.origin}/api/git/review/commit`)
     expect(JSON.parse(init.body)).toEqual({
       message: 'msg',
       path: '/repo',

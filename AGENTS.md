@@ -13,10 +13,8 @@
 
 ```bash
 pnpm install                                   # 首次（pnpm 11，node >=22.22）
-pnpm dev                                       # mock(5180) + vite(5173)，直连
-pnpm --filter @hermes-web/web dev:proxy        # mock + proxy(6722) + vite，经代理
-pnpm --filter @hermes-web/web dev:remote       # vite + proxy，无 mock（连自己的 gateway）
-pnpm --filter @hermes-web/web dev:web          # 仅 vite（直连模式）
+pnpm dev                                       # mock(5180) + proxy(6722) + vite(5173)，SPA 只走代理（ADR-0016）
+pnpm --filter @hermes-web/web dev:remote       # proxy + vite，无 mock（连自己的 gateway）
 pnpm --filter @hermes-web/web test             # vitest（桥单测，apps/web）
 pnpm typecheck                                 # apps/web 类型检查（typecheck.mjs）
 pnpm format                                    # 格式化
@@ -55,7 +53,7 @@ hermes-agent-desktop-web/
 │   │   │   └── bridge/         # WebCapabilityAdapter 三类：browser（浏览器等价）/
 │   │   │                       #   gateway（走代理 RPC：注册表/api 转发/OAuth/探测）/
 │   │   │                       #   denied（布尔门空实现）；registry.ts = 连接注册表
-│   │   ├── dev/                # dev.mjs（四形态启动器）+ mock-gateway.mjs（mock 后端）
+│   │   ├── dev/                # dev.mjs（恒起代理；--no-mock 形态）+ mock-gateway.mjs（mock 后端）
 │   │   ├── e2e/                # CDP 浏览器验收脚本（cdp-*.mjs，从仓库根跑；AGENTS.md）
 │   │   ├── scripts/typecheck.mjs  # 项目类型检查（filter TS5101 等）
 │   │   └── vite.config.ts · vitest.config.ts · tsconfig.json
@@ -97,7 +95,7 @@ hermes-agent-desktop-web/
 
 - **代理静态面**：`serveStatic` 必须排除 `/api/` 与 `/auth/` 前缀（否则 SPA fallback 吞掉 OAuth 端点）；默认 `webDist` 是 `../../web/dist/`（相对 src/，`defaultWebDist()` 纯函数），别写成 `../web/dist/`。`apps/web/index.html` 是**真文件**（不是 symlink——rolldown 构建拒绝跨目录 symlink 入口）。
 
-- **默认 URL**：`WEB_DEFAULT_GATEWAY_URL` → `/api/proxy/meta` 运行时下发前端预填；同一 dist 可部署任意环境，改 URL 不用重建。
+- **默认 URL**：`WEB_DEFAULT_GATEWAY_URL` → `/api/proxy/meta` 运行时下发前端预填；同一 dist 可部署任意环境，改 URL 不用重建。SPA 恒经同源代理（ADR-0016，`proxyBaseUrl()` 恒非空 = VITE_PROXY_URL → origin）：无直连路径，探活/预填/转发全部以代理为真实链路。
 
 - **测试纪律**：桥层行为用 vitest（`apps/web/src/bridge/*.test.ts`），代理用 deno test；先写测试再实现（tdd）。改桥/代理协议后跑全量：`deno task test` + `pnpm --filter @hermes-web/web test` + `pnpm typecheck` 三件套全绿才提交。
 
@@ -118,3 +116,5 @@ hermes-agent-desktop-web/
 - **HashRouter**：设置页 URL 是 `/#/settings?tab=gateway`，pushState 无效。
 
 - **WEB_DIST 裸路径**：Dockerfile ENV 传的是 `/app/web-dist` 这种裸路径，且目录 URL 必须带尾斜杠（`new URL('index.html', base)` 对无尾斜杠 base 会替换末段路径）——容器静态面曾因此静默全灭（400）；`resolveWebDist()`（apps/proxy/src/main.ts）统一归一化成带尾斜杠的 file URL。
+
+- **直连已删（ADR-0016）**：SPA 无直连路径，`proxyBaseUrl()` 恒非空；`vite preview`/静态裸托管不是可用拓扑（/api/* 会打 SPA fallback）。旧镜像（v0.1.0 tag 前）bundle 里 `proxyBaseUrl()` 被编译成 `return null` → `/api/proxy/meta` 0 请求、预填永不触发、探活直连假绿/假红——部署必须用新构建镜像。

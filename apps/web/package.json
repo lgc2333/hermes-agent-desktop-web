@@ -8,14 +8,12 @@
   },
   "scripts": {
     "dev": "node dev/dev.mjs",
-    "dev:proxy": "node dev/dev.mjs --with-proxy",
     "build": "vite build",
     "preview": "vite preview --host 127.0.0.1 --port 4173",
     "typecheck": "node scripts/typecheck.mjs",
     "test": "vitest run",
     "dev:gateway": "node dev/mock-gateway.mjs",
-    "dev:web": "vite --host 127.0.0.1 --port 5173",
-    "dev:remote": "node dev/dev.mjs --with-proxy --no-mock"
+    "dev:remote": "node dev/dev.mjs --no-mock"
   },
   "dependencies": {
     "hermes": "workspace:*"

@@ -60,7 +60,8 @@ _Avoid_: WebUI（部署单元）、前端（口语）
 **Proxy**:
 WebUI 内的 Deno 组件：同源转发 REST/WS 到 Target，托管 SPA 静态产物；持有内存态
 会话凭证（OAuth token set 与 Password session 的 cookie jar，重启失效），零落盘。
-_Avoid_: 薄代理（口语）、网关（错误）
+SPA 的所有出站面恒经代理（ADR-0016），不存在直连路径。
+_Avoid_: 薄代理（口语）、网关（错误）、直连（已删除）
 
 **Vendor**:
 以 git subtree 引入的上游包（hermes-desktop / hermes-shared）；apps/web 以 workspace 依赖引用其包清单，渲染层依赖因此隐式继承、不另行复制。

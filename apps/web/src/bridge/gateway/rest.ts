@@ -11,19 +11,19 @@ import type { GatewayWsUrlResult } from '@hermes/shared'
 import { getPrimaryConnection, type WebConnectionRecord } from '../registry'
 
 /**
- * M2 代理基址（唯一落点，handoff M2 §4）：
- *   - VITE_PROXY_URL 设置（dev：vite :5173 页面 → 代理 :8787）→ 用它；
- *   - 生产：SPA 由代理同源托管 → window.location.origin；
- *   - 都没配置 → null，回退 M1 直连（conn.url，mock CORS 开放可直连）。
+ * 代理基址（唯一落点，ADR-0007/0016）：SPA 由代理托管是唯一受支持拓扑，
+ * 恒非空——VITE_PROXY_URL（dev：vite :5173 页面 → 代理 :6722）→ 否则
+ * window.location.origin（同源即代理）。没有 null、没有构建模式分支、
+ * 没有直连回退（直连模式已删除，见 ADR-0016）。
  */
-export function proxyBaseUrl(): string | null {
+export function proxyBaseUrl(): string {
   const env = import.meta.env.VITE_PROXY_URL as string | undefined
 
   if (env && env.trim()) {
     return env.replace(/\/+$/, '')
   }
 
-  return null
+  return window.location.origin
 }
 
 /**
@@ -34,45 +34,32 @@ export function proxyFetch(input: string, init: RequestInit = {}): Promise<Respo
   return fetch(input, { ...init, credentials: 'include' })
 }
 
-/** 网关 base URL：M2 = 代理（目标 gateway 经 X-Hermes-Target 头指定）。 */
-export function gatewayBaseUrl(conn?: WebConnectionRecord): string {
-  const record = conn ?? getPrimaryConnection()
-
-  return proxyBaseUrl() ?? record.url.replace(/\/+$/, '')
+/** 网关 base URL：恒为代理（目标 gateway 经 X-Hermes-Target 头指定，ADR-0016）。 */
+export function gatewayBaseUrl(): string {
+  return proxyBaseUrl()
 }
 
 /**
- * WS 拨号 URL：
- *   - 经代理：浏览器 WebSocket 无法携带自定义头，目标编码进 query
- *     （ws://proxy/api/ws?token=..&target=<encoded gateway url>）；
- *   - 直连回退：真 gateway 形态 ws(s)://gw/api/ws?token=..（M1 是
- *     mock 特有的 /gateway 路径，M2 mock 已对齐 /api/ws）。
+ * WS 拨号 URL（恒经代理，ADR-0016）：浏览器 WebSocket 无法携带自定义头，
+ * 目标编码进 query（ws://proxy/api/ws?token=..&target=<encoded gateway url>）。
  */
 export function wsUrlFor(conn: WebConnectionRecord): string {
-  const proxy = proxyBaseUrl()
+  const wsBase = proxyBaseUrl().replace(/^http/, 'ws')
 
-  if (proxy) {
-    const wsBase = proxy.replace(/^http/, 'ws')
-
-    // M3：OAuth 模式凭证在代理（httpOnly cookie + ws-ticket），WS 握手经
-    // cookie 认证、代理 mint 单次 ticket，不带 ?token=（gated gateway 拒绝
-    // token query）。
-    if (conn.authMode === 'oauth') {
-      return `${wsBase}/api/ws?target=${encodeURIComponent(conn.url.replace(/\/+$/, ''))}`
-    }
-
-    return `${wsBase}/api/ws?token=${encodeURIComponent(conn.token)}&target=${encodeURIComponent(conn.url.replace(/\/+$/, ''))}`
+  // M3：OAuth 模式凭证在代理（httpOnly cookie + ws-ticket），WS 握手经
+  // cookie 认证、代理 mint 单次 ticket，不带 ?token=（gated gateway 拒绝
+  // token query）。
+  if (conn.authMode === 'oauth') {
+    return `${wsBase}/api/ws?target=${encodeURIComponent(conn.url.replace(/\/+$/, ''))}`
   }
 
-  const base = conn.url.replace(/\/+$/, '').replace(/^http/, 'ws')
-
-  return `${base}/api/ws?token=${encodeURIComponent(conn.token)}`
+  return `${wsBase}/api/ws?token=${encodeURIComponent(conn.token)}&target=${encodeURIComponent(conn.url.replace(/\/+$/, ''))}`
 }
 
 /** HermesConnection 渲染层实读字段（handoff §2 已核实）。 */
 export function toHermesConnection(conn: WebConnectionRecord): HermesConnection {
   return {
-    baseUrl: gatewayBaseUrl(conn),
+    baseUrl: gatewayBaseUrl(),
     isFullscreen: false,
     mode: 'remote',
     authMode: conn.authMode,
@@ -114,7 +101,7 @@ export function apiError(status: number, path: string, body: string): Error {
  */
 export async function webApi<T>(request: HermesApiRequest): Promise<T> {
   const conn = getPrimaryConnection()
-  const base = gatewayBaseUrl(conn)
+  const base = gatewayBaseUrl()
   const path = request.path.startsWith('/') ? request.path : `/${request.path}`
   const method = (request.method ?? 'GET').toUpperCase()
 
@@ -194,10 +181,6 @@ export async function fetchProxyMeta(): Promise<{
 } | null> {
   const proxy = proxyBaseUrl()
 
-  if (!proxy) {
-    return null
-  }
-
   try {
     const res = await fetch(`${proxy}/api/proxy/meta`)
     if (!res.ok) {
@@ -229,9 +212,6 @@ export async function proxySessionLogin(
   password: string,
 ): Promise<void> {
   const proxy = proxyBaseUrl()
-  if (!proxy) {
-    throw new Error('password login requires the proxy (proxy mode only)')
-  }
 
   const res = await proxyFetch(`${proxy}/api/proxy/session/login`, {
     method: 'POST',
@@ -252,12 +232,7 @@ export async function proxySessionLogin(
 
 /** M5：清密码会话（代理转发 /auth/logout + 清 jar 与 cookie）。 */
 export async function proxySessionLogout(): Promise<void> {
-  const proxy = proxyBaseUrl()
-  if (!proxy) {
-    return
-  }
-
-  await proxyFetch(`${proxy}/api/proxy/session/logout`, { method: 'POST' })
+  await proxyFetch(`${proxyBaseUrl()}/api/proxy/session/logout`, { method: 'POST' })
 }
 
 /** M5：查询密码会话状态（cookie + target 匹配才 connected）。 */
@@ -267,9 +242,6 @@ export async function proxySessionStatus(target: string): Promise<{
   username: string
 }> {
   const proxy = proxyBaseUrl()
-  if (!proxy) {
-    return { connected: false, provider: '', username: '' }
-  }
 
   try {
     const res = await proxyFetch(
@@ -304,11 +276,10 @@ export async function probeAuthProviders(
   remoteUrl: string,
 ): Promise<{ name: string; displayName: string; supportsPassword: boolean }[] | null> {
   const proxy = proxyBaseUrl()
-  const base = proxy ?? normalizeTargetUrl(remoteUrl)
 
   try {
-    const res = await proxyFetch(`${base}/api/auth/providers`, {
-      headers: proxy ? { 'X-Hermes-Target': normalizeTargetUrl(remoteUrl) } : {},
+    const res = await proxyFetch(`${proxy}/api/auth/providers`, {
+      headers: { 'X-Hermes-Target': normalizeTargetUrl(remoteUrl) },
     })
     if (!res.ok) {
       return null
