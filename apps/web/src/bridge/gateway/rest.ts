@@ -23,6 +23,13 @@ export function proxyBaseUrl(): string | null {
     return env.replace(/\/+$/, '')
   }
 
+  // 生产：SPA 由代理同源托管 → 同源即代理（M7 容器验收抓出：此前只认
+  // VITE_PROXY_URL，生产构建恒 null → 默认 gateway URL 不预填、所有请求
+  // 直连 conn.url 绕开代理，容器里指向死地址 127.0.0.1:5180）。
+  if (import.meta.env.PROD) {
+    return window.location.origin
+  }
+
   return null
 }
 
