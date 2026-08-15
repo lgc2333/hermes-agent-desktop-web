@@ -2,7 +2,7 @@
 
 WebUI 的代理可能部署在公网；最初设计凭证存代理侧（加密落盘）。决定：连接定义与凭证全部存浏览器（localStorage/IndexedDB，按连接 id），代理无状态、不落盘任何凭证，仅做同源转发；公网部署用 passphrase 防开放转发。
 
-**Status**: accepted
+**Status**: accepted（公网防护手段 superseded by ADR-0015）
 
 **Considered Options**: 凭证存代理（PROXY_SECRET 加密落盘，本 ADR 取代）；凭证走代理 httpOnly cookie（OAuth 模式可后补）
 

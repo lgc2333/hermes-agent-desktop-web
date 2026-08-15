@@ -405,6 +405,7 @@ function normalizeTargetUrl(raw: string): string {
 export function createSessionEndpoints(
   store: SessionStore,
   ctx: SessionHandlerContext,
+  opts: { /** 目标白名单（ADR-0015）：返回 false 时 login 拒绝 403。 */ allowTarget?: (target: string) => boolean } = {},
 ): SessionEndpoints {
   const readTarget = (body: unknown): string => {
     const target = String((body as { target?: unknown })?.target ?? '')
@@ -433,6 +434,11 @@ export function createSessionEndpoints(
         return json(400, {
           detail: error instanceof Error ? error.message : String(error),
         })
+      }
+
+      // 目标白名单（ADR-0015）：login 会向该 target 转发密码，必须限定。
+      if (opts.allowTarget && !opts.allowTarget(target)) {
+        return json(403, { detail: 'target not allowed' })
       }
 
       try {

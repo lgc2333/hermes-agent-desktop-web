@@ -4,7 +4,7 @@ M5 支持用户名/密码门禁的远程 gateway（页面登录 = "dashboard log
 代理转发 /auth/password-login、在内存持有 gateway 会话 cookie（jar），
 REST 注入 Cookie、WS 经 ws-ticket 拨号；浏览器只持 httpOnly 指针。
 
-**Status**: accepted
+**Status**: accepted（login/logout 口令要求 superseded by ADR-0015）
 
 **Context**:
 

@@ -4,7 +4,7 @@ M2 落地代理转发面（apps/proxy）。浏览器只见代理同源：REST �
 `X-Hermes-Target` 头指定目标 gateway，WS 因浏览器无法携带自定义头，
 目标改由 query 参数传递（`?target=`）。代理无状态、凭证只透传不落盘。
 
-**Status**: accepted
+**Status**: accepted（访问控制段 superseded by ADR-0015）
 
 **Context**:
 

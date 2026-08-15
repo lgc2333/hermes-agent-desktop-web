@@ -5,18 +5,51 @@
 import { assertEquals, assertStrictEquals, assertThrows } from 'jsr:@std/assert'
 import {
   normalizeTarget,
+  parseAllowedTargets,
   relayRest,
   relayWs,
-  safeEqual,
+  targetAllowed,
   upstreamUrl,
   upstreamWsUrl,
 } from './relay.ts'
 
-Deno.test('safeEqual: constant-time equality', () => {
-  assertEquals(safeEqual('abc', 'abc'), true)
-  assertEquals(safeEqual('abc', 'abd'), false)
-  assertEquals(safeEqual('abc', 'abcd'), false)
-  assertEquals(safeEqual('', ''), true)
+Deno.test('targetAllowed: empty allowlist allows everything', () => {
+  assertEquals(targetAllowed('http://127.0.0.1:5180', []), true)
+  assertEquals(targetAllowed('https://gw.example.com', []), true)
+})
+
+Deno.test('targetAllowed: exact origin match, port defaults normalized', () => {
+  const allowed = ['http://127.0.0.1:5180', 'https://gw.example.com']
+  assertEquals(targetAllowed('http://127.0.0.1:5180', allowed), true)
+  assertEquals(targetAllowed('http://127.0.0.1:5180/hermes', allowed), true)
+  assertEquals(targetAllowed('https://gw.example.com', allowed), true)
+  assertEquals(targetAllowed('https://gw.example.com:443', allowed), true)
+  assertEquals(targetAllowed('http://gw.example.com', allowed), false) // scheme mismatch
+  assertEquals(targetAllowed('https://gw.example.com:8443', allowed), false) // port mismatch
+  assertEquals(targetAllowed('http://127.0.0.1:5181', allowed), false)
+  assertEquals(targetAllowed('http://other.example.com', allowed), false)
+})
+
+Deno.test('targetAllowed: *. wildcard matches subdomains, not apex', () => {
+  const allowed = ['https://*.example.com', 'http://*.internal:9119']
+  assertEquals(targetAllowed('https://gw.example.com', allowed), true)
+  assertEquals(targetAllowed('https://a.b.example.com', allowed), true)
+  assertEquals(targetAllowed('https://example.com', allowed), false) // apex excluded
+  assertEquals(targetAllowed('http://gw.internal:9119', allowed), true)
+  assertEquals(targetAllowed('http://gw.internal', allowed), false) // port mismatch
+  assertEquals(targetAllowed('https://gw.internal:9119', allowed), false) // scheme mismatch
+})
+
+Deno.test('parseAllowedTargets: splits, trims, ignores empties, validates', () => {
+  assertEquals(parseAllowedTargets(undefined), [])
+  assertEquals(parseAllowedTargets(''), [])
+  assertEquals(parseAllowedTargets('  http://a:1 , http://b:2 , '), [
+    'http://a:1',
+    'http://b:2',
+  ])
+  assertEquals(parseAllowedTargets('https://*.example.com'), ['https://*.example.com'])
+  assertThrows(() => parseAllowedTargets('http://a:1, ftp://x'), Error, 'must be http')
+  assertThrows(() => parseAllowedTargets('not a url'), Error, 'Invalid target URL')
 })
 
 Deno.test('normalizeTarget: trims trailing slashes, keeps prefix path', () => {

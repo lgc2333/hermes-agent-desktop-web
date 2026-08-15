@@ -12,16 +12,65 @@
  * 本模块不依赖 Deno 之外的任何库，全部可单测（relay_test.ts）。
  */
 
-/** 恒时比较两个字符串（passphrase 校验）。 */
-export function safeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) {
-    return false
+/**
+ * 解析 WEB_PROXY_ALLOWED_TARGETS（逗号分隔 gateway base URL；空 = 不限）。
+ * 每项经 normalizeTarget 校验（http/https、去尾斜杠）；非法项启动即抛错
+ * （配置错误要可见，不静默）。支持 `*.` 子域通配（如 https://*.example.com）。
+ */
+export function parseAllowedTargets(raw: string | undefined): string[] {
+  if (!raw) {
+    return []
   }
-  let diff = 0
-  for (let i = 0; i < a.length; i++) {
-    diff |= a.charCodeAt(i) ^ b.charCodeAt(i)
+
+  return raw
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((entry) => normalizeTarget(entry))
+}
+
+interface OriginParts {
+  scheme: string
+  host: string
+  port: string
+}
+
+function parseOrigin(urlStr: string): OriginParts {
+  const url = new URL(urlStr)
+
+  return {
+    scheme: url.protocol,
+    host: url.hostname,
+    port: url.port || (url.protocol === 'https:' ? '443' : '80'),
   }
-  return diff === 0
+}
+
+/**
+ * 目标白名单判定：allowed 为空 → 放行；否则按 origin
+ * （scheme://host[:port]，缺省端口归一 80/443）匹配，`*.` 通配只匹配
+ * 子域、不匹配 apex。调用方需先 normalizeTarget（本函数容忍任意 http(s) 串）。
+ */
+export function targetAllowed(target: string, allowed: string[]): boolean {
+  if (allowed.length === 0) {
+    return true
+  }
+
+  const t = parseOrigin(target)
+  for (const entry of allowed) {
+    const e = parseOrigin(entry)
+    if (e.scheme !== t.scheme || e.port !== t.port) {
+      continue
+    }
+    if (e.host.startsWith('*.')) {
+      if (t.host.endsWith(e.host.slice(1))) {
+        return true
+      }
+    } else if (e.host === t.host) {
+      return true
+    }
+  }
+
+  return false
 }
 
 /** 校验并规范化目标 gateway base URL；非法抛 Error（调用方转 400）。 */
@@ -59,7 +108,6 @@ const STRIP_HEADERS = new Set([
   'host',
   'content-length',
   'x-hermes-target',
-  'x-hermes-proxy-passphrase',
 ])
 
 /** 构造上游 REST URL：target + 请求的 pathname/search。 */

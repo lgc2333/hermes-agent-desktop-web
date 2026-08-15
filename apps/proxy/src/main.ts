@@ -2,8 +2,9 @@
  * main.ts — M2/M3 薄代理入口（Deno 零依赖）。单 handler 多分支（PLAN §6）：
  *   1) 静态资源：GET 且 WEB_DIST 中存在该文件 → SPA 产物（含 fallback）；
  *   2) OAuth 面：/auth/native/{start,callback,session,logout}（M3，见 oauth.ts）；
- *   3) /api/proxy/meta：默认 gateway URL + passphrase 开关下发（M3）；
- *   4) 访问控制：PROXY_PASSPHRASE 配置后校验 X-Hermes-Proxy-Passphrase；
+ *   3) /api/proxy/meta：默认 gateway URL + allowedTargets 下发（M3/M6）；
+ *   4) 访问控制：WEB_PROXY_ALLOWED_TARGETS 配置后只向名单内 gateway 出站
+ *      （REST/WS/OAuth start/密码 login 四面，拒绝 403，ADR-0015）；
  *   5) 其余全部转发：REST 透传（X-Hermes-Target 头）或 WS 中继
  *      （/api/ws?target=<encoded gateway url>）。
  *
@@ -15,9 +16,10 @@
  * Env:    PORT           代理端口（默认 6722，用户手改；dev.mjs 同步）
  *         HOST           监听地址（默认 127.0.0.1）
  *         WEB_DIST       静态目录（默认 <repo>/apps/web/dist；不存在则静态面为空）
- *         PROXY_PASSPHRASE  设置后开启访问控制（公网部署必开；本地 dev 留空）
- *         HERMES_DEFAULT_GATEWAY_URL  经 /api/proxy/meta 下发的默认 gateway URL
- *         OAUTH_REDIRECT_URI          OAuth redirect_uri 覆盖（部署场景）
+ *         WEB_PROXY_ALLOWED_TARGETS  出站目标白名单（逗号分隔，空=不限；
+ *                            支持 *. 子域通配；公网部署必配；本地 dev 留空）
+ *         WEB_DEFAULT_GATEWAY_URL  经 /api/proxy/meta 下发的默认 gateway URL
+ *         WEB_OAUTH_REDIRECT_URI   OAuth redirect_uri 覆盖（部署场景）
  */
 import {
   createOauthEndpoints,
@@ -25,7 +27,13 @@ import {
   parseCookies,
   SESSION_COOKIE_NAME,
 } from './oauth.ts'
-import { normalizeTarget, relayRest, relayWs, safeEqual } from './relay.ts'
+import {
+  normalizeTarget,
+  parseAllowedTargets,
+  relayRest,
+  relayWs,
+  targetAllowed,
+} from './relay.ts'
 import {
   createSessionEndpoints,
   PASSWORD_SESSION_COOKIE,
@@ -36,8 +44,8 @@ import {
 export interface ProxyOptions {
   /** 静态托管根目录（file:// URL 或路径字符串）；不存在则静态面为空。 */
   webDist?: string
-  /** 设置后转发面需要 X-Hermes-Proxy-Passphrase 头。 */
-  passphrase?: string
+  /** 出站目标白名单（WEB_PROXY_ALLOWED_TARGETS；空 = 不限）。 */
+  allowedTargets?: string[]
   /** /api/proxy/meta 下发的默认 gateway URL（生产 compose env）。 */
   defaultGatewayUrl?: string
   /** OAuth redirect_uri 覆盖（部署场景；默认 = 请求 origin）。 */
@@ -81,7 +89,7 @@ function corsHeaders(request: Request | null = null): Record<string, string> {
       // credentials 模式下通配符 * 不匹配（Fetch 规范）——回显预检请求头。
       'Access-Control-Allow-Headers':
         request?.headers.get('access-control-request-headers') ??
-        'x-hermes-target, x-hermes-session-token, x-hermes-proxy-passphrase, content-type, authorization',
+        'x-hermes-target, x-hermes-session-token, content-type, authorization',
       Vary: 'Origin',
     }
   }
@@ -274,11 +282,15 @@ async function proxyPostRaw(
   }
 }
 
-/** WS upgrade 分支（M3：OAuth 会话先 mint 单次 ticket 再拨号；M5：密码会话同）。 */
+/**
+ * WS upgrade 分支（M3：OAuth 会话先 mint 单次 ticket 再拨号；M5：密码会话同）。
+ * 白名单校验在 upgrade 之前（ADR-0015），拒绝 403 不升级。
+ */
 async function handleWs(
   request: Request,
   oauthStore: OAuthStore,
   sessionStore: SessionStore,
+  allowTarget: (target: string) => boolean,
 ): Promise<Response> {
   const url = new URL(request.url)
   const rawTarget = url.searchParams.get('target') ?? ''
@@ -291,6 +303,9 @@ async function handleWs(
       { detail: error instanceof Error ? error.message : String(error) },
       request,
     )
+  }
+  if (!allowTarget(target)) {
+    return jsonResponse(403, { detail: 'target not allowed' }, request)
   }
 
   // OAuth 会话 / 密码会话：为本次拨号 mint 单次 ws-ticket（gated gateway
@@ -334,8 +349,10 @@ export function defaultWebDist(metaUrl: string): string {
 export function createProxyHandler(
   options: ProxyOptions = {},
 ): (request: Request) => Promise<Response> {
-  const passphrase = options.passphrase ?? ''
+  const allowedTargets = options.allowedTargets ?? []
   const defaultGatewayUrl = options.defaultGatewayUrl ?? ''
+  /** 访问控制：白名单为空 → 放行；否则目标必须命中名单（ADR-0015）。 */
+  const allowTarget = (target: string): boolean => targetAllowed(target, allowedTargets)
   let webDist: URL
   try {
     webDist = new URL(options.webDist ?? defaultWebDist(import.meta.url))
@@ -353,30 +370,25 @@ export function createProxyHandler(
     {
       origin: (request) => new URL(request.url).origin,
       redirectUriOverride: () => options.oauthRedirectUri ?? '',
+      allowTarget,
     },
   )
   // M5：密码 "dashboard login" 会话（cookie jar 仅内存；重启失效）。
   const sessionStore = new SessionStore({ postRaw: proxyPostRaw })
-  const session = createSessionEndpoints(sessionStore, {
-    readSessionKey: (request) =>
-      parseCookies(request.headers.get('cookie'))[PASSWORD_SESSION_COOKIE] ?? null,
-  })
+  const session = createSessionEndpoints(
+    sessionStore,
+    {
+      readSessionKey: (request) =>
+        parseCookies(request.headers.get('cookie'))[PASSWORD_SESSION_COOKIE] ?? null,
+    },
+    { allowTarget },
+  )
 
   const isOauthPath = (path: string): boolean =>
     path === '/auth/native/start' ||
     path === '/auth/native/callback' ||
     path === '/auth/native/session' ||
     path === '/auth/native/logout'
-
-  /** 访问控制：配置了 passphrase 后，转发请求必须携带正确头。 */
-  const passphraseOk = (request: Request): boolean => {
-    if (!passphrase) {
-      return true
-    }
-    const given = request.headers.get('x-hermes-proxy-passphrase') ?? ''
-
-    return safeEqual(given, passphrase)
-  }
 
   return async (request: Request): Promise<Response> => {
     const url = new URL(request.url)
@@ -386,7 +398,7 @@ export function createProxyHandler(
     }
 
     // 分支 1：静态托管（含 SPA fallback）。静态面先于访问控制（index.html
-    // 需要可公开加载，passphrase 只保护转发面）。
+    // 需要可公开加载；白名单只约束代理的出站目标）。
     const staticResponse = await serveStatic(request, webDist)
     if (staticResponse) {
       return staticResponse
@@ -406,24 +418,22 @@ export function createProxyHandler(
       return withCors(await session.handleStatus(request), request)
     }
 
-    // 分支 3：/api/proxy/meta（公开：默认 gateway URL 预填 + passphrase 开关）。
+    // 分支 3：/api/proxy/meta（公开：默认 gateway URL 预填 + 白名单下发）。
     if (url.pathname === '/api/proxy/meta' && request.method === 'GET') {
       return jsonResponse(
         200,
         {
           defaultGatewayUrl: defaultGatewayUrl || null,
-          requiresPassphrase: Boolean(passphrase),
+          allowedTargets,
         },
         request,
       )
     }
 
-    // 分支 4：访问控制（转发面 + OAuth 破坏性/启动面）。
-    if (!passphraseOk(request)) {
-      return jsonResponse(401, { detail: 'invalid proxy passphrase' }, request)
-    }
+    // 分支 4：访问控制已并入各出站面（REST/WS 见分支 6；OAuth start 与
+    // 密码 login 在各自端点内校验，统一 403 'target not allowed'）。
 
-    // 分支 5：OAuth 需检面。
+    // 分支 5：OAuth 启动面（target 白名单校验在 oauth.ts 内，拒绝 403）。
     if (url.pathname === '/auth/native/start' && request.method === 'POST') {
       return withCors(await oauth.handleStart(request), request)
     }
@@ -431,8 +441,8 @@ export function createProxyHandler(
       return withCors(await oauth.handleLogout(request), request)
     }
 
-    // M5：密码会话破坏性面（登录换 jar、登出清 jar）——与 OAuth start 同级
-    // 受访问控制保护。
+    // M5：密码会话破坏性面（登录换 jar、登出清 jar）——登录的 target
+    // 白名单校验在 session.ts 内，拒绝 403；登出只清持 cookie 者自己的会话。
     if (url.pathname === '/api/proxy/session/login' && request.method === 'POST') {
       return withCors(await session.handleLogin(request), request)
     }
@@ -440,9 +450,9 @@ export function createProxyHandler(
       return withCors(await session.handleLogout(request), request)
     }
 
-    // 分支 6：转发。
+    // 分支 6：转发（白名单已校验；WS 在 handleWs 内 upgrade 前校验）。
     if (isWsUpgrade(request)) {
-      return handleWs(request, oauthStore, sessionStore)
+      return handleWs(request, oauthStore, sessionStore, allowTarget)
     }
 
     const rawTarget = request.headers.get('x-hermes-target') ?? ''
@@ -455,6 +465,9 @@ export function createProxyHandler(
         { detail: error instanceof Error ? error.message : String(error) },
         request,
       )
+    }
+    if (!allowTarget(target)) {
+      return jsonResponse(403, { detail: 'target not allowed' }, request)
     }
 
     // M3：OAuth 会话存在且 target 匹配 → 注入 Bearer（浏览器不持静态 token）。
@@ -484,9 +497,9 @@ if (import.meta.main) {
   const HOST = Deno.env.get('HOST') ?? '127.0.0.1'
   const handler = createProxyHandler({
     webDist: Deno.env.get('WEB_DIST') ?? undefined,
-    passphrase: Deno.env.get('PROXY_PASSPHRASE') ?? undefined,
-    defaultGatewayUrl: Deno.env.get('HERMES_DEFAULT_GATEWAY_URL') ?? undefined,
-    oauthRedirectUri: Deno.env.get('OAUTH_REDIRECT_URI') ?? undefined,
+    allowedTargets: parseAllowedTargets(Deno.env.get('WEB_PROXY_ALLOWED_TARGETS')),
+    defaultGatewayUrl: Deno.env.get('WEB_DEFAULT_GATEWAY_URL') ?? undefined,
+    oauthRedirectUri: Deno.env.get('WEB_OAUTH_REDIRECT_URI') ?? undefined,
   })
   Deno.serve({ port: PORT, hostname: HOST }, handler)
 }

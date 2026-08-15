@@ -187,10 +187,10 @@ export async function webApi<T>(request: HermesApiRequest): Promise<T> {
   }
 }
 
-/** 读代理 /api/proxy/meta（默认 gateway URL 预填）。 */
+/** 读代理 /api/proxy/meta（默认 gateway URL 预填 + 出站白名单下发）。 */
 export async function fetchProxyMeta(): Promise<{
   defaultGatewayUrl: string | null
-  requiresPassphrase: boolean
+  allowedTargets: string[]
 } | null> {
   const proxy = proxyBaseUrl()
 
@@ -206,7 +206,7 @@ export async function fetchProxyMeta(): Promise<{
 
     return (await res.json()) as {
       defaultGatewayUrl: string | null
-      requiresPassphrase: boolean
+      allowedTargets: string[]
     }
   } catch {
     return null

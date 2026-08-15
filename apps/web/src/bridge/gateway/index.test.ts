@@ -423,7 +423,7 @@ describe('M3 OAuth (proxy mode)', () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(
       jsonResponse(200, {
         defaultGatewayUrl: 'http://hermes:9119',
-        requiresPassphrase: true,
+        allowedTargets: ['http://hermes:9119'],
       }),
     )
     vi.stubGlobal('fetch', fetchMock)

@@ -81,7 +81,7 @@ hermes-agent-desktop-web/
 
 ## 规则
 
-- 用户决策在写代码前应及时进 ADR。写 ADR 前必须先查看 `domain-modeling` Skill。如在实现时遇到当前情况与 ADR 预想中不符，应及时更新当前 ADR。
+- 用户决策在写代码前应及时进 ADR。写 ADR 前必须先查看 `domain-modeling` Skill。如在实现时遇到当前情况与 ADR 预想中不符，应及时更新当前 ADR。非本次对话中创建的 ADR 按惯例不应该修改其内容，只能修改 status，除非用户特别说明。
 
 - **vendor 纪律**（PLAN §5）：vendor/hermes-desktop|shared 内原位改动收敛到最少；能新加文件就不改旧文件；所有 vendor 改动必须登记 PATCHES.md（含同步注意）。
 
@@ -97,7 +97,7 @@ hermes-agent-desktop-web/
 
 - **代理静态面**：`serveStatic` 必须排除 `/api/` 与 `/auth/` 前缀（否则 SPA fallback 吞掉 OAuth 端点）；默认 `webDist` 是 `../../web/dist/`（相对 src/，`defaultWebDist()` 纯函数），别写成 `../web/dist/`。`apps/web/index.html` 是**真文件**（不是 symlink——rolldown 构建拒绝跨目录 symlink 入口）。
 
-- **默认 URL**：`HERMES_DEFAULT_GATEWAY_URL` → `/api/proxy/meta` 运行时下发前端预填；同一 dist 可部署任意环境，改 URL 不用重建。
+- **默认 URL**：`WEB_DEFAULT_GATEWAY_URL` → `/api/proxy/meta` 运行时下发前端预填；同一 dist 可部署任意环境，改 URL 不用重建。
 
 - **测试纪律**：桥层行为用 vitest（`apps/web/src/bridge/*.test.ts`），代理用 deno test；先写测试再实现（tdd）。改桥/代理协议后跑全量：`deno task test` + `pnpm --filter @hermes-web/web test` + `pnpm typecheck` 三件套全绿才提交。
 

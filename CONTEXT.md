@@ -43,9 +43,9 @@ _Avoid_: 一次性令牌（与 Session token 混淆）
 OAuth 认证模式：gateway 充当授权服务器（/auth/native/*），浏览器侧完成 PKCE（RFC 8252 风格），经代理回调落地。
 _Avoid_: 登录流程（太泛）
 
-**Passphrase**:
-代理的访问控制口令（公网部署必开），用于防止开放转发；它认证的是代理，不是 gateway。
-_Avoid_: token、密钥
+**Target allowlist**:
+部署者配置的代理出站目标集合（env WEB_PROXY_ALLOWED_TARGETS，逗号分隔，空=不限）；代理只向名单内 Gateway 发起转发，防开放转发/SSRF。匹配按 origin（scheme://host:port），支持 `*.` 子域通配；限制"能去哪"而非"谁在用"，与 Credential 无关（ADR-0015）。
+_Avoid_: 口令（已废弃，无共享口令）、token、密钥
 
 ## 客户端结构
 
@@ -95,7 +95,7 @@ _Avoid_: 后端容器（与 Proxy 混淆）
 
 **Dashboard auth gate**:
 上游 dashboard 的非 loopback 绑定强制启用的认证闸门（2026-06 硬化后 `--insecure` 失效）；必须注册 auth provider（内置 basic auth 或 OAuth）否则启动失败。API 面认证走 native OAuth Bearer、cookie 会话（Password session）或 ws-ticket，与 gate 的页面登录表单同源同会话。
-_Avoid_: 登录流程（特指页面 cookie 登录）、代理 passphrase（保护转发面的另一层）
+_Avoid_: 登录流程（特指页面 cookie 登录）、代理 target allowlist（限制转发目标，另一层）
 
 **Default gateway**:
 部署时由环境变量提供、经代理 meta 端点运行时下发的预填 gateway URL；前端连接表单自动预填，用户可改。

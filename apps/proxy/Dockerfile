@@ -5,8 +5,8 @@
 #   2. deno:alpine     运行代理（源码直跑，零依赖；WEB_DIST 指向阶段 1 产物）
 #
 # 运行环境变量（与 apps/proxy/src/main.ts 一致）：
-#   PORT / HOST / WEB_DIST / PROXY_PASSPHRASE / HERMES_DEFAULT_GATEWAY_URL /
-#   OAUTH_REDIRECT_URI
+#   PORT / HOST / WEB_DIST / WEB_PROXY_ALLOWED_TARGETS / WEB_DEFAULT_GATEWAY_URL /
+#   WEB_OAUTH_REDIRECT_URI
 #
 # 构建：docker build -f apps/proxy/Dockerfile -t hermes-webui .
 # 或经根 docker-compose.yml：docker compose build webui

@@ -33,7 +33,7 @@
  * 已知限制（M4 部署处理）：真 gateway 校验 redirect_uri 必须是 loopback
  * （127.0.0.1/::1，见 native_flow 的 _validate_loopback_redirect_uri），因此
  * dev 拓扑（代理与浏览器同机）开箱即用；代理在远端服务器时需 gateway 侧
- * 放宽或用 OAUTH_REDIRECT_URI 覆盖（若 gateway 接受非 loopback）。
+ * 放宽或用 WEB_OAUTH_REDIRECT_URI 覆盖（若 gateway 接受非 loopback）。
  */
 
 /** PKCE pair（S256，RFC 7636）。verifier 43 chars，challenge 43 chars。 */
@@ -569,12 +569,17 @@ function json(
 
 /**
  * 组装 OAuth 端点。`origin` = 代理对外 origin（redirect_uri 基址）；
- * `redirectUriOverride`（env OAUTH_REDIRECT_URI）可覆盖（部署场景）。
+ * `redirectUriOverride`（env WEB_OAUTH_REDIRECT_URI）可覆盖（部署场景）。
  */
 export function createOauthEndpoints(
   store: OAuthStore,
   ctx: OauthHandlerContext,
-  opts: { origin: (request: Request) => string; redirectUriOverride?: () => string } = {
+  opts: {
+    origin: (request: Request) => string
+    redirectUriOverride?: () => string
+    /** 目标白名单（ADR-0015）：返回 false 时 start 拒绝 403。 */
+    allowTarget?: (target: string) => boolean
+  } = {
     origin: () => '',
   },
 ): OauthEndpoints {
@@ -608,6 +613,12 @@ export function createOauthEndpoints(
         return json(400, {
           detail: error instanceof Error ? error.message : String(error),
         })
+      }
+
+      // 目标白名单（ADR-0015）：start 之后的 code 交换会向该 target 发
+      // POST，必须限定在名单内。
+      if (opts.allowTarget && !opts.allowTarget(normalized)) {
+        return json(403, { detail: 'target not allowed' })
       }
 
       try {

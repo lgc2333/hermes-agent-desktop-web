@@ -185,7 +185,7 @@ export class GatewayAdapter {
    * M3：连接配置 = registry 快照 + 运行时增强：
    *   - OAuth 连接：向代理查询 httpOnly 会话状态（connected + tokenPreview）；
    *   - 默认连接从未配置过且代理下发 defaultGatewayUrl（/api/proxy/meta，
-   *     compose env HERMES_DEFAULT_GATEWAY_URL）→ 表单预填默认 URL（用户
+   *     compose env WEB_DEFAULT_GATEWAY_URL）→ 表单预填默认 URL（用户
    *     保存才落盘，不动 registry）。
    */
   async getConnectionConfig(): Promise<DesktopConnectionConfig> {

@@ -5,7 +5,7 @@ M3 落地 OAuth 认证（apps/proxy/src/oauth.ts + bridge 登录/登出面）。
 只存代理进程内存，浏览器持 httpOnly 会话 cookie；转发面由代理注入
 Bearer / ws-ticket。
 
-**Status**: accepted
+**Status**: accepted（start/logout 口令要求 superseded by ADR-0015）
 
 **Context**:
 
@@ -16,7 +16,7 @@ Bearer / ws-ticket。
   `/auth/native/authorize` 校验 redirect_uri 必须是 loopback 文本
   （127.0.0.1/::1）；代理在浏览器同机部署（dev）时 origin 恰为 loopback，
   开箱即用。远端部署（浏览器 ≠ 代理机器）需要 gateway 放宽或用
-  OAUTH_REDIRECT_URI 覆盖（M4 部署时处理）。
+  WEB_OAUTH_REDIRECT_URI 覆盖（M4 部署时处理）。
 - gated gateway（auth_required）REST 只认 session cookie / Bearer，WS 拒绝
   `?token=`，只认 `?ticket=`（POST /api/auth/ws-ticket 签发，单次 30s）。
 - 浏览器 WebSocket 握手会携带同源 httpOnly cookie（schemeful same-site 中

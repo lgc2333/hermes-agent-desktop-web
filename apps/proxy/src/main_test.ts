@@ -84,13 +84,13 @@ function startTargetWs(): { url: string; close: () => Promise<void> } {
 
 /** 起一个完整代理实例。 */
 async function startProxy(
-  opts: { passphrase?: string; webDist?: string; defaultGatewayUrl?: string } = {},
+  opts: { allowedTargets?: string[]; webDist?: string; defaultGatewayUrl?: string } = {},
 ): Promise<{
   url: string
   close: () => Promise<void>
 }> {
   const handler = createProxyHandler({
-    passphrase: opts.passphrase,
+    allowedTargets: opts.allowedTargets,
     webDist: opts.webDist,
     defaultGatewayUrl: opts.defaultGatewayUrl,
   })
@@ -195,25 +195,70 @@ Deno.test('proxy: upstream down -> 502 with detail', async () => {
 
 // ── 访问控制 ───────────────────────────────────────────────────────────────
 
-Deno.test('proxy: passphrase gate rejects and accepts', async () => {
+Deno.test('proxy: target allowlist gates REST forwarding (403)', async () => {
   const target = startTargetHttp()
-  const proxy = await startProxy({ passphrase: 'secret-pass' })
+  const proxy = await startProxy({ allowedTargets: [target.url] })
   try {
+    // 白名单外目标 → 403，不产生出站。
     const denied = await fetch(`${proxy.url}/api/echo`, {
-      headers: { 'x-hermes-target': target.url },
+      headers: { 'x-hermes-target': 'http://127.0.0.1:1' },
     })
-    assertEquals(denied.status, 401)
+    assertEquals(denied.status, 403)
+    assertEquals((await denied.json()).detail, 'target not allowed')
 
+    // 白名单内目标 → 正常转发。
     const ok = await fetch(`${proxy.url}/api/echo`, {
-      headers: {
-        'x-hermes-target': target.url,
-        'x-hermes-proxy-passphrase': 'secret-pass',
-      },
+      headers: { 'x-hermes-target': target.url },
     })
     assertEquals(ok.status, 200)
   } finally {
     await proxy.close()
     await target.close()
+  }
+})
+
+Deno.test('proxy: target allowlist gates WS upgrade before dial (403)', async () => {
+  const proxy = await startProxy({ allowedTargets: ['http://127.0.0.1:5180'] })
+  try {
+    const res = await fetch(
+      `${proxy.url}/api/ws?target=${encodeURIComponent('http://127.0.0.1:1')}`,
+      {
+        headers: {
+          upgrade: 'websocket',
+          connection: 'Upgrade',
+          'sec-websocket-key': 'aaaaaaaaaaaaaaaaaaaaaa',
+          'sec-websocket-version': '13',
+        },
+      },
+    )
+    assertEquals(res.status, 403)
+    assertEquals((await res.json()).detail, 'target not allowed')
+  } finally {
+    await proxy.close()
+  }
+})
+
+Deno.test('proxy: OAuth start rejects non-allowlisted target (403)', async () => {
+  const proxy = await startProxy({ allowedTargets: ['http://127.0.0.1:5180'] })
+  try {
+    const denied = await fetch(`${proxy.url}/auth/native/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target: 'http://evil.example.com' }),
+    })
+    assertEquals(denied.status, 403)
+    assertEquals((await denied.json()).detail, 'target not allowed')
+
+    // 白名单内目标照常返回 authorizeUrl（无需真实 gateway，begin 只拼 URL）。
+    const ok = await fetch(`${proxy.url}/auth/native/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target: 'http://127.0.0.1:5180' }),
+    })
+    assertEquals(ok.status, 200)
+    assertEquals((await ok.json()).authorizeUrl.startsWith('http://127.0.0.1:5180'), true)
+  } finally {
+    await proxy.close()
   }
 })
 
@@ -487,7 +532,7 @@ Deno.test(
     try {
       const { cookie } = await oauthLogin(proxy.url, target.url)
 
-      // 会话查询（免 passphrase、带 cookie + target）。
+      // 会话查询（免检、带 cookie + target）。
       const session = await fetch(
         `${proxy.url}/auth/native/session?target=${encodeURIComponent(target.url)}`,
         { headers: { cookie } },
@@ -567,26 +612,26 @@ Deno.test('proxy: OAuth WS dial mints a ticket and replaces token', async () => 
 })
 
 Deno.test(
-  'proxy: /api/proxy/meta reports default gateway + passphrase flag (public)',
+  'proxy: /api/proxy/meta reports default gateway + allowed targets (public)',
   async () => {
     const proxy = await startProxy({
-      passphrase: 'secret',
+      allowedTargets: ['http://hermes:9119', 'https://*.example.com'],
       defaultGatewayUrl: 'http://hermes:9119',
     })
     try {
-      // 免 passphrase 可读（默认 URL 预填是 boot 期能力）。
+      // 公开可读（默认 URL 预填是 boot 期能力，白名单下发供前端提示）。
       const res = await fetch(`${proxy.url}/api/proxy/meta`)
       assertEquals(res.status, 200)
       const meta = await res.json()
       assertEquals(meta.defaultGatewayUrl, 'http://hermes:9119')
-      assertEquals(meta.requiresPassphrase, true)
+      assertEquals(meta.allowedTargets, ['http://hermes:9119', 'https://*.example.com'])
 
-      // 未配置 defaultGatewayUrl → null。
+      // 未配置 → null / 空数组（不限）。
       const proxy2 = await startProxy()
       try {
         const meta2 = await (await fetch(`${proxy2.url}/api/proxy/meta`)).json()
         assertEquals(meta2.defaultGatewayUrl, null)
-        assertEquals(meta2.requiresPassphrase, false)
+        assertEquals(meta2.allowedTargets, [])
       } finally {
         await proxy2.close()
       }
@@ -893,10 +938,10 @@ Deno.test(
 )
 
 Deno.test(
-  'proxy: password session status is public (CORS) and login needs passphrase',
+  'proxy: password session status is public (CORS) and login gated by allowlist',
   async () => {
     const target = startPasswordTarget()
-    const proxy = await startProxy({ passphrase: 'sekrit' })
+    const proxy = await startProxy({ allowedTargets: ['http://127.0.0.1:5180'] })
     try {
       // status 免检 + CORS（跨端口轮询）。
       const status = await fetch(
@@ -909,7 +954,7 @@ Deno.test(
         'http://127.0.0.1:5173',
       )
 
-      // login 是破坏性面：无 passphrase → 401。
+      // login 目标不在白名单 → 403，不产生出站。
       const denied = await fetch(`${proxy.url}/api/proxy/session/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -920,7 +965,8 @@ Deno.test(
           password: 'b',
         }),
       })
-      assertEquals(denied.status, 401)
+      assertEquals(denied.status, 403)
+      assertEquals((await denied.json()).detail, 'target not allowed')
     } finally {
       await proxy.close()
       await target.close()
