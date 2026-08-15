@@ -522,7 +522,10 @@ export class GatewayAdapter {
   }
 
   async getRemoteDisplayReason(): Promise<string | null> {
-    return 'web'
+    // Web 版没有 Electron 主进程：无 GPU 加速开关、无远程显示检测，
+    // 返回 null 让渲染层的 RemoteDisplayBanner 永不误报（上游仅在
+    // 检测到 SSH/X11 转发/RDP 等远程显示时才返回原因字符串）。
+    return null
   }
 
   async getBootstrapState(): Promise<DesktopBootstrapState> {
