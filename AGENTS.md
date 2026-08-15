@@ -30,11 +30,11 @@ docker compose up -d --build                  # 生产部署（见 docs/deploy.m
 bash scripts/sync-upstream.sh [tag]            # 上游 subtree 同步（PATCHES.md §3）
 ```
 
-浏览器验收（headless Chrome + CDP 9224，脚本见 temp/m4*/）：
+浏览器验收（headless Chrome + CDP 9224，脚本在 apps/web/e2e/，从仓库根运行）：
 
 ```bash
-chrome --headless=new --remote-debugging-port=9224 --user-data-dir=temp/m4-cdp-profile --disable-popup-blocking
-node temp/m4/cdp-*.mjs   # 场景脚本（响应式/断连/OAuth/隐藏验证）
+chrome --headless=new --remote-debugging-port=9224 --user-data-dir=temp/e2e-profile --disable-popup-blocking
+node apps/web/e2e/cdp-*.mjs   # 场景脚本（OAuth/断连/响应式/隐藏验证；前置拓扑见 apps/web/e2e/README.md）
 ```
 
 ## 规则
@@ -58,23 +58,3 @@ node temp/m4/cdp-*.mjs   # 场景脚本（响应式/断连/OAuth/隐藏验证）
 4. **loopback redirect_uri**：上游 `/auth/native/authorize` 只收 127.0.0.1/::1（RFC 8252，安全边界无放宽渠道）；dev 同机开箱即用，远端浏览器需 SSH 隧道/VPN（docs/deploy.md §4.3）。
 5. **mock gated 影响 boot**：`MOCK_OAUTH=1` 的 mock `auth_required=true`，页面 boot 会要求登录——验收先等 "Gateway ready"（注意 "Runtime not ready" 也含 ready 字样，判状态栏 token 更准）。
 6. **HashRouter**：设置页 URL 是 `/#/settings?tab=gateway`，pushState 无效。
-7. **ws-ticket 必须带 Bearer**：`/api/auth/ws-ticket` 是 auth-required 端点，代理 mint 时经 `postJson` 传 authorization 头（M3 漏过，有测试覆盖）。
-8. **OAuth 仅代理模式**：直连（无 VITE_PROXY_URL）时 OAuth 不可用；`wsUrlFor` OAuth 模式无 `?token=`（cookie+ticket 认证）。
-9. **代理重启 = OAuth 会话失效**：内存 token set 清空，cookie 还在但下次请求 401/未连接；重新登录即可（设计如此，勿加持久化）。
-10. **PORT 空字符串**：`Number(env)` 兜底别删（空串会变 NaN）。
-11. **auth gate 强制**（上游 2026-06 硬化）：非 loopback 绑定必配 auth provider（`HERMES_DASHBOARD_BASIC_AUTH_USERNAME/PASSWORD` 或 OAuth client），`HERMES_DASHBOARD_INSECURE` 已失效；compose 缺失 env 启动即失败。
-12. **basic-auth gateway 的 Sign in 是密码表单**：password provider 也宣告 `native_pkce`（auth_flows），native authorize 302 到 `/login` 密码页——设置页 Sign in 按钮就是 dashboard 密码登录，不是只能填 token。
-13. **CDP 杀进程竞态**：`Get-NetTCPConnection -State Listen` 在进程重启瞬间可能返回空 → 脚本拿到空 PID 报错；先确认端口存活再取 PID。
-14. **注册表污染验收**：改过 `hermes-web.connections.v1` 后后续页面 boot 连的是改过的目标；换场景先清 localStorage + reload。
-15. **生产构建三连坑**：index.html 必须真文件；webDist 默认路径两级；静态面排除 /auth/。三者任一错 → 生产 400 或 OAuth 静默坏（dev 走 vite 测不出，必须 `pnpm build` 后按生产形态验证）。
-16. **上游同步后核对**：styles.css 的 `@source` 两行、三处布尔门、voice 配置、apps/web/index.html 内容（PATCHES.md §4 逐条）。
-
-## 提交流程
-
-```bash
-cd apps/proxy && deno task test     # 代理全绿
-pnpm test && pnpm typecheck         # 桥全绿 + 类型 0 错
-git add <改动> && git commit        # 消息含里程碑/面标识（feat:/fix:/docs:）
-```
-
-改动涉及 vendor → 先补 PATCHES.md；涉及新决策 → 补 CONTEXT.md/ADR；涉及部署 → 更新 docs/deploy.md。
