@@ -307,6 +307,26 @@ Deno.test(
     }
   },
 )
+Deno.test(
+  'proxy: webDist accepts a plain filesystem path (container ENV style)',
+  async () => {
+    const dir = Deno.makeTempDirSync()
+    const root = `file:///${dir.replace(/\\\\/g, '/')}/`
+    Deno.writeFileSync(
+      new URL('index.html', root),
+      new TextEncoder().encode('<html>plain-path</html>'),
+    )
+    // Dockerfile ENV WEB_DIST=/app/web-dist 传的是裸路径字符串，不是 file:// URL
+    const proxy = await startProxy({ webDist: dir })
+    try {
+      const index = await fetch(`${proxy.url}/`)
+      assertEquals(index.status, 200)
+      assertEquals(await index.text(), '<html>plain-path</html>')
+    } finally {
+      await proxy.close()
+    }
+  },
+)
 Deno.test('defaultWebDist: resolves to repo apps/web/dist (M4 regression)', () => {
   // M4 生产服务器测试抓出的 bug：默认值曾是 '../web/dist/'，相对 src/main.ts
   // 解析到 apps/proxy/web/dist（不存在）→ 生产静态托管静默 400（dev 走 vite

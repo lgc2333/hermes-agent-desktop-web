@@ -346,6 +346,37 @@ export function defaultWebDist(metaUrl: string): string {
   return new URL('../../web/dist/', metaUrl).href
 }
 
+/**
+ * 把 webDist 输入归一化成 file URL。文档契约是"file:// URL 或路径字符串"
+ * （ProxyOptions.webDist），但实现曾只收 URL——容器生产测试抓出的 bug：
+ * Dockerfile ENV WEB_DIST=/app/web-dist 是裸路径，new URL() 直接抛
+ * Invalid URL，落到默认值（容器里不存在）→ 静态面静默全灭（所有请求
+ * 落转发面 400）。
+ *   - Windows 盘符（C:\x）先当路径处理，避免被 URL 解析成 scheme c:；
+ *   - 相对路径相对默认 dist 目录（apps/web/dist）解析。
+ */
+function resolveWebDist(raw: string | undefined): URL {
+  if (!raw) return new URL(defaultWebDist(import.meta.url))
+  let url: URL
+  if (/^[a-zA-Z]:[\\/]/.test(raw)) {
+    // Windows 盘符（C:\x）：先当路径处理，避免被 URL 解析成 scheme c:
+    url = new URL(`file:///${raw.replace(/\\/g, '/')}`)
+  } else {
+    try {
+      url = new URL(raw)
+    } catch {
+      // 裸文件系统路径（容器 ENV WEB_DIST=/app/web-dist）→ 相对默认 dist 目录解析
+      url = new URL(raw, defaultWebDist(import.meta.url))
+    }
+  }
+  // 目录 URL 必须带尾斜杠：new URL('index.html', base) 在 base 无尾斜杠时
+  // 会替换最后一段路径（file:///a/dist + index.html → file:///a/index.html）。
+  if (!url.pathname.endsWith('/')) {
+    url = new URL(`${url.href}/`)
+  }
+  return url
+}
+
 export function createProxyHandler(
   options: ProxyOptions = {},
 ): (request: Request) => Promise<Response> {
@@ -353,12 +384,7 @@ export function createProxyHandler(
   const defaultGatewayUrl = options.defaultGatewayUrl ?? ''
   /** 访问控制：白名单为空 → 放行；否则目标必须命中名单（ADR-0015）。 */
   const allowTarget = (target: string): boolean => targetAllowed(target, allowedTargets)
-  let webDist: URL
-  try {
-    webDist = new URL(options.webDist ?? defaultWebDist(import.meta.url))
-  } catch {
-    webDist = new URL(defaultWebDist(import.meta.url))
-  }
+  const webDist = resolveWebDist(options.webDist)
 
   const oauthStore = new OAuthStore({ postJson: proxyPostJson })
   const oauth = createOauthEndpoints(

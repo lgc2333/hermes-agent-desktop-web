@@ -116,3 +116,5 @@ hermes-agent-desktop-web/
 - **mock gated 影响 boot**：`MOCK_OAUTH=1` 的 mock `auth_required=true`，页面 boot 会要求登录——验收先等 "Gateway ready"（注意 "Runtime not ready" 也含 ready 字样，判状态栏 token 更准）。
 
 - **HashRouter**：设置页 URL 是 `/#/settings?tab=gateway`，pushState 无效。
+
+- **WEB_DIST 裸路径**：Dockerfile ENV 传的是 `/app/web-dist` 这种裸路径，且目录 URL 必须带尾斜杠（`new URL('index.html', base)` 对无尾斜杠 base 会替换末段路径）——容器静态面曾因此静默全灭（400）；`resolveWebDist()`（apps/proxy/src/main.ts）统一归一化成带尾斜杠的 file URL。
