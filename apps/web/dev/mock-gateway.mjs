@@ -1,29 +1,524 @@
 #!/usr/bin/env node
 /**
- * M0 mock gateway — a JSON-RPC WebSocket server the renderer can dial.
+ * M1 mock gateway — 可聊天的 JSON-RPC/WS + REST 双通道 mock 后端。
  *
- * The desktop renderer connects to the gateway over WS (JsonRpcGatewayClient
- * in @hermes/shared) and expects:
- *   - requests  → { jsonrpc, id, method, params }  replied with { id, result }
- *   - events    → { method: 'event', params: { type, ... } } pushed at will
+ * 渲染层走两条通道（handoff §4）：
+ *   - REST（经 bridge api()）：/api/config、/api/status、sidebar 会话列表…
+ *   - WS（JsonRpcGatewayClient）：session.create/resume、prompt.submit +
+ *     流式事件（message.start/delta/complete、session.info）
  *
- * M0 only needs the socket to OPEN so the boot flow completes; chat methods
- * (prompt.submit, session.info, ...) are M1 work and default to an empty
- * result here. Run alongside 'vite dev' (see package.json dev script).
+ * 协议形状（vendor/hermes-shared/src/json-rpc-gateway.ts 已核实）：
+ *   - 请求：  { jsonrpc, id, method, params }  → 回 { id, result } / { id, error }
+ *   - 事件：  { method: 'event', params: { type, session_id, payload } }
+ *
+ * setup.status 返回 provider_configured: true → 渲染层跳过 onboarding 直接进聊天。
  *
  * Usage:  node dev/mock-gateway.mjs [port]
  */
 
+import http from 'node:http'
 import { WebSocketServer } from 'ws'
 
 const PORT = Number(process.argv[2] ?? process.env.MOCK_GATEWAY_PORT ?? 5180)
+const MODEL = 'mock-model'
+const PROVIDER = 'mock'
 
-const wss = new WebSocketServer({ port: PORT, path: '/gateway' })
+// ── 会话存储 ────────────────────────────────────────────────────────────────
+// stored id（durable，侧栏/路由用）↔ runtime id（live 事件用）。mock 简化：
+// 每个 stored 会话有一个固定 runtime id，resume 复用。
 
-wss.on('connection', (socket) => {
+let nextId = 1
+
+function mintId(prefix) {
+  return `${prefix}-${Date.now().toString(36)}-${nextId++}`
+}
+
+function sessionInfoRow(session, runtime) {
+  const messages = session.messages
+  const lastMessage = messages[messages.length - 1]
+  const preview = lastMessage && lastMessage.role === 'assistant' ? String(lastMessage.text ?? '') : null
+
+  return {
+    archived: false,
+    cwd: session.cwd || null,
+    git_branch: null,
+    git_repo_root: null,
+    ended_at: session.endedAt,
+    id: session.storedId,
+    input_tokens: 0,
+    is_active: session.isActive !== false,
+    last_active: session.lastActive,
+    message_count: messages.length,
+    model: session.model || MODEL,
+    output_tokens: 0,
+    pinned: false,
+    preview,
+    profile: session.profile || 'default',
+    is_default_profile: true,
+    source: session.source ?? 'desktop',
+    started_at: session.startedAt,
+    title: session.title || null,
+    tool_call_count: 0
+  }
+}
+
+const sessions = new Map() // storedId -> session
+const byRuntime = new Map() // runtimeId -> storedId
+
+function getSessionByRuntime(runtimeId) {
+  const storedId = byRuntime.get(runtimeId)
+  return storedId ? sessions.get(storedId) : null
+}
+
+function runtimeInfo(session) {
+  return {
+    approval_mode: 'manual',
+    branch: '',
+    cwd: session.cwd || '',
+    fast: session.fast ?? false,
+    model: session.model || MODEL,
+    provider: session.provider || PROVIDER,
+    reasoning_effort: session.reasoningEffort || '',
+    running: false,
+    source: session.source ?? 'desktop',
+    version: '0.0.0-mock',
+    desktop_contract: 1,
+    tools: {},
+    skills: []
+  }
+}
+
+function createSession(params = {}) {
+  const storedId = mintId('st')
+  const runtimeId = mintId('rt')
+  const session = {
+    storedId,
+    runtimeId,
+    title: null,
+    cwd: typeof params.cwd === 'string' ? params.cwd : '',
+    profile: typeof params.profile === 'string' ? params.profile : null,
+    source: typeof params.source === 'string' ? params.source : 'desktop',
+    model: typeof params.model === 'string' ? params.model : MODEL,
+    provider: typeof params.provider === 'string' ? params.provider : PROVIDER,
+    fast: Boolean(params.fast),
+    reasoningEffort: typeof params.reasoning_effort === 'string' ? params.reasoning_effort : '',
+    messages: [],
+    startedAt: Math.floor(Date.now() / 1000),
+    lastActive: Date.now() / 1000,
+    endedAt: null,
+    isActive: false
+  }
+  sessions.set(storedId, session)
+  byRuntime.set(runtimeId, storedId)
+
+  return session
+}
+
+function sessionResumePayload(session) {
+  return {
+    resumed: session.storedId,
+    session_id: session.runtimeId,
+    message_count: session.messages.length,
+    messages: session.messages,
+    running: false,
+    status: 'idle',
+    info: runtimeInfo(session)
+  }
+}
+
+function sessionCreatePayload(session) {
+  return {
+    session_id: session.runtimeId,
+    stored_session_id: session.storedId,
+    message_count: 0,
+    messages: [],
+    info: runtimeInfo(session)
+  }
+}
+
+function sessionInfoPayload(session) {
+  return {
+    ...runtimeInfo(session),
+    stored_session_id: session.storedId,
+    usage: { calls: 0, input: 0, output: 0, total: 0 }
+  }
+}
+
+// ── 流式回复（prompt.submit 的推流）────────────────────────────────────────
+
+const REPLY = [
+  'Hello from the mock gateway! ',
+  'The M1 bridge swap is working: ',
+  'this reply was streamed over the JSON-RPC WebSocket, ',
+  'word by word, exactly like a real Hermes gateway would. ',
+  'You can now send another message.'
+].join('')
+
+const STREAM_WORD_MS = 40
+
+function streamTurn(socket, session, userText) {
+  const { runtimeId } = session
+  const push = (type, payload) => {
+    if (socket.readyState !== socket.OPEN) {
+      return
+    }
+    socket.send(JSON.stringify({ method: 'event', params: { type, session_id: runtimeId, payload } }))
+  }
+
+  const now = Math.floor(Date.now() / 1000)
+  session.messages.push({ role: 'user', text: userText, timestamp: now, content: userText })
+  session.lastActive = Date.now() / 1000
+  session.isActive = true
+  session.endedAt = null
+
+  push('message.start', {})
+
+  const words = REPLY.split(' ')
+  let i = 0
+
+  const tick = () => {
+    if (socket.readyState !== socket.OPEN) {
+      return
+    }
+
+    if (i >= words.length) {
+      const full = REPLY
+      session.messages.push({
+        role: 'assistant',
+        text: full,
+        content: full,
+        timestamp: now,
+        model: session.model || MODEL,
+        provider: session.provider || PROVIDER
+      })
+      session.endedAt = Date.now() / 1000
+      session.lastActive = Date.now() / 1000
+      session.isActive = false
+      session.title = session.title || userText.slice(0, 60)
+      push('message.complete', { text: full, status: 'ok' })
+      push('session.info', sessionInfoPayload(session))
+
+      return
+    }
+
+    push('message.delta', { text: (i === 0 ? '' : ' ') + words[i] })
+    i += 1
+    setTimeout(tick, STREAM_WORD_MS)
+  }
+
+  tick()
+}
+
+// ── WS JSON-RPC 分发 ───────────────────────────────────────────────────────
+
+const RPC_HANDLERS = {
+  'setup.status': () => ({ provider_configured: true }),
+  'setup.runtime_check': () => ({ ok: true }),
+  'config.get': () => ({}),
+  'config.set': () => ({ ok: true }),
+  'session.create': params => sessionCreatePayload(createSession(params ?? {})),
+  'session.resume': params => {
+    const storedId = params?.session_id
+    const session = sessions.get(storedId)
+
+    if (!session) {
+      throw new Error(`session not found: ${storedId}`)
+    }
+
+    session.lastActive = Date.now() / 1000
+    session.isActive = true
+
+    return sessionResumePayload(session)
+  },
+  'session.info': params => {
+    const runtimeId = params?.session_id
+    const session = runtimeId ? getSessionByRuntime(runtimeId) : null
+
+    if (!session) {
+      throw new Error(`session not found: ${runtimeId}`)
+    }
+
+    return sessionInfoPayload(session)
+  },
+  'session.activate': params => {
+    const storedId = params?.session_id
+    const session = sessions.get(storedId) ?? (params?.session_id ? createSession({}) : null)
+
+    if (!session) {
+      throw new Error(`session not found: ${storedId}`)
+    }
+
+    return sessionInfoPayload(session)
+  },
+  'session.delete': params => {
+    const storedId = params?.session_id
+    const session = sessions.get(storedId)
+
+    if (session) {
+      byRuntime.delete(session.runtimeId)
+      sessions.delete(storedId)
+    }
+
+    return { ok: true }
+  },
+  'prompt.submit': (params, socket) => {
+    const session = getSessionByRuntime(params?.session_id) ?? createSession({})
+
+    // Fire-and-forget：ACK 立即返回，回复走事件流。
+    setTimeout(() => streamTurn(socket, session, String(params?.text ?? '')), 50)
+
+    return { ok: true }
+  },
+  'process.kill': () => ({ ok: true }),
+  'approval.respond': () => ({ ok: true }),
+  'approval.received': () => ({ ok: true }),
+  'approval.pending': () => ({ ok: true }),
+  'clarify.respond': () => ({ ok: true }),
+  'reload.env': () => ({ ok: true }),
+  'reload.mcp': () => ({ ok: true }),
+  'wake.pause': () => ({ ok: true })
+}
+
+function handleRpc(socket, frame) {
+  const handler = RPC_HANDLERS[frame.method]
+
+  if (!handler) {
+    socket.send(
+      JSON.stringify({
+        id: frame.id,
+        error: { message: `No such RPC method: ${frame.method}` }
+      })
+    )
+
+    return
+  }
+
+  try {
+    const result = handler(frame.params ?? {}, socket)
+    socket.send(JSON.stringify({ id: frame.id, result: result ?? null }))
+  } catch (error) {
+    socket.send(
+      JSON.stringify({
+        id: frame.id,
+        error: { message: error instanceof Error ? error.message : String(error) }
+      })
+    )
+  }
+}
+
+// ── REST（HTTP 同端口，CORS 开放）──────────────────────────────────────────
+
+function json(res, status, body) {
+  const text = JSON.stringify(body)
+  res.writeHead(status, {
+    'Content-Type': 'application/json',
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS'
+  })
+  res.end(text)
+}
+
+function queryParams(url) {
+  const query = new URL(url, 'http://mock').searchParams
+
+  return {
+    get: name => query.get(name),
+    int: (name, fallback) => {
+      const raw = query.get(name)
+      const n = Number(raw)
+
+      return Number.isFinite(n) ? n : fallback
+    }
+  }
+}
+
+function sessionList(limit) {
+  const rows = [...sessions.values()]
+    .filter(s => s.messages.length >= 1)
+    .sort((a, b) => b.lastActive - a.lastActive)
+    .slice(0, limit)
+    .map(s => sessionInfoRow(s))
+
+  return rows
+}
+
+function routeRest(req, res) {
+  const url = req.url.split('?')[0]
+  const q = queryParams(req.url)
+  const method = req.method ?? 'GET'
+
+  if (url === '/api/status' && method === 'GET') {
+    json(res, 200, { ok: true, version: '0.0.0-mock', auth_mode: 'token' })
+
+    return
+  }
+
+  if (url === '/api/config' && method === 'GET') {
+    json(res, 200, {})
+
+    return
+  }
+
+  if (url === '/api/config/defaults' && method === 'GET') {
+    json(res, 200, {})
+
+    return
+  }
+
+  if (url === '/api/model/info' && method === 'GET') {
+    json(res, 200, { model: MODEL, provider: PROVIDER })
+
+    return
+  }
+
+  if (url === '/api/model/options' && method === 'GET') {
+    json(res, 200, {
+      model: MODEL,
+      provider: PROVIDER,
+      providers: [
+        {
+          slug: PROVIDER,
+          name: 'Mock provider',
+          models: [MODEL],
+          featured_models: [MODEL],
+          total_models: 1,
+          authenticated: true,
+          auth_type: 'api_key',
+          is_current: true,
+          capabilities: { [MODEL]: { fast: true, reasoning: true } }
+        }
+      ]
+    })
+
+    return
+  }
+
+  if (url === '/api/profiles/sessions/sidebar' && method === 'GET') {
+    const limit = q.int('recents_limit', 40)
+    json(res, 200, {
+      recents: { sessions: sessionList(limit), profiles_truncated: {} },
+      cron: { sessions: [] },
+      messaging: { sessions: [] }
+    })
+
+    return
+  }
+
+  if (url === '/api/profiles/sessions' && method === 'GET') {
+    const limit = q.int('limit', 40)
+    const rows = sessionList(limit)
+    json(res, 200, { sessions: rows, total: rows.length, limit, offset: 0 })
+
+    return
+  }
+
+  if (url === '/api/sessions' && method === 'GET') {
+    const limit = q.int('limit', 40)
+    const rows = sessionList(limit)
+    json(res, 200, { sessions: rows, total: rows.length, limit, offset: 0 })
+
+    return
+  }
+
+  const sessionMatch = url.match(/^\/api\/sessions\/([^/]+)$/)
+
+  if (sessionMatch && method === 'GET') {
+    const session = sessions.get(decodeURIComponent(sessionMatch[1]))
+
+    if (!session) {
+      json(res, 404, { detail: 'No such session' })
+
+      return
+    }
+
+    json(res, 200, sessionInfoRow(session))
+
+    return
+  }
+
+  const messagesMatch = url.match(/^\/api\/sessions\/([^/]+)\/messages$/)
+
+  if (messagesMatch && method === 'GET') {
+    const session = sessions.get(decodeURIComponent(messagesMatch[1]))
+
+    if (!session) {
+      json(res, 404, { detail: 'No such session' })
+
+      return
+    }
+
+    json(res, 200, { session_id: session.storedId, messages: session.messages })
+
+    return
+  }
+
+  if (sessionMatch && (method === 'PATCH' || method === 'DELETE')) {
+    json(res, 200, { ok: true })
+
+    return
+  }
+
+  if (url === '/api/profiles' && method === 'GET') {
+    json(res, 200, { profiles: [] })
+
+    return
+  }
+
+  if (url === '/api/cron/jobs' && method === 'GET') {
+    json(res, 200, [])
+
+    return
+  }
+
+  if (url === '/api/env' && method === 'GET') {
+    json(res, 200, {})
+
+    return
+  }
+
+  if (url === '/api/skills' && method === 'GET') {
+    json(res, 200, [])
+
+    return
+  }
+
+  if (url === '/api/logs' && method === 'GET') {
+    json(res, 200, { path: 'mock', lines: [] })
+
+    return
+  }
+
+  json(res, 404, { detail: `No such API endpoint: ${req.url.split('?')[0]}` })
+}
+
+const httpServer = http.createServer((req, res) => {
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204, {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Headers': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS'
+    })
+    res.end()
+
+    return
+  }
+
+  routeRest(req, res)
+})
+
+httpServer.listen(PORT, '127.0.0.1', () => {
+  console.log(`[mock-gateway] REST listening on http://127.0.0.1:${PORT}/api/*`)
+})
+
+// ── WS（挂在同一个 HTTP server 上，同端口双协议）────────────────────────────
+
+const wss = new WebSocketServer({ server: httpServer, path: '/gateway' })
+
+wss.on('connection', socket => {
   console.log('[mock-gateway] client connected')
 
-  socket.on('message', (raw) => {
+  socket.on('message', raw => {
     let frame
     try {
       frame = JSON.parse(String(raw))
@@ -32,24 +527,27 @@ wss.on('connection', (socket) => {
     }
 
     if (frame.id !== undefined && frame.id !== null) {
-      // M0: acknowledge every request with an empty result; M1 fills in the
-      // real method surface (session.list, prompt.submit, config.get, ...).
-      socket.send(JSON.stringify({ id: frame.id, result: {} }))
+      handleRpc(socket, frame)
+
       return
     }
 
-    // Ignore client events; M1 may want to reflect them.
+    // Ignore client events.
   })
 
   socket.on('close', () => console.log('[mock-gateway] client disconnected'))
-  socket.on('error', (err) => console.error('[mock-gateway] socket error', err.message))
+  socket.on('error', err => console.error('[mock-gateway] socket error', err.message))
 })
 
 wss.on('listening', () => {
-  console.log('[mock-gateway] listening on ws://127.0.0.1:' + PORT + '/gateway')
+  console.log(`[mock-gateway] WS listening on ws://127.0.0.1:${PORT}/gateway`)
 })
 
-process.on('SIGINT', () => {
+function shutdown() {
   wss.close()
+  httpServer.close()
   process.exit(0)
-})
+}
+
+process.on('SIGINT', shutdown)
+process.on('SIGTERM', shutdown)
