@@ -8,8 +8,9 @@
  *   - 会破坏状态的调用显式 reject（Error 消息 = 能力不可用），让调用方走
  *     既有错误路径，而不是拿假数据渲染。
  *
- * 与 gates.ts 的关系：这里是桥层的兜底；入口层的 `if (false)` 门在
- * vendor 导航/路由（PATCHES.md §4 登记）。
+ * 拒绝面以本文件硬编码为准（gates.ts 已于 ADR-0009 删除：isDenied 无
+ * 消费方，纯文档清单；语义权威 = PATCHES.md §4）。
+ * 入口层的 `if (false)` 门在 vendor 导航/路由（PATCHES.md §4 登记）。
  */
 
 import type {

@@ -17,7 +17,7 @@ pnpm dev                                       # mock(5180) + vite(5173)，直�
 pnpm --filter @hermes-web/web dev:proxy        # mock + proxy(6722) + vite，经代理
 pnpm --filter @hermes-web/web dev:remote       # vite + proxy，无 mock（连自己的 gateway）
 pnpm --filter @hermes-web/web dev:web          # 仅 vite（直连模式）
-pnpm test                                      # vitest（桥单测，apps/web）
+pnpm --filter @hermes-web/web test             # vitest（桥单测，apps/web）
 pnpm typecheck                                 # apps/web 类型检查（typecheck.mjs）
 pnpm build                                     # 生产构建 → apps/web/dist
 cd apps/proxy && deno task test                # 代理单测（deno test，42+ 用例）
@@ -38,16 +38,15 @@ node apps/web/e2e/cdp-*.mjs   # 场景脚本（OAuth/断连/响应式/隐藏验�
 
 ```
 hermes-agent-desktop-web/
-├── AGENTS.md / PLAN.md / CONTEXT.md / PATCHES.md / README.md   # 共识/术语/登记/入口
-├── package.json · pnpm-workspace.yaml · pnpm-lock.yaml         # pnpm workspaces（nodeLinker: hoisted）
-├── docker-compose.yml · .dockerignore                          # 生产编排（hermes + webui，docs/deploy.md）
+├── AGENTS.md / CONTEXT.md / PATCHES.md / README.md      # 共识/术语/登记/入口
+├── package.json · pnpm-workspace.yaml · pnpm-lock.yaml  # pnpm workspaces（nodeLinker: hoisted）
+├── docker-compose.yml · .dockerignore                   # 生产编排
 ├── docs/
-│   ├── adr/                    # 决策记录 0001–0008（凭证/代理协议/OAuth 中转…）
-│   ├── deploy.md               # compose 部署指南（认证模型、auth gate、loopback 限制）
-│   └── archived/               # 归档 handoff（人维护，勿动）
+│   ├── adr/                    # 决策记录
+│   └── archived/               # 归档文档（handoff 等）
 ├── apps/
 │   ├── web/                    # SPA 移植入口（Vite 构建 vendor 渲染层）
-│   │   ├── index.html          # 真文件（勿改回 symlink，rolldown 拒绝跨目录入口）
+│   │   ├── index.html          # 真文件（勿改回 symlink，rolldown 拒绝跨目录入口，上游更新注意 sync）
 │   │   ├── src/
 │   │   │   ├── main.tsx        # 入口：装桥 → import web.css → 挂 vendor 渲染树
 │   │   │   ├── web.css         # Web 覆盖层（响应式 + 隐藏桌面专属 UI，非 vendor）
@@ -70,7 +69,7 @@ hermes-agent-desktop-web/
 │   └── hermes-shared/          # 上游 apps/shared（@hermes/shared，JSON-RPC 客户端等）
 ├── scripts/sync-upstream.sh    # 上游同步（过滤提交法 subtree merge，PATCHES.md §2-3）
 ├── research/upstream/          # 上游全量克隆（只读调研；不进构建/不走 sync）
-└── temp/                       # 临时/验收产物（gitignore）：m*-acceptance*、e2e-out/、profiles
+└── temp/                       # 临时/验收产物（gitignore）
 ```
 
 ## 工作流 Skill
@@ -85,7 +84,7 @@ hermes-agent-desktop-web/
 
 - **认证两条路**：token（`X-Hermes-Session-Token` / WS `?token=`，loopback 未 gated 的 gateway）；OAuth（native PKCE 经代理 `/auth/native/*` 中转，REST Bearer + WS 单次 `?ticket=`，仅代理模式可用）。dashboard 页面密码登录（cookie 会话）不是 API 凭证——cookie 绑定 gateway 域，代理无状态，无法复用。
 
-- **布尔门**：用字面 `if (false)` 关功能入口（voice/terminal/artifacts 等），不做 feature-flag 系统；入口关闭后渲染层自然降级。
+- **布尔门**：用字面 `if (false)` 关功能入口（voice/terminal 等；artifacts/agents 曾 gate，按 ADR-0009 撤销——上游 remote 模式原生支持），不做 feature-flag 系统（gates.ts 已删）；入口关闭后渲染层自然降级。
 
 - **响应式覆盖**收敛在 `apps/web/src/web.css`（非 vendor）：移动端状态栏滚动、Connection mode 只留 remote、boot-failure 隐藏 use-local/repair/open-logs。改 vendor 布局前先看能否 CSS 覆盖。
 
@@ -95,7 +94,7 @@ hermes-agent-desktop-web/
 
 - **默认 URL**：`HERMES_DEFAULT_GATEWAY_URL` → `/api/proxy/meta` 运行时下发前端预填；同一 dist 可部署任意环境，改 URL 不用重建。
 
-- **测试纪律**：桥层行为用 vitest（`apps/web/src/bridge/*.test.ts`），代理用 deno test；先写测试再实现（tdd）。改桥/代理协议后跑全量：`deno task test` + `pnpm test` + `pnpm typecheck` 三件套全绿才提交。
+- **测试纪律**：桥层行为用 vitest（`apps/web/src/bridge/*.test.ts`），代理用 deno test；先写测试再实现（tdd）。改桥/代理协议后跑全量：`deno task test` + `pnpm --filter @hermes-web/web test` + `pnpm typecheck` 三件套全绿才提交。
 
 - **临时文件**放 `temp/`（已 gitignore）；验收记录 `temp/m*-acceptance*`。
 

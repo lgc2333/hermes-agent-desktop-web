@@ -64,6 +64,7 @@ _Avoid_: 桥（太短）、preload（实现细节）
 
 **布尔门（feature gate）**:
 用字面 `if (false)` 关闭功能入口而保留其代码的做法，刻意不做可配置开关系统；被关闭的功能处于 dormant 状态。
+按动机三分：**能力缺失**（桥无法提供，如终端/窗口）、**产品范围**（技术上可行但计划外，如语音）、**上游已处理**（上游在 remote 模式下原生支持——此类不应 gate，ADR-0009 撤销了 artifacts/agents 的 gate）。
 _Avoid_: feature flag（语义不同）
 
 **Session source**:

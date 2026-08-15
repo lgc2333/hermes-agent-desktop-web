@@ -1,7 +1,7 @@
 # PATCHES.md — Vendor Patch & Sync Register
 
 > 本文件登记所有对 vendor 目录的原位改动、subtree 基准与同步流程。
-> 原则（PLAN.md §5）：vendor 内原位修改收敛到最少文件；能新加文件就不改旧文件。
+> 原则（AGENTS.md 规则「vendor 纪律」）：vendor 内原位修改收敛到最少文件；能新加文件就不改旧文件。
 
 ## 1. Subtree 基准（Baseline）
 
@@ -49,35 +49,23 @@ git subtree merge --prefix=vendor/hermes-desktop $NEW_FILTERED --squash
 
 ## 4. 当前 vendor 原位改动清单
 
+> **已撤销（ADR-0009）**：artifacts / agents 的 4 处入口布尔门（chat/sidebar、
+> contrib/surfaces、command-palette、shell/hooks/use-statusbar-items）已还原
+> 上游原样——上游桌面端在 remote gateway 模式下原生支持这两个功能
+> （artifacts 文件读取走 gateway /api/fs/*、agents 数据走 gateway WS 事件），
+> Web 桥的通用 REST/WS 转发天然覆盖，gate 属过度关闭。apps/web/src/bridge/
+> gates.ts 已整体删除（isDenied 无消费方）；语义权威 = 本文档。历史登记见
+> git 历史与 ADR-0009。
+
 - vendor/hermes-desktop/src/styles.css
   - 改动：`@import 'tailwindcss'` 后加两行 `@source '../../hermes-desktop/src'` 与 `@source '../../hermes-shared/src'`
   - 原因：Tailwind v4 自动扫描只覆盖 vite root（apps/web），vendor 源码的类名不生成 CSS 规则（M0 验证时发现界面下半部无样式崩坏）；@source 让 Tailwind 扫描 vendor 源码
   - 同步注意：路径相对 styles.css（位于 vendor/hermes-desktop/src），指向 vendor 自身，subtree pull 后依旧有效；若上游改 styles.css 头部导致 @source 行丢失，按本条恢复
 
-- vendor/hermes-desktop/src/app/chat/sidebar/index.tsx
-  - 改动：顶部加 `GATE_ARTIFACTS_NAV = false`，被关条目抽成具类型常量 `ARTIFACTS_NAV_ITEM: SidebarNavItem`，用 `...(GATE_ARTIFACTS_NAV ? [ARTIFACTS_NAV_ITEM] : [])` 条件展开
-  - 原因：Web 布尔门（PLAN §1 Q9）：artifacts（制品/文件）入口在 Web 版关闭；apps/web/src/bridge/gates.ts 为语义权威
-  - 同步注意：subtree pull 后若上游改了 SIDEBAR_NAV 结构，按文件顶部注释恢复；条件展开写法保持具类型常量，勿退回内联对象（会丢上下文类型）
-
-- vendor/hermes-desktop/src/app/contrib/surfaces.tsx
-  - 改动：顶部加 `GATE_ARTIFACTS_ROUTE = false`，artifacts 路由用 `{GATE_ARTIFACTS_ROUTE ? <Route .../> : null}` 条件挂载
-  - 原因：Web 布尔门：/artifacts 路由不挂，直开回落 chat，避免渲染被关页面
-  - 同步注意：同上；上游若改 ChatRoutesSurface 路由表，按注释恢复
-
-- vendor/hermes-desktop/src/app/command-palette/index.tsx
-  - 改动：顶部加 `GATE_ARTIFACTS_NAV = false` 与 `GATE_AGENTS_NAV = false`，palette 中 artifacts/agents 两行条件展开
-  - 原因：Web 布尔门：命令面板两入口关闭
-  - 同步注意：同上；上游若改 palette 条目，按注释恢复
-
-- vendor/hermes-desktop/src/app/shell/hooks/use-statusbar-items.tsx
-  - 改动：顶部加 `GATE_AGENTS_STATUSBAR = false`，Agents 状态栏条目条件展开，内层数组加 `satisfies StatusbarItem[]` 保持上下文类型
-  - 原因：Web 布尔门：状态栏 Agents 入口关闭
-  - 同步注意：同上；`satisfies` 仅用于单行数组字面量场景，多行 + 紧邻 `)` 会触发 TS 解析器 bug（用具类型常量最稳）
-
 - vendor/hermes-desktop/src/app/chat/index.tsx
-  - 改动：顶部 voice 配置 `enabled: true` 改为 `enabled: false`（附注释）
-  - 原因：Web 布尔门：语音移出 Web 计划，关闭 dictation pill
-  - 同步注意：上游若重构 voice 配置，按注释恢复
+  - 改动：voice 配置 `enabled: true` 改为 `enabled: false`（附注释）
+  - 原因：Web 布尔门：语音移出 Web 计划，关闭 dictation pill（产品范围决策，非能力缺失；上游 remote 模式本身支持语音）
+  - 同步注意：上游若重构 voice 配置，按注释恢复（注释已注明 gates.ts 已删、语义权威 = 本文档）
 
 ## 5. 同步后必做
 
