@@ -54,6 +54,10 @@ _Avoid_: WebUI（部署单元）、前端（口语）
 WebUI 内的 Deno 组件：同源转发 REST/WS 到 Target，托管 SPA 静态产物，不持有任何凭证。
 _Avoid_: 薄代理（口语）、网关（错误）
 
+**Vendor**:
+以 git subtree 引入的上游包（hermes-desktop / hermes-shared）；apps/web 以 workspace 依赖引用其包清单，渲染层依赖因此隐式继承、不另行复制。
+_Avoid_: 上游源码（口语）、node_modules（实现细节）
+
 **Capability bridge**:
 渲染层访问机器/原生能力的窄类型接口（桌面端为 window.hermesDesktop）；Web 端由 WebCapabilityAdapter 提供同签名实现。
 _Avoid_: 桥（太短）、preload（实现细节）
