@@ -73,15 +73,13 @@ hermes-agent-desktop-web/
 └── temp/                       # 临时/验收产物（gitignore）：m*-acceptance*、e2e-out/、profiles
 ```
 
-要点：
-- **改 vendor 前先查 PATCHES.md**——所有原位改动登记在案；同步后按 §4 逐条核对恢复。
-- 桥层是唯一允许"换后端"的缝：`apps/web/src/bridge/` 之外不要直连 gateway 协议。
-- `research/upstream` 是上游快照，用于查证 gateway/dashboard 行为（auth gate、native flow、
-  /api/status 字段），改它无意义（会被覆盖），需要最新版走 `sync-upstream.sh`。
+## 工作流 Skill
+
+关于 `CONTEXT.md` 与 `docs/adr/`，参见 Skill `domain-modeling`。如上下文中没有，提醒用户是否安装它：`pnpx skills add https://github.com/mattpocock/skills --skill domain-modeling -p -y`。
 
 ## 规则
 
-- **vendor 纪律**（PLAN §5）：vendor/hermes-desktop|shared 内原位改动收敛到最少；能新加文件就不改旧文件；所有 vendor 改动必须登记 PATCHES.md（含同步注意）。PATCHES.md 由人维护格式，**追加前先读当前版本**，别覆盖他人内容。
+- **vendor 纪律**（PLAN §5）：vendor/hermes-desktop|shared 内原位改动收敛到最少；能新加文件就不改旧文件；所有 vendor 改动必须登记 PATCHES.md（含同步注意）。
 
 - **凭证模型**（PLAN §6.1 / ADR-0002）：连接凭证只在浏览器（localStorage 注册表 `hermes-web.connections.v1`）；OAuth token set 只存代理内存（重启失效）；代理零凭证落盘、无状态。不要往代理加持久化/落盘凭证。
 
