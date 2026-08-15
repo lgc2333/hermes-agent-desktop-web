@@ -14,13 +14,14 @@
 
 ## 2. M1 交付基线（HEAD = ad1f8de，工作区干净）
 
-| 提交 | 内容 |
-|------|------|
-| 137d3a2 | feat: Web capability bridge - browser/gateway/denied adapters（apps/web/src/bridge/ 10 文件 + 28 测试） |
-| 1a68bb5 | feat: chat-capable mock gateway（apps/web/dev/mock-gateway.mjs 重写 + main.tsx 入口替换） |
+| 提交    | 内容                                                                                                                                                                                        |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 137d3a2 | feat: Web capability bridge - browser/gateway/denied adapters（apps/web/src/bridge/ 10 文件 + 28 测试）                                                                                     |
+| 1a68bb5 | feat: chat-capable mock gateway（apps/web/dev/mock-gateway.mjs 重写 + main.tsx 入口替换）                                                                                                   |
 | ad1f8de | feat: vendor feature gates, real typecheck, react type pinning（5 处布尔门 + scripts/typecheck.mjs + tsconfig 钉扎 + vitest + vite watch 修复 + PATCHES.md §4/4.1 + CONTEXT.md + ADR-0006） |
 
 **M1 验收记录**（temp/m1-acceptance/ 有 cdp-out.json + final-chat.png 佐证）：
+
 - boot 干净：无 vite-error-overlay / 错误边界 / boot 横幅，直进聊天态
   （mock gateway `setup.status → { provider_configured: true }` 跳过 onboarding）
 - 聊天全流程：composer 输入 → Enter → WS 流式回复（message.start → delta → complete）
@@ -34,6 +35,7 @@
 验证流式回复 / 审批 / 会话恢复。
 
 M1 已预留的落点：
+
 - `apps/web/src/bridge/gateway.ts` 的 `gatewayBaseUrl()`（api() 的 baseUrl）与
   `wsUrlFor()`（WS 拨号 URL）**已集中成两个函数**——M2 换同源代理 + X-Hermes-Target
   只改这两个函数
@@ -58,6 +60,7 @@ apps/proxy/                     # Deno 薄代理（新建 workspace 外独立目
 ```
 
 **浏览器侧改动（极小）**：
+
 - `gateway.ts`：`gatewayBaseUrl()` 指向同源代理（如 `/api/proxy` 前缀转发面或根路径），
   `wsUrlFor()` 指向同源 WS；请求头加 `X-Hermes-Target`（目标 gateway URL）与
   既有 `X-Hermes-Session-Token`（凭证浏览器携带，代理不落盘）
@@ -67,6 +70,7 @@ apps/proxy/                     # Deno 薄代理（新建 workspace 外独立目
   /api/status 探测 → WS `?token=` 拨号 → prompt.submit 流式
 
 **代理协议要点**（PLAN §6）：
+
 - 单通配 handler，无状态；凭证只透传不落盘
 - WS：server 'upgrade' 统一处理（passphrase 校验 → 目标 URL + 浏览器 token 拨号 → 双向中继）
 - 目标切换无需代理侧配置（浏览器每次请求带 X-Hermes-Target）

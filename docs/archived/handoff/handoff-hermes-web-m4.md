@@ -16,13 +16,13 @@ native OAuth 模拟面。
 
 ## 2. M3 交付基线（工作区含未提交改动，见 §7）
 
-| 面 | 内容 |
-|----|------|
-| 代理 OAuth | apps/proxy/src/oauth.ts：PKCE 生成、authorize/token/refresh/ws-ticket URL、内存 store（pending + sessions + 刷新去重）、cookie 工具、端点处理器；26 单测 |
-| 代理集成 | main.ts：OAuth 路由（start 需 passphrase，callback/session 免检，logout 需 passphrase）、CORS 回显 Origin + credentials + Allow-Headers 回显、/api/proxy/meta、REST Bearer 注入、WS ticket 注入；relay.ts opts.bearer/opts.ticket；main_test 42 全过（含 OAuth 端到端） |
-| 桥 | gateway.ts：oauthLogin/LogoutConnectionConfig 真实实现（start→window.open→轮询 session，5min 超时）、webApi credentials include + OAuth 不发静态 token 头、wsUrlFor OAuth 无 token query、probe 读 auth_required/auth_flows/auth_providers、getConnectionConfig 查会话状态 + meta 预填、OAuth 连接清 token；10 新用例，vitest 41/41 + typecheck 0 |
-| mock | mock-gateway.mjs：MOCK_OAUTH=1 时模拟 gated gateway 完整 native OAuth 面（authorize 校验 loopback redirect_uri + S256、token 单次消费 + PKCE 校验、refresh、ws-ticket、status 真字段） |
-| 验收 | temp/m3-acceptance/：cdp-oauth.mjs（桥层全链路）+ cdp-ui.mjs（UI 层：设置页点击登录→聊天→刷新保持）；token 模式回归（5182）通过 |
+| 面         | 内容                                                                                                                                                                                                                                                                                                                                              |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 代理 OAuth | apps/proxy/src/oauth.ts：PKCE 生成、authorize/token/refresh/ws-ticket URL、内存 store（pending + sessions + 刷新去重）、cookie 工具、端点处理器；26 单测                                                                                                                                                                                          |
+| 代理集成   | main.ts：OAuth 路由（start 需 passphrase，callback/session 免检，logout 需 passphrase）、CORS 回显 Origin + credentials + Allow-Headers 回显、/api/proxy/meta、REST Bearer 注入、WS ticket 注入；relay.ts opts.bearer/opts.ticket；main_test 42 全过（含 OAuth 端到端）                                                                           |
+| 桥         | gateway.ts：oauthLogin/LogoutConnectionConfig 真实实现（start→window.open→轮询 session，5min 超时）、webApi credentials include + OAuth 不发静态 token 头、wsUrlFor OAuth 无 token query、probe 读 auth_required/auth_flows/auth_providers、getConnectionConfig 查会话状态 + meta 预填、OAuth 连接清 token；10 新用例，vitest 41/41 + typecheck 0 |
+| mock       | mock-gateway.mjs：MOCK_OAUTH=1 时模拟 gated gateway 完整 native OAuth 面（authorize 校验 loopback redirect_uri + S256、token 单次消费 + PKCE 校验、refresh、ws-ticket、status 真字段）                                                                                                                                                            |
+| 验收       | temp/m3-acceptance/：cdp-oauth.mjs（桥层全链路）+ cdp-ui.mjs（UI 层：设置页点击登录→聊天→刷新保持）；token 模式回归（5182）通过                                                                                                                                                                                                                   |
 
 ## 3. M3 验收记录
 
@@ -44,9 +44,9 @@ URL 下发）、部署文档、PATCHES.md 完整登记。
 ## 5. M4 已知坑（M3 新发现，必读）
 
 1. **CORS credentials 通配符坑**：credentials:'include' 的跨源 fetch 预检
-   不接受 Access-Control-Allow-Headers: *（Chrome 151 实测）——必须回显
+   不接受 Access-Control-Allow-Headers: _（Chrome 151 实测）——必须回显
    access-control-request-headers；Allow-Origin 也必须回显具体 origin（不能
-   '*'）。已修进 main.ts 的 corsHeaders()，别回退。
+   '_'）。已修进 main.ts 的 corsHeaders()，别回退。
 2. **弹窗拦截**：headless Chrome 验收需 --disable-popup-blocking + 独立
    profile（m3-cdp-profile，9224）；Runtime.evaluate 里 window.open 无用户
    手势会被拦（返回 null → oauthLogin 返回 ok:false）。
@@ -83,7 +83,7 @@ URL 下发）、部署文档、PATCHES.md 完整登记。
 - 未提交改动：代理（oauth/main/relay + 测试 + deno.json）、桥（gateway.ts +
   测试）、mock-gateway.mjs、temp/m3-acceptance/、PATCHES.md §4.3、ADR-0008
 - 运行中的 dev 拓扑（验收遗留）：mock 5180（MOCK_OAUTH=1）+ mock 5182（token）
-  + 代理 6722 + vite 5173 + headless Chrome 9224（m3-cdp-profile）
+  - 代理 6722 + vite 5173 + headless Chrome 9224（m3-cdp-profile）
 - 提交前建议：deno task test + pnpm test + typecheck 各跑一遍（提交脚本内）
 
 ## 8. 敏感信息

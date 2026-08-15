@@ -15,14 +15,15 @@ REST/WS 全量转发，X-Hermes-Target 目标切换，浏览器手填 URL + 静�
 
 ## 2. M2 交付基线（HEAD = da51df9，工作区干净）
 
-| 提交 | 内容 |
-|------|------|
-| 06fb49d | feat: M2 thin proxy - Deno zero-dep REST/WS forwarding with X-Hermes-Target（apps/proxy 6 文件 + deno test 12/12 + ADR-0007） |
+| 提交    | 内容                                                                                                                                |
+| ------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| 06fb49d | feat: M2 thin proxy - Deno zero-dep REST/WS forwarding with X-Hermes-Target（apps/proxy 6 文件 + deno test 12/12 + ADR-0007）       |
 | c8120ee | feat: M2 bridge proxy protocol - X-Hermes-Target + /api/ws alignment + approval mock（gateway.ts 代理协议 + mock 对齐 + dev:proxy） |
-| da51df9 | docs: M2 patch register entries（PATCHES.md §4.2） |
+| da51df9 | docs: M2 patch register entries（PATCHES.md §4.2）                                                                                  |
 
 **M2 验收记录**（temp/m2-acceptance/ 有 cdp-out-mock.json / cdp-out-serve.json /
 cdp-out-approval.json + 截图，headless Chrome CDP 9224）：
+
 - 代理→mock：聊天全流程（输入→Enter→WS 流式→侧栏新会话），40+ REST 全走
   代理（:6722），WS URL 带 `?token=..&target=<encoded>`
 - 代理→真 serve（:9119，token=hermes-web-m2-token）：连接建立后流式回复
@@ -37,6 +38,7 @@ cdp-out-approval.json + 截图，headless Chrome CDP 9224）：
 设置页（连接 + 目标 gateway 管理 UI）。
 
 M2 已预留的落点：
+
 - `apps/proxy/src/oauth.ts` 占位已建（M3 实现 /auth/native/* 中转 + 内存态
   token set + httpOnly cookie）
 - 上游 native-oauth.ts 是零 Electron 依赖的纯 TS（PLAN §2：PKCE/state 生成、
@@ -54,6 +56,7 @@ apps/web/src/bridge/         # oauthLogin/Logout 真实实现 + 设置页接线
 ```
 
 浏览器侧注意：
+
 - OAuth 模式 WS 走 `?ticket=`（gateway 签发，单次 30s TTL），与 token 模式
   的 `?token=` 不同；代理 WS 中继需透传任意 query（已支持，保留除 target 外
   全部参数）

@@ -26,6 +26,7 @@ findInPage(3)、updates(3)、getConnection(2)、openSessionWindow(2)……
 **类型契约**：vendor/hermes-desktop/src/global.d.ts（保持不动，适配器按同一类型实现）。
 
 **boot/聊天关键路径的桥调用**（从 use-gateway-boot.ts / gateway store 核实）：
+
 - boot：`getConnection()` → `resolveGatewayWsUrl(desktop, conn)`（@hermes/shared，
   token 模式无 mint 时回退 conn.wsUrl）→ `gateway.connect(wsUrl)` → 成功后
   `refreshHermesConfig()`（REST 经 api()）+ `refreshSessions()`（REST）
@@ -45,6 +46,7 @@ apps/web/src/gates.ts # 布尔门清单（if (false) 关闭的页面/入口）
 ```
 
 **三类分法**（M1 共识）：
+
 1. **浏览器等价**：clipboard（navigator.clipboard + execCommand 降级）、openExternal
    （window.open）、fetchLinkTitle（fetch 解析 title，CORS 受限时返回 ''）、
    notify（Notification API）、selectPaths/selectSavePath（返回空）
@@ -65,6 +67,7 @@ mock-bridge.ts 删除。
 ## 4. mock gateway 方法面（apps/web/dev/mock-gateway.mjs，聊天全流程）
 
 现状：只开 WS、任何请求回 { }。M1 需要：
+
 - 会话面：session.list / session.create / session.info / session.resume（形状参考
   vendor/hermes-desktop/src/types/hermes.ts 的 SessionInfo）
 - 聊天面：prompt.submit → 推流事件 message.start / message.delta / message.complete

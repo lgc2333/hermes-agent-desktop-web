@@ -192,9 +192,7 @@ function tokenSet(overrides: Partial<NativeTokenSet> = {}): NativeTokenSet {
   }
 }
 
-function makeDeps(
-  overrides: Partial<OAuthDeps> = {},
-): OAuthDeps & {
+function makeDeps(overrides: Partial<OAuthDeps> = {}): OAuthDeps & {
   calls: { url: string; body: unknown; headers?: Record<string, string> }[]
 } {
   const calls: { url: string; body: unknown; headers?: Record<string, string> }[] = []

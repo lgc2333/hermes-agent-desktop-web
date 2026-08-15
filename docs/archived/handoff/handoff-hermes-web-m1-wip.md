@@ -16,14 +16,14 @@ vendor 导航布尔门已加、mock gateway 已升级为可聊天（REST + WS �
 
 ### 2.1 桥实现（apps/web/src/bridge/）
 
-| 文件 | 内容 |
-|------|------|
-| `gates.ts` | 布尔门清单（artifacts/agents/voice/terminal/files/preview/windows/git/... 全部 false）+ `isDenied()`；语义权威，vendor 侧以字面常量镜像 |
-| `registry.ts` | 连接注册表（localStorage `hermes-web.connections.v1`，ADR-0002 凭证跟浏览器）；默认 mock 连接 → ws://127.0.0.1:5180/gateway；profile 偏好 `hermes-web.profile.v1` |
-| `gateway.ts` | 类 2：getConnection/getGatewayWsUrl/revalidateConnection/touchBackend、`api()` REST 转发（X-Hermes-Session-Token、404 错误形状 `404: {"detail":"No such API endpoint: ...}`）、boot 面（getBootProgress 等）、连接设置面（getConnectionConfig/save/apply/test/probe + connections.* + profile + cloud/ssh 空面）、getVersion/getBootstrapState |
-| `browser.ts` | 类 1：clipboard（navigator.clipboard + execCommand 降级）、openExternal、fetchLinkTitle、notify（Notification）、selectPaths/selectSavePath 空、zoom、reportRendererError |
-| `denied.ts` | 类 3：全部 77 桥成员的桌面原生面空实现（窗口/petOverlay/hud/quickEntry/voice/文件/git/terminal/updates/themes.marketplace/findInPage/bootstrap 等），合法返回形状（[] / null / { ok:false } / 显式 reject） |
-| `adapter.ts` | buildWebBridge()/installWebBridge() 组装三类 → window.hermesDesktop |
+| 文件          | 内容                                                                                                                                                                                                                                                                                                                                           |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `gates.ts`    | 布尔门清单（artifacts/agents/voice/terminal/files/preview/windows/git/... 全部 false）+ `isDenied()`；语义权威，vendor 侧以字面常量镜像                                                                                                                                                                                                        |
+| `registry.ts` | 连接注册表（localStorage `hermes-web.connections.v1`，ADR-0002 凭证跟浏览器）；默认 mock 连接 → ws://127.0.0.1:5180/gateway；profile 偏好 `hermes-web.profile.v1`                                                                                                                                                                              |
+| `gateway.ts`  | 类 2：getConnection/getGatewayWsUrl/revalidateConnection/touchBackend、`api()` REST 转发（X-Hermes-Session-Token、404 错误形状 `404: {"detail":"No such API endpoint: ...}`）、boot 面（getBootProgress 等）、连接设置面（getConnectionConfig/save/apply/test/probe + connections.* + profile + cloud/ssh 空面）、getVersion/getBootstrapState |
+| `browser.ts`  | 类 1：clipboard（navigator.clipboard + execCommand 降级）、openExternal、fetchLinkTitle、notify（Notification）、selectPaths/selectSavePath 空、zoom、reportRendererError                                                                                                                                                                      |
+| `denied.ts`   | 类 3：全部 77 桥成员的桌面原生面空实现（窗口/petOverlay/hud/quickEntry/voice/文件/git/terminal/updates/themes.marketplace/findInPage/bootstrap 等），合法返回形状（[] / null / { ok:false } / 显式 reject）                                                                                                                                    |
+| `adapter.ts`  | buildWebBridge()/installWebBridge() 组装三类 → window.hermesDesktop                                                                                                                                                                                                                                                                            |
 
 测试（vitest，28 个全过）：`registry.test.ts`（注册表持久化/播种）、
 `gateway.test.ts`（api 转发/错误形状/连接面）、`adapter.test.ts`（形状/denied 空态）。
@@ -35,13 +35,13 @@ vendor 导航布尔门已加、mock gateway 已升级为可聊天（REST + WS �
 
 ### 2.3 vendor 布尔门（PATCHES.md §4 需登记）
 
-| 文件 | 门 |
-|------|-----|
-| `app/chat/sidebar/index.tsx` | `GATE_ARTIFACTS_NAV=false` + `ARTIFACTS_NAV_ITEM` 具类型常量条件展开（被关条目抽成常量避免隐式 any） |
-| `app/contrib/surfaces.tsx` | `GATE_ARTIFACTS_ROUTE=false`：/artifacts 路由不挂（直开回落 chat） |
-| `app/command-palette/index.tsx` | `GATE_ARTIFACTS_NAV`/`GATE_AGENTS_NAV`：palette 两行关闭 |
-| `app/shell/hooks/use-statusbar-items.tsx` | `GATE_AGENTS_STATUSBAR=false`（条件展开 + `satisfies StatusbarItem[]` 保持上下文类型） |
-| `app/chat/index.tsx` | `voice.enabled: false`（关 dictation pill） |
+| 文件                                      | 门                                                                                                   |
+| ----------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `app/chat/sidebar/index.tsx`              | `GATE_ARTIFACTS_NAV=false` + `ARTIFACTS_NAV_ITEM` 具类型常量条件展开（被关条目抽成常量避免隐式 any） |
+| `app/contrib/surfaces.tsx`                | `GATE_ARTIFACTS_ROUTE=false`：/artifacts 路由不挂（直开回落 chat）                                   |
+| `app/command-palette/index.tsx`           | `GATE_ARTIFACTS_NAV`/`GATE_AGENTS_NAV`：palette 两行关闭                                             |
+| `app/shell/hooks/use-statusbar-items.tsx` | `GATE_AGENTS_STATUSBAR=false`（条件展开 + `satisfies StatusbarItem[]` 保持上下文类型）               |
+| `app/chat/index.tsx`                      | `voice.enabled: false`（关 dictation pill）                                                          |
 
 kanban 无需门：上游 `defaultEnabled: false`，默认 dormant。
 
@@ -62,13 +62,13 @@ kanban 无需门：上游 `defaultEnabled: false`，默认 dormant。
 
 ## 3. 验证状态
 
-| 项 | 状态 |
-|----|------|
-| `pnpm --filter @hermes-web/web typecheck` | ✅ **真绿**（exit 0；修复了 M0 起 CLI 假绿问题，见 §4 坑 1） |
-| `pnpm --filter @hermes-web/web test` | ✅ 28/28 过 |
-| headless boot（dump-dom/screenshot） | ⚠️ 部分：无 vite-error-overlay、聊天壳/侧栏/composer DOM 存在；**发现并修复一个运行时崩溃**：`denied.onOpenUpdatesRequested is not a function`（denied.ts 类字段误用 `:` → 被解析为类型注解、运行时 undefined；已全部改 `=`）。修复后**未重新截图确认**（最后一次截图因 Chrome profile/参数问题失败） |
-| 交互式聊天（发消息→流式回复） | ❌ **未做**——M1 验收核心，见 §5 |
-| PATCHES.md/CONTEXT.md/ADR/commit | ❌ 未做 |
+| 项                                        | 状态                                                                                                                                                                                                                                                                                                  |
+| ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm --filter @hermes-web/web typecheck` | ✅ **真绿**（exit 0；修复了 M0 起 CLI 假绿问题，见 §4 坑 1）                                                                                                                                                                                                                                          |
+| `pnpm --filter @hermes-web/web test`      | ✅ 28/28 过                                                                                                                                                                                                                                                                                           |
+| headless boot（dump-dom/screenshot）      | ⚠️ 部分：无 vite-error-overlay、聊天壳/侧栏/composer DOM 存在；**发现并修复一个运行时崩溃**：`denied.onOpenUpdatesRequested is not a function`（denied.ts 类字段误用 `:` → 被解析为类型注解、运行时 undefined；已全部改 `=`）。修复后**未重新截图确认**（最后一次截图因 Chrome profile/参数问题失败） |
+| 交互式聊天（发消息→流式回复）             | ❌ **未做**——M1 验收核心，见 §5                                                                                                                                                                                                                                                                       |
+| PATCHES.md/CONTEXT.md/ADR/commit          | ❌ 未做                                                                                                                                                                                                                                                                                               |
 
 ## 4. 坑与发现（下一个 agent 必读）
 
