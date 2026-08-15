@@ -81,6 +81,25 @@ git subtree merge --prefix=vendor/hermes-desktop $NEW_FILTERED --squash
 
 > 注：apps/proxy/src/main.ts 的 PORT 默认值由用户手工改为 6722（M2 期间），dev.mjs 的 VITE_PROXY_URL 与之保持一致。
 
+### 4.3 非 vendor 配套（M3 批，OAuth + 配置 API）
+
+| 文件 | 改动 | 原因 |
+|------|------|------|
+| apps/proxy/src/oauth.ts | M3 PKCE 中转（替换占位）：/auth/native/{start,callback,session,logout} + 内存 token set + httpOnly cookie 会话 + Bearer/ticket 注入辅助 | M3 里程碑：native OAuth 经代理中转（PLAN §7，ADR-0008）；token set 只存代理内存（重启失效），浏览器只持 httpOnly cookie |
+| apps/proxy/src/main.ts | 挂 OAuth 路由分支；CORS 改回显 Origin + credentials（Access-Control-Allow-Headers 回显预检头——credentials 模式下通配符无效，Chrome 实测）；新增 /api/proxy/meta（HERMES_DEFAULT_GATEWAY_URL + requiresPassphrase）；REST 转发前注入 Bearer、WS 拨号前 mint ws-ticket | M3：OAuth 会话的凭证注入 + 默认 URL 下发（PLAN §6.2）+ 跨端口 dev 的 cookie 跟随 |
+| apps/proxy/src/relay.ts | relayRest 支持 opts.bearer（Authorization 注入 + 剔除静态 token 头）；relayWs 支持 opts.ticket（追加 ?ticket= 并剔除 ?token=） | OAuth 模式凭证在代理侧，转发面注入 |
+| apps/proxy/src/oauth_test.ts | 新增 26 个单测（PKCE/URL/回调 CSRF/token 规范化/cookie/store/端点） | tdd 模式（任务书 §7） |
+| apps/proxy/src/main_test.ts | 扩展：OAuth 端到端（登录→cookie→Bearer 注入→ws-ticket→登出）、meta、CORS credentials | M3 代理面回归 |
+| apps/proxy/deno.json | test task 加 --allow-write | 静态托管测试用 makeTempDirSync 写系统 TEMP |
+| apps/web/src/bridge/gateway.ts | oauthLoginConnectionConfig/oauthLogoutConnectionConfig 真实实现（start→弹窗→轮询 session）；webApi credentials:'include' + OAuth 模式不发 X-Hermes-Session-Token；wsUrlFor OAuth 模式不带 ?token=；probe 读 auth_required/auth_flows/auth_providers（真 gateway 字段，auth_mode 仅兼容）；getConnectionConfig 查询 OAuth 会话状态 + /api/proxy/meta 预填默认 URL；OAuth 连接清空静态 token | M3 换桥落点：OAuth 登录/登出 + 会话保持 + 默认 URL 预填（handoff M3 §3） |
+| apps/web/src/bridge/gateway.test.ts | 新增 10 个 M3 用例（probe 真字段/oauth 头/wsUrl 无 token/登录轮询/登出/meta 预填/session 状态/token 清理） | 桥语义回归 |
+| apps/web/dev/mock-gateway.mjs | MOCK_OAUTH=1 时模拟 gated gateway：/api/status 加 auth_required/auth_flows/auth_providers；/auth/native/{authorize,token,refresh} + /api/auth/ws-ticket（loopback redirect_uri 校验、code 单次、PKCE 校验）；HTTP server 收集请求体 | dev 验收对照端（对齐真 gateway 语义） |
+| temp/m3-acceptance/ | CDP 验收脚本（cdp-oauth.mjs 桥层 + cdp-ui.mjs UI 层） | M3 浏览器验收记录（headless Chrome 9224，独立 profile m3-cdp-profile，--disable-popup-blocking） |
+
+> 注：CORS 的 Access-Control-Allow-Headers 回显是 M3 实测发现——credentials:'include'
+> 的跨源 fetch 预检不接受 `*` 通配符（Chrome 151），必须回显 access-control-request-headers。
+
+
 
 ## 5. 同步后必做
 
