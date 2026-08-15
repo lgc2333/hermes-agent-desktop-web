@@ -49,8 +49,19 @@
       （已实现于 browser.ts；无 API 时恒 AC，backstop 轮询不减速）。
     - findInPage/onFoundInPage：window.find() 可实现但 vendor
       store/find-in-page.ts 依赖 Electron 异步高亮回调，需适配。
-    - saveClipboardImage：navigator.clipboard.read() 可实现，需适配上传链路。
-    - settings.getDefaultProjectDir 等：localStorage 可实现。
+    - saveClipboardImage：维持 denied——该接口只服务 WSL2/WSLg 剪贴板
+      图片桥接（Electron 主进程从 Windows 剪贴板取图的空粘贴回退 + 右键
+      菜单 Paste image，vendor composer/index.tsx）；浏览器 Ctrl+V 图片
+      直接走 clipboardData blob → onAttachImageBlob，用不到这条路。
+      navigator.clipboard.read() 技术上可补右键菜单项，收益仅此。
+    - settings.getDefaultProjectDir / pickDefaultProjectDir /
+      setDefaultProjectDir：维持 denied——"默认项目目录"是桌面本机工作区
+      概念（打包 home dir / 本地磁盘路径），Web 恒 remote，工作区路径都是
+      gateway 侧路径，本机目录无意义（与 browser.selectPaths 同理）；
+      remote 模式下渲染层不消费该值（store/session.ts ensureDefaultWorkspaceCwd
+      的 remote 分支直接 seedLiveCwd(remembered)，configured 只在 local
+      分支参与），localStorage 存了也没有消费者；gateway 侧默认 cwd 由
+      /api/fs/default-cwd（desktopDefaultCwd）提供，Web 已可用。
     - saveImageBuffer：blob URL 可替代，但渲染层 openHtmlInBrowser 等链路
       依赖本地路径，需 vendor 适配。
   - 确认正确 denied（C 类）：terminal（本地 PTY；agent 终端走 gateway 事件
@@ -77,5 +88,5 @@
   渲染层 desktop-fs.trashDesktopPath 已有 !desktop.trashPath 兜底）；
   adapter.test.ts 同步更新旧 denied 断言（readDir/git 断言随实现移入
   gateway/index.test.ts，新增 12 个 fs/git REST 用例）。
-- 维持 denied（需 vendor 适配，收益低，未实施）：findInPage /
-  saveClipboardImage / settings。
+- 维持 denied（未实施）：findInPage / saveClipboardImage（需 vendor 适配，
+  收益低）；settings.getDefaultProjectDir 等（无消费场景，见 Decision）。

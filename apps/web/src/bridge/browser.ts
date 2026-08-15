@@ -70,15 +70,25 @@ function legacyReadClipboard(): string {
 }
 
 export class BrowserAdapter {
-  /** 下载文件名兜底扩展名（blob MIME → 扩展名，与 vendor use-image-download 一致）。 */
-  static readonly IMAGE_MIME_EXTENSIONS: Record<string, string> = {
-    'image/bmp': '.bmp',
-    'image/gif': '.gif',
-    'image/jpeg': '.jpg',
-    'image/png': '.png',
-    'image/svg+xml': '.svg',
-    'image/webp': '.webp',
+  /** 扩展名 → MIME（虚拟 blob 文件的类型推断）。 */
+  static readonly EXT_MIME_TYPES: Record<string, string> = {
+    '.bmp': 'image/bmp',
+    '.gif': 'image/gif',
+    '.jpeg': 'image/jpeg',
+    '.jpg': 'image/jpeg',
+    '.png': 'image/png',
+    '.svg': 'image/svg+xml',
+    '.webp': 'image/webp',
   }
+
+  /** 下载文件名兜底扩展名（blob MIME → 扩展名，与 vendor use-image-download 一致）。 */
+  static readonly IMAGE_MIME_EXTENSIONS: Record<string, string> = Object.fromEntries(
+    Object.entries(BrowserAdapter.EXT_MIME_TYPES).map(([ext, mime]) => [mime, ext]),
+  )
+
+  /** 虚拟路径 → dataURL 的内存缓存（页面生命周期内有效，刷新即失，与草稿同生命周期）。 */
+  static readonly blobFiles = new Map<string, string>()
+  static nextBlobId = 0
 
   async readClipboard(): Promise<string> {
     try {
@@ -304,6 +314,81 @@ export class BrowserAdapter {
 
     return unsub
   }
+
+  // ── 虚拟 blob 文件（ADR-0011：图片附件 / 粘贴图片）───────────────────────
+  // 浏览器 File 没有 gateway 侧路径；把字节存成“虚拟路径 + 内存 dataURL
+  // 缓存”，让渲染层的本地路径模型（attachImagePath → attachmentPreviewDataUrl
+  // → readFileDataUrl）在 Web 上走通，提交时 image.attach_bytes 直接复用
+  // previewUrl 的全文件 base64（上游 remote 提交链路原生支持）。
+
+  async saveImageBuffer(data: ArrayBuffer | Uint8Array, ext: string): Promise<string> {
+    try {
+      const bytes = data instanceof Uint8Array ? data : new Uint8Array(data)
+      const mime =
+        BrowserAdapter.EXT_MIME_TYPES[ext.toLowerCase()] ?? 'application/octet-stream'
+      // slice 出独立 ArrayBuffer：Uint8Array<ArrayBufferLike> 不能直接作 BlobPart。
+      const buffer = bytes.buffer.slice(
+        bytes.byteOffset,
+        bytes.byteOffset + bytes.byteLength,
+      ) as ArrayBuffer
+      const dataUrl = await blobToDataUrl(new Blob([buffer], { type: mime }))
+      const id = ++BrowserAdapter.nextBlobId
+      const path = 'web-blob://attach/' + id + (ext.startsWith('.') ? ext : '.' + ext)
+      BrowserAdapter.blobFiles.set(path, dataUrl)
+
+      return path
+    } catch {
+      return ''
+    }
+  }
+
+  /** 虚拟路径命中缓存返回 dataURL；非虚拟路径返回 ''（adapter 组合层 fallback 到 gateway REST）。 */
+  async readFileDataUrl(filePath: string): Promise<string> {
+    return BrowserAdapter.blobFiles.get(filePath) ?? ''
+  }
+
+  /** 粘贴剪贴板图片：ClipboardItem → 虚拟路径（无图片 / 无权限返回 ''，
+   *  渲染层提示 noClipboardImage，与桌面一致）。 */
+  async saveClipboardImage(): Promise<string> {
+    try {
+      const items = await navigator.clipboard?.read?.()
+
+      if (!items) {
+        return ''
+      }
+
+      for (const item of items) {
+        const type = item.types.find((t) => t.startsWith('image/'))
+
+        if (!type) {
+          continue
+        }
+
+        const blob = await item.getType(type)
+        const bytes = new Uint8Array(await blob.arrayBuffer())
+        const ext =
+          Object.entries(BrowserAdapter.EXT_MIME_TYPES).find(
+            ([, mime]) => mime === blob.type,
+          )?.[0] ?? '.png'
+
+        return this.saveImageBuffer(bytes, ext)
+      }
+
+      return ''
+    } catch {
+      return ''
+    }
+  }
+}
+
+/** FileReader 读 Blob 为 data URL。 */
+function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result ?? ''))
+    reader.onerror = () => reject(reader.error ?? new Error('blob read failed'))
+    reader.readAsDataURL(blob)
+  })
 }
 
 interface BatteryLike {

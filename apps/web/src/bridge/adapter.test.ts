@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { buildWebBridge, installWebBridge } from './adapter'
 import { loadRegistry } from './registry'
@@ -75,5 +75,73 @@ describe('buildWebBridge / installWebBridge', () => {
     // 无 Battery API 的测试环境：恒 AC。
     expect(await bridge.getOnBattery!()).toBe(false)
     expect(typeof bridge.onBatteryChanged!(() => undefined)).toBe('function')
+  })
+})
+
+describe('browser virtual blob files (ADR-0010: saveImageBuffer/saveClipboardImage)', () => {
+  it('saveImageBuffer returns a virtual path whose bytes read back as a data URL (no gateway fetch)', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    const bridge = buildWebBridge()
+
+    const path = await bridge.saveImageBuffer(new Uint8Array([1, 2, 3]), '.png')
+    expect(path).toMatch(/^web-blob:\/\/attach\//)
+
+    const dataUrl = await bridge.readFileDataUrl(path)
+    expect(dataUrl).toBe('data:image/png;base64,AQID')
+    // 虚拟路径命中内存缓存，不发任何 gateway 请求。
+    expect(fetchMock).not.toHaveBeenCalled()
+    vi.unstubAllGlobals()
+  })
+
+  it('readFileDataUrl falls through to gateway REST for non-virtual paths', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ dataUrl: 'data:image/png;base64,AAAA' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    const bridge = buildWebBridge()
+
+    const dataUrl = await bridge.readFileDataUrl('/repo/a.png')
+    expect(dataUrl).toBe('data:image/png;base64,AAAA')
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      'http://127.0.0.1:5180/api/fs/read-data-url?path=%2Frepo%2Fa.png',
+    )
+    vi.unstubAllGlobals()
+  })
+
+  it('saveImageBuffer accepts ArrayBuffer input', async () => {
+    const bridge = buildWebBridge()
+
+    const path = await bridge.saveImageBuffer(new Uint8Array([255]).buffer, '.jpg')
+    expect(path).toMatch(/^web-blob:\/\/attach\//)
+    expect(await bridge.readFileDataUrl(path)).toBe('data:image/jpeg;base64,/w==')
+  })
+
+  it('saveClipboardImage returns empty when the clipboard API is unavailable', async () => {
+    const bridge = buildWebBridge()
+
+    expect(await bridge.saveClipboardImage()).toBe('')
+  })
+
+  it('saveClipboardImage reads an image from navigator.clipboard into a virtual path', async () => {
+    const blob = new Blob([new Uint8Array([1, 2, 3])], { type: 'image/png' })
+    const item = {
+      types: ['text/plain', 'image/png'],
+      getType: vi.fn(async (type: string) =>
+        type === 'image/png' ? blob : new Blob(),
+      ),
+    }
+    ;(navigator as { clipboard?: unknown }).clipboard = {
+      read: vi.fn(async () => [item]),
+    }
+    const bridge = buildWebBridge()
+
+    const path = await bridge.saveClipboardImage()
+    expect(path).toMatch(/^web-blob:\/\/attach\//)
+    expect(await bridge.readFileDataUrl(path)).toBe('data:image/png;base64,AQID')
+    delete (navigator as { clipboard?: unknown }).clipboard
   })
 })

@@ -182,18 +182,7 @@ export class DeniedAdapter {
     return false
   }
 
-  // ── 文件系统（仅剩余本地磁盘面；fs/git REST 面在 gateway.ts）────────────
-
-  async saveImageBuffer(
-    _data: ArrayBuffer | Uint8Array,
-    _ext: string,
-  ): Promise<string> {
-    return ''
-  }
-
-  async saveClipboardImage(): Promise<string> {
-    return ''
-  }
+  // ── 文件系统（仅剩余本地磁盘面；fs/git REST 面在 gateway.ts，虚拟 blob 面在 browser.ts）──
 
   async normalizePreviewTarget(_target: string): Promise<HermesPreviewTarget | null> {
     return null
