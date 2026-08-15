@@ -6,6 +6,7 @@ services:
     command: ["gateway", "run"]
     ports:
       - "${HERMES_DASHBOARD_PORT:-9119}:9119"
+      # - "8642:8642"  # gateway port, if you want
     volumes:
       - ./data:/opt/data
     env_file:

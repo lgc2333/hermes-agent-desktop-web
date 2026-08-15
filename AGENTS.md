@@ -25,7 +25,7 @@ cd apps/proxy && deno task test                # 代理单测（deno test，42+ 
 deno run --allow-net --allow-read --allow-env apps/proxy/src/main.ts   # 手动起代理
 MOCK_OAUTH=1 node apps/web/dev/mock-gateway.mjs 5182   # gated mock（native OAuth 面）
 MOCK_PASSWORD=1 node apps/web/dev/mock-gateway.mjs 5183  # 密码门禁 mock（admin/admin，M5）
-docker compose up -d --build                  # 生产部署（见 docs/deploy.md）
+docker compose up -d --build                  # 生产部署（见 README.md「快速开始」）
 bash scripts/sync-upstream.sh [tag]            # 上游 subtree 同步（PATCHES.md §3）
 ```
 
@@ -111,7 +111,7 @@ hermes-agent-desktop-web/
 
 - **OAuth 手势**：`oauthLoginConnectionConfig` 同步段先 `window.open` 再 await（保留手势上下文），别 await 后开窗。
 
-- **loopback redirect_uri**：上游 `/auth/native/authorize` 只收 127.0.0.1/::1（RFC 8252，安全边界无放宽渠道）；dev 同机开箱即用，远端浏览器需 SSH 隧道/VPN（docs/deploy.md §4.3）。
+- **loopback redirect_uri**：上游 `/auth/native/authorize` 只收 127.0.0.1/::1（RFC 8252，安全边界无放宽渠道）；dev 同机开箱即用，远端浏览器需 SSH 隧道/VPN（README.md「安全模型」）。
 
 - **mock gated 影响 boot**：`MOCK_OAUTH=1` 的 mock `auth_required=true`，页面 boot 会要求登录——验收先等 "Gateway ready"（注意 "Runtime not ready" 也含 ready 字样，判状态栏 token 更准）。
 
