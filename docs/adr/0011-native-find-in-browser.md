@@ -5,7 +5,9 @@ denied（0/0 无功能），且 vendor keybind 对 Ctrl+F 执行 preventDefault�
 浏览器原生查找对话框也被掐死。决策：不实现自研 find，让 Ctrl+F 直通
 浏览器原生查找。
 
-**Status**: accepted
+**Status**: superseded by ADR-0019（find 面维持 denied 的目标不变；实现方式
+由"Web 入口 capture 拦截器"改为"Web 构建下 vendor 不注册 findInPage handler，
+热键直接失效"）
 
 **Context**:
 

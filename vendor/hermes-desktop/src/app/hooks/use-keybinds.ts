@@ -253,7 +253,12 @@ export function useKeybinds(deps: KeybindRuntimeDeps): void {
     // the Win/Linux path where ⌘W reaches the renderer directly.
     'view.closeTab': () => void closeActiveTab(id => navigate(sessionRoute(id))),
     'view.reopenTab': reopenLastClosedTile,
-    'view.findInPage': openFindBar,
+    // Web 移植（ADR-0019）：find 桥面布尔门 denied（ADR-0010/0011），Web 构建下
+    // 不注册此 handler——组合键命中走下方 "无 handler → return"（不
+    // preventDefault、不开 find-bar），浏览器原生查找（Ctrl/Cmd+F）自然接管。
+    // 桌面构建不读 VITE_WEB_BUILD，原行为不变；重绑/多绑定语义自动正确
+    // （任何 combo 命中 view.findInPage 都无效；mod+f 改绑其他动作照常执行）。
+    ...(import.meta.env.VITE_WEB_BUILD === '1' ? {} : { 'view.findInPage': openFindBar }),
     // ⌘G / ⌘⇧G are handled by the find bar's own capture-phase listener while
     // it is open (so they don't collide with `view.toggleReview`). These
     // registry handlers cover a user-assigned dedicated chord: stepping is a

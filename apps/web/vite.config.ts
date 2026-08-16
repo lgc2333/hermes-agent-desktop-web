@@ -44,6 +44,9 @@ export default defineConfig(({ command }) => ({
   // ADR-0014：构建期注入客户端版本标识（上游桌面版本 + 项目版本）。
   define: {
     __HERMES_WEB_VERSION__: JSON.stringify(webVersionString(import.meta.dirname)),
+    // ADR-0019：Web 构建标记——vendor use-keybinds 据此让 view.findInPage
+    // 热键失效（find 桥面 denied，回归浏览器原生查找，见 PATCHES.md §4）。
+    'import.meta.env.VITE_WEB_BUILD': JSON.stringify('1'),
   },
   css: {
     postcss: { plugins: [] },

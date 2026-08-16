@@ -84,6 +84,11 @@ git subtree merge --prefix=vendor/hermes-desktop $NEW_FILTERED --squash
   - 原因：密码表单与 paste-back 文案
   - 同步注意：上游 i18n 合入新键时按名合并，勿覆盖 M5/M6 键
 
+- vendor/hermes-desktop/src/app/hooks/use-keybinds.ts
+  - 改动：`'view.findInPage': openFindBar` 改为条件展开——`import.meta.env.VITE_WEB_BUILD === '1'`（Web 构建时 vite define 注入，见 apps/web/vite.config.ts）时不注册该 handler
+  - 原因：Web 端 find 桥面布尔门 denied（ADR-0010/0011），命中会 preventDefault + 打开无功能 find-bar、吞掉浏览器原生查找；handler 缺失 → dispatch 走 "无 handler → return"（不 preventDefault），浏览器原生查找（Ctrl/Cmd+F）接管（ADR-0019）。重绑/多绑定语义自动正确：任何 combo 命中 view.findInPage 都无效，mod+f 改绑其他动作照常执行
+  - 同步注意：桌面构建不读 VITE_WEB_BUILD，行为不变；上游若重构 handlersRef 或 view.findInPage 接线，按"Web 构建不注册该 handler"语义恢复
+
 ## 5. 需注意的上游联动
 
 非 vendor 但依赖 vendor/上游结构、subtree pull 后需核对的 Web 侧文件：
