@@ -163,7 +163,9 @@ export function buildWebBridge(
     settings: denied.settings,
     updates: denied.updates,
     uninstall: denied.uninstall,
-    themes: denied.themes,
+    // ADR-0021：主题供应商从 denied 空实现切到浏览器直连（官方接口 CORS
+    // 放行 *，无代理、无凭证）。denied.ts 仍保留布尔门实现便于隔离测试。
+    themes: browser.themes,
     findInPage: (query) => denied.findInPage(query),
     stopFindInPage: () => denied.stopFindInPage(),
     // denied 的 on* 订阅成员是 0 参 noopUnsub；直接透传（少参数函数可赋值给

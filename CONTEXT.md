@@ -88,6 +88,14 @@ _Avoid_: 平台（上游 platform 是另一个概念）
 切换 Connection 时外壳保持、仅 gateway 绑定视图清空重建的语义（软/硬两档），继承自桌面端。
 _Avoid_: 重启、刷新
 
+**Theme supplier（主题供应商）**:
+给设置页「Appearance → Theme」提供 Marketplace 主题来源的能力：搜索 +
+按需取包（下载 .vsix、读 package.json 与引用的颜色主题 JSON 原文交给渲染层
+转换）。Web 端由浏览器直连官方 VS Code Marketplace（公共 API，CORS 放行 *，
+零代理、零凭证；ADR-0021）；桌面端走 Electron 主进程。安全边界同为"决不执行
+扩展代码"——只读主题 JSON。
+_Avoid_: 主题商店
+
 ## 部署
 
 **Hermes container**:

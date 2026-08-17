@@ -17,9 +17,14 @@
  *     附件字节存储二分（ADR-0020，见下方实现注释）。
  */
 
-import type { HermesNotification } from '@/global'
+import type {
+  DesktopMarketplaceSearchItem,
+  DesktopMarketplaceThemeResult,
+  HermesNotification,
+} from '@/global'
 
 import { OpfsBlobStore, type AttachmentBlobStore } from './blob-store'
+import { fetchMarketplaceThemes, searchMarketplaceThemes } from './vscode-marketplace'
 
 function safeLocalStorageSet(key: string, value: string): void {
   try {
@@ -94,6 +99,18 @@ export class BrowserAdapter {
    *  随用随读 arrayBuffer() 瞬态 b64 读完即弃；页面消亡即清）。 */
   static readonly blobFiles = new Map<string, File>()
   static nextBlobId = 0
+
+  /**
+   * VS Code Marketplace 主题供应商（vscode-marketplace.ts，浏览器直连官方
+   * gallery 接口 + VSIX CDN，二者均回显 Access-Control-Allow-Origin:*）。
+   * 渲染层拿到原始主题 JSON 后自行转换/持久化（与桌面同一套 install.ts）。
+   */
+  readonly themes = {
+    searchMarketplace: (query: string): Promise<DesktopMarketplaceSearchItem[]> =>
+      searchMarketplaceThemes(query),
+    fetchMarketplace: (id: string): Promise<DesktopMarketplaceThemeResult> =>
+      fetchMarketplaceThemes(id),
+  }
 
   private readonly blobStore: AttachmentBlobStore
 
@@ -469,10 +486,12 @@ function blobToDataUrl(blob: Blob): Promise<string> {
 /** 虚拟路径里的文件名消毒：去掉路径分隔符与危险字符（嵌进虚拟路径要可被
  *  pathLabel 当 basename 解析，且 OPFS 文件名不能含 '/' 或 NUL）。 */
 function sanitizeBlobName(name: string): string {
-  return name
-    .replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_')
-    .replace(/^\.+$/, 'file')
-    .slice(0, 200) || 'file'
+  return (
+    name
+      .replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_')
+      .replace(/^\.+$/, 'file')
+      .slice(0, 200) || 'file'
+  )
 }
 
 /** 从虚拟路径提取 OPFS 文件名（web-blob://attach/<id>-<name> → <id>-<name>）；
