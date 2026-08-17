@@ -28,6 +28,7 @@ import { onGatewayEvent } from '@/contrib/events'
 import { deleteProfile, getLogs, getStatus, type HermesGateway } from '@/hermes'
 import {
   $gateway,
+  activeGatewayConnectionId,
   openGatewayForAgent,
   openGatewayForProfile,
   requestGatewayForAgent,
@@ -46,7 +47,14 @@ import {
   setActiveProfile,
   setShowAllProfiles
 } from '@/store/profile'
-import { $activeSessionId, $currentCwd, $currentModel, $gatewayState, $selectedStoredSessionId } from '@/store/session'
+import {
+  $activeSessionId,
+  $connection,
+  $currentCwd,
+  $currentModel,
+  $gatewayState,
+  $selectedStoredSessionId
+} from '@/store/session'
 import {
   $focusedRuntimeId,
   $focusedSessionState,
@@ -161,6 +169,7 @@ if (typeof window !== 'undefined') {
 /** Live usage of the FOCUSED session, projected out of the streamed session
  *  state — the same readout the core statusbar's context chip paints. */
 const $focusedUsage = computed($focusedSessionState, state => state?.usage ?? null)
+const $activeConnectionId = computed($connection, connection => connection?.connectionId ?? null)
 
 export const host = {
   state: {
@@ -177,6 +186,8 @@ export const host = {
     busy: readonlyAtom<boolean>($focusedBusy),
     /** Runtime session id → mid-turn. Not socket state; see `gateway`. */
     busyBySession: readonlyAtom<Record<string, boolean>>($busyBySession),
+    /** Registry source that owns the active gateway, when source-scoped. */
+    connectionId: readonlyAtom<null | string>($activeConnectionId),
     /** Active workspace cwd ('' when detached). */
     cwd: readonlyAtom<string>($currentCwd),
     /** Runtime id of the FOCUSED chat session — the interacted tile, else the
@@ -278,6 +289,15 @@ export const host = {
   },
 
   // ── Multi-source agents (the Bot Mode door) ───────────────────────────────
+
+  /** Registry connection id serving the gateway `host.request` currently hits
+   *  — null for the local/legacy primary path. Roster UIs need this to tell
+   *  "a row from the backend I'm already showing" apart from "a row from
+   *  another source": two connections can both expose a 'default' profile,
+   *  and matching by profile name alone duplicates every agent when the
+   *  active gateway is a registered remote. Re-read per use — it changes on
+   *  profile/agent swaps. */
+  activeConnectionId: (): null | string => activeGatewayConnectionId(),
 
   /** The registered connection list (labels, kinds, primary) — token bytes
    *  never included. Rejects on Desktop builds without the registry. */
@@ -613,3 +633,6 @@ export { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 /** Plugin-local reactive state (share between a trigger and its panel, poll
  *  loops, cross-component signals) — the same primitive `host.state` uses. */
 export { atom, computed } from 'nanostores'
+/** Markdown renderer (same pipeline core chat surfaces use) so plugins render
+ *  message text as a preview instead of raw Markdown source. */
+export { Streamdown } from 'streamdown'

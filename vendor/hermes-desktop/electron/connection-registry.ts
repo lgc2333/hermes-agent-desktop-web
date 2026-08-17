@@ -211,6 +211,28 @@ export function resolveRegistryLocalRoute(
   return { delegate: true, poolKey: profileKey }
 }
 
+/**
+ * Whether the roster enumeration should SKIP the registry's local entry as
+ * connect-on-demand. True when the local source is the forced-local route
+ * (primary resolves remote — enumerating would spawn a local backend the
+ * user never asked for, minting a phantom `default` agent and forcing
+ * -device handles onto the real one) AND no forced-local child is already
+ * pooled. Pure — main.ts feeds it the live route + pool keys.
+ */
+export function shouldDeferLocalEnumeration(
+  route: RegistryLocalRoute,
+  poolKeys: Iterable<string>,
+  connectionId: string = LOCAL_CONNECTION_ID
+): boolean {
+  if (route.delegate) {
+    return false
+  }
+
+  const prefix = backendScopePrefix(connectionId)
+
+  return ![...poolKeys].some(key => String(key).startsWith(prefix))
+}
+
 // ── Union agent roster ──────────────────────────────────────────────────────
 
 export interface ConnectionAgents {
@@ -238,29 +260,39 @@ export interface RosterAgent {
  * policy is testable without IPC; main.ts feeds it live enumerations.
  */
 export function buildAgentRoster(enumerations: ConnectionAgents[]): RosterAgent[] {
-  const counts = new Map<string, number>()
-
-  for (const { profiles } of enumerations) {
-    for (const profile of profiles || []) {
-      const name = String(profile || '').trim() || 'default'
-      counts.set(name, (counts.get(name) || 0) + 1)
-    }
-  }
-
-  const roster: RosterAgent[] = []
+  // A connection can transiently report the same profile more than once (or
+  // arrive twice while registry state is reconciling). A roster row represents
+  // one routable identity, so collapse strictly by connection + profile before
+  // counting names for @name-device disambiguation.
+  const identities = new Map<string, { connection: RegistryConnection; profile: string }>()
 
   for (const { connection, profiles } of enumerations) {
     for (const profile of profiles || []) {
       const name = String(profile || '').trim() || 'default'
+      const key = `${connection.id}\0${name}`
 
-      roster.push({
-        connectionId: connection.id,
-        connectionKind: connection.kind,
-        connectionLabel: connection.label,
-        profile: name,
-        handle: agentHandle(name, connection.label, (counts.get(name) || 0) > 1)
-      })
+      if (!identities.has(key)) {
+        identities.set(key, { connection, profile: name })
+      }
     }
+  }
+
+  const counts = new Map<string, number>()
+
+  for (const { profile } of identities.values()) {
+    counts.set(profile, (counts.get(profile) || 0) + 1)
+  }
+
+  const roster: RosterAgent[] = []
+
+  for (const { connection, profile } of identities.values()) {
+    roster.push({
+      connectionId: connection.id,
+      connectionKind: connection.kind,
+      connectionLabel: connection.label,
+      profile,
+      handle: agentHandle(profile, connection.label, (counts.get(profile) || 0) > 1)
+    })
   }
 
   return roster
