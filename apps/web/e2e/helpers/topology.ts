@@ -87,9 +87,9 @@ function pidsByPortSystem(port: number): number[] {
 /**
  * PIDs of processes listening on `port` (TCP). Uses the system socket tools
  * (`ss`/`fuser`, reliable on Linux/CI runners) rather than a hand-rolled
- * /proc scan — the /proc inode→fd walk is brittle (perm-denied on other
- * users' /proc/*/fd aborts the walk, and a plain readdir mishandles
- * reaped/vanished fds). Windows: via PowerShell. Returns [] if none.
+ * /proc scan (the inode-to-FD walk is brittle: permission denials on other
+ * users' proc dirs abort it, and reaped FDs are mishandled). Windows: via
+ * PowerShell. Returns [] if none.
  */
 export function pidsByPort(port: number): number[] {
   return process.platform === 'win32' ? [] : pidsByPortSystem(port)
