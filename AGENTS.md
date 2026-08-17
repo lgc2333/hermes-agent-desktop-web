@@ -1,5 +1,7 @@
 # Hermes-Agent-Desktop-Web — AGENTS.md
 
+注：如本文件同级有 `AGENTS.local.md` 文件且它不在你的上下文中，请读取它。
+
 把 Hermes 桌面端渲染层移植为浏览器 Web 应用，经一个 **Deno 无状态薄代理** 连接任意远程 Hermes gateway。
 
 ## 拓扑
@@ -27,11 +29,11 @@ docker compose up -d --build  # 生产部署（见 README.md「快速开始」�
 bash scripts/sync-upstream.sh [tag]  # 上游 subtree 同步（PATCHES.md §3）
 ```
 
-浏览器验收（headless Chrome + CDP 9224，脚本在 apps/web/e2e/，从仓库根运行）：
+浏览器验收（Vitest + Playwright 客户端驱动 Chromium，独立于 dev 端口 5173/6722/5180，见 apps/web/e2e/AGENTS.md）：
 
 ```bash
-chrome --headless=new --remote-debugging-port=9224 --user-data-dir=temp/e2e-profile --disable-popup-blocking
-node apps/web/e2e/cdp-*.mjs   # 场景脚本（OAuth/断连/响应式/隐藏验证；前置拓扑见 apps/web/e2e/README.md）
+pnpm --filter @hermes-web/web e2e:install   # 一次性装 Chromium
+pnpm --filter @hermes-web/web test:e2e      # 全量 e2e（串行单 worker）
 ```
 
 ## 项目结构
@@ -54,7 +56,7 @@ hermes-agent-desktop-web/
 │   │   │                       #   gateway（走代理 RPC：注册表/api 转发/OAuth/探测）/
 │   │   │                       #   denied（布尔门空实现）；registry.ts = 连接注册表
 │   │   ├── dev/                # dev.mjs（恒起代理；--no-mock 形态）+ mock-gateway.mjs（mock 后端）
-│   │   ├── e2e/                # CDP 浏览器验收脚本（cdp-*.mjs，从仓库根跑；AGENTS.md）
+│   │   ├── e2e/                # Vitest + Playwright 客户端 e2e（*.e2e.ts；端口用 E2E_*_PORT，见 e2e/AGENTS.md）
 │   │   ├── scripts/typecheck.mjs  # 项目类型检查（filter TS5101 等）
 │   │   └── vite.config.ts · vitest.config.ts · tsconfig.json
 │   └── proxy/                  # Deno 薄代理（无状态，零依赖）

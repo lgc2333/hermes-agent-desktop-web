@@ -12,6 +12,8 @@
     "preview": "vite preview --host 127.0.0.1 --port 4173",
     "typecheck": "node scripts/typecheck.mjs",
     "test": "vitest run",
+    "test:e2e": "vitest run --config vitest.e2e.config.ts",
+    "e2e:install": "playwright install chromium",
     "dev:gateway": "node dev/mock-gateway.mjs",
     "dev:remote": "node dev/dev.mjs --no-mock"
   },
@@ -24,6 +26,7 @@
     "@types/ws": "8.18.1",
     "@vitejs/plugin-react": "6.0.3",
     "bippy": "0.5.43",
+    "playwright": "^1.62.1",
     "typescript": "6.0.3",
     "vite": "8.2.0",
     "ws": "8.18.3"
