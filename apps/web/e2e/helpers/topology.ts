@@ -1,5 +1,5 @@
 import { spawn, execSync, type ChildProcess } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, readlinkSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 
@@ -54,15 +54,67 @@ export const mockEntry = path.join(appRoot, 'dev', 'mock-gateway.mjs')
 
 const children = new Map<string, ChildProcess>()
 
-/** Kill every process listening on `port` (Windows: PowerShell). */
+/**
+ * PIDs of processes listening on `port` (TCP). Linux/macOS: parse /proc (the
+ * container runner may lack fuser/lsof). Windows: via PowerShell. Returns [] if
+ * nothing is listening.
+ */
+function pidsByPort(port: number): number[] {
+  if (process.platform === 'win32') return []
+  const hex = port.toString(16).padStart(4, '0')
+  const inodes = new Set<string>()
+  for (const f of ['/proc/net/tcp', '/proc/net/tcp6']) {
+    let txt: string
+    try {
+      txt = readFileSync(f, 'utf8')
+    } catch {
+      continue
+    }
+    for (const line of txt.split('\n').slice(1)) {
+      const parts = line.trim().split(/\s+/)
+      if (!parts[0]) continue
+      const [, localHex, st] = parts
+      // /proc/net/tcp prints hex port UPPERCASE; compare case-insensitively.
+      if (st === '0A' && localHex.split(':')[1].toLowerCase() === hex) {
+        inodes.add(parts[9])
+      }
+    }
+  }
+  const pids = new Set<number>()
+  for (const pid of readdirSync('/proc')) {
+    if (!/^\d+$/.test(pid)) continue
+    try {
+      for (const fd of readdirSync(`/proc/${pid}/fd`)) {
+        const link = readlinkSync(`/proc/${pid}/fd/${fd}`)
+        const m = link.match(/socket:\[(\d+)\]/)
+        if (m && inodes.has(m[1])) pids.add(Number(pid))
+      }
+    } catch {
+      /* fd may have vanished */
+    }
+  }
+  return [...pids]
+}
+
+/** Kill every process listening on `port` (Windows: PowerShell; Linux/macOS: /proc). */
 export function killPort(port: number): void {
-  try {
-    execSync(
-      `powershell -NoProfile -Command "Get-NetTCPConnection -LocalPort ${port} -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }"`,
-      { stdio: 'ignore' },
-    )
-  } catch {
-    /* nothing listening on that port — fine */
+  if (process.platform === 'win32') {
+    try {
+      execSync(
+        `powershell -NoProfile -Command "Get-NetTCPConnection -LocalPort ${port} -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }"`,
+        { stdio: 'ignore' },
+      )
+    } catch {
+      /* nothing listening on that port — fine */
+    }
+    return
+  }
+  for (const pid of pidsByPort(port)) {
+    try {
+      process.kill(pid, 'SIGKILL')
+    } catch {
+      /* already gone */
+    }
   }
 }
 
