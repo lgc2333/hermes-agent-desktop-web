@@ -119,7 +119,7 @@ hermes-agent-desktop-web/
 
 - **直连已删（ADR-0016）**：SPA 无直连路径，`proxyBaseUrl()` 恒非空；`vite preview`/静态裸托管不是可用拓扑（/api/* 会打 SPA fallback）。旧镜像（v0.1.0 tag 前）bundle 里 `proxyBaseUrl()` 被编译成 `return null` → `/api/proxy/meta` 0 请求、预填永不触发、探活直连假绿/假红——部署必须用新构建镜像。
 
-- **上游 sync 必须浅取 + 用后清理**（PATCHES.md §3）：上游 hermes 是 monorepo，全量 `git fetch` 把整个仓库对象灌进本地，叠加断连中断的 `tmp_pack_*` 残留会让 .git 膨胀到 GB 级（实测追一次 tag 后 .git 冲到 1GB，~958MB 是 tmp_pack_*，`git gc` 不自动删这类垃圾需手动清）。用 `git fetch upstream --depth=1 <tag>`（脚本已内置）只取目标提交的 apps/desktop|shared 两棵子树（本地是 squash vendoring，不需要上游历史）；浅取对 tag 时 FETCH_HEAD 是 tag 对象，须 `^{commit}` peel。sync 落盘后删本地 tag 引用 + 清 `.git/shallow` 再 gc，恢复非 shallow 小体积仓库。
+- **上游 sync 必须浅取 + 用后清理**（PATCHES.md §3）：上游 hermes 是 monorepo，全量 `git fetch` 把整个仓库对象灌进本地，叠加断连中断的 `tmp_pack_*` 残留会让 .git 膨胀到 GB 级（实测追一次 tag 后 .git 冲到 1GB，~958MB 是 tmp_pack_*，`git gc` 不自动删这类垃圾需手动清）。用 `git fetch upstream --depth=1 <tag>`（脚本已内置）只取目标提交的 apps/desktop|shared 两棵子树（本地是 squash vendoring，不需要上游历史）；浅取对 tag 时 FETCH_HEAD 是 tag 对象，须 `^{commit}` peel。sync 落盘后删本地 tag 引用 + 清 `.git/shallow` 再 gc，恢复非 shallow 小体积仓库。**但别把 git-subtree 依赖的旧过滤提交对象 prune 掉**（`gc --prune=now` 清掉后 `git subtree merge` 会报 `could not rev-parse split hash`，只能用 PATCHES §3 的手工三路方案）。
 
 ## Commit
 

@@ -6,7 +6,7 @@
 ## 1. Subtree 基准（Baseline）
 
 - 上游仓库：https://github.com/NousResearch/hermes-agent.git
-- 基准提交：`df4b65147d7ddd74dd449f9067aabbca5aef0ec7`（2026-08-16，上游 tag `v2026.8.16`，桌面端 0.20.2）
+- 基准提交：`cf64ca20c5ab99ebf7e8ca272c69edc7ea0636ed`（上游 **main** HEAD，2026-08-16 之后继续开发线，桌面端含 v2026.8.16→main 的 137 文件变更）
 - vendor/hermes-desktop：上游 `apps/desktop`（含 src/ 渲染层、scripts/、vite.config.ts 等）
 - vendor/hermes-shared：上游 `apps/shared`（`@hermes/shared` 源码）
 - 引入方式：`git subtree add --squash`（对过滤提交执行，见 §2）
@@ -54,6 +54,26 @@ NEW_FILTERED=$(git commit-tree $NEW_DESKTOP_TREE -m "hermes-desktop @ <sha>")
 git subtree merge --prefix=vendor/hermes-desktop $NEW_FILTERED --squash
 # 同法处理 hermes-shared；同步后把新基准 SHA 记入 §1 清单
 ```
+
+**git-subtree 依赖历史 split 对象，别把它们 prune 掉**：`git subtree merge` 会从
+历史 squash 提交的 "from A..B" 里 `rev-parse` 旧过滤提交（A/B）作为 merge 基准；上一轮
+`git gc --prune=now` 清过这些中间对象后，subtree 直接 fatal `could not rev-parse split
+hash`（git 2.55 实测）。此时改**手工三路**（等价于 subtree 内部，保留全部补丁）：
+
+```bash
+# index 清空旧 vendor，挂载上游目标树
+git read-tree HEAD^{tree}
+git ls-files vendor/hermes-desktop | git update-index --force-remove --stdin
+git read-tree --prefix=vendor/hermes-desktop/ $NEW_FILTERED^{tree}
+# 复位上游未改动的补丁文件为 HEAD 版：git update-index --cacheinfo 100644 <HEAD:...blob> <path>
+# 上游也改动了的补丁文件做 3-way（base=上一版上游原版）：git merge-file -L main -L base -L ours out base ours
+# shared 同理：git read-tree --prefix=vendor/hermes-shared/ <main^tools>:apps/shared
+# 然后 git checkout-index -a -f 同步工作树、write-tree、add、commit
+```
+
+m3/main 实测：上游 main 相对上一基准只改了 11 个补丁文件里的 4 个
+（global.d.ts、i18n/en|zh|types），`git merge-file` 3-way 全部无冲突自动合入；桥层
+补 main 新增 `getProfileRoutes` 表面（空实现）。
 
 ## 4. 当前 vendor 原位改动清单
 
