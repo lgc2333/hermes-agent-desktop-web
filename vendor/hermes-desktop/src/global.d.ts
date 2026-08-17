@@ -200,6 +200,11 @@ declare global {
       readClipboard: () => Promise<string>
       saveImageFromUrl: (url: string) => Promise<boolean>
       saveImageBuffer: (data: ArrayBuffer | Uint8Array, ext: string) => Promise<string>
+      // ADR-0020: Web 端附件字节存储二分（File 引用 / OPFS）。桌面端不实现
+      // （桌面走 readFileDataUrlForIpc 整读转 b64）；仅 Web 桥面提供。
+      saveImageFile?: (blob: Blob, name: string) => Promise<string>
+      /** ADR-0020: 释放 web-blob:// 虚拟附件（File 引用 / OPFS 文件）。Web 专有。 */
+      releaseBlobFile?: (filePath: string) => Promise<void>
       saveClipboardImage: () => Promise<string>
       getPathForFile: (file: File) => string
       normalizePreviewTarget: (target: string, baseDir?: string) => Promise<HermesPreviewTarget | null>

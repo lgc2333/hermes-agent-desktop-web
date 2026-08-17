@@ -13,9 +13,13 @@
  *   - saveImageFromUrl：fetch → blob → a[download] 浏览器下载（ADR-0010，
  *     此前 denied 返回 false 会吞掉渲染层的下载 fallback）；
  *   - getOnBattery/onBatteryChanged：navigator.getBattery（无 API 时恒 AC）。
+ *   - saveImageFile / saveImageBuffer / readFileDataUrl / releaseBlobFile：
+ *     附件字节存储二分（ADR-0020，见下方实现注释）。
  */
 
 import type { HermesNotification } from '@/global'
+
+import { OpfsBlobStore, type AttachmentBlobStore } from './blob-store'
 
 function safeLocalStorageSet(key: string, value: string): void {
   try {
@@ -86,9 +90,18 @@ export class BrowserAdapter {
     Object.entries(BrowserAdapter.EXT_MIME_TYPES).map(([ext, mime]) => [mime, ext]),
   )
 
-  /** 虚拟路径 → dataURL 的内存缓存（页面生命周期内有效，刷新即失，与草稿同生命周期）。 */
-  static readonly blobFiles = new Map<string, string>()
+  /** 虚拟路径 → File 引用（ADR-0020：拖入文件保留引用，零常驻字节，
+   *  随用随读 arrayBuffer() 瞬态 b64 读完即弃；页面消亡即清）。 */
+  static readonly blobFiles = new Map<string, File>()
   static nextBlobId = 0
+
+  private readonly blobStore: AttachmentBlobStore
+
+  constructor(blobStore: AttachmentBlobStore = new OpfsBlobStore()) {
+    this.blobStore = blobStore
+    // 页面载入初始化：清空 web-blobs/ 目录（上一页残留附件，ADR-0020）。
+    void this.blobStore.clearAll().catch(() => undefined)
+  }
 
   async readClipboard(): Promise<string> {
     try {
@@ -315,12 +328,44 @@ export class BrowserAdapter {
     return unsub
   }
 
-  // ── 虚拟 blob 文件（ADR-0011：图片附件 / 粘贴图片）───────────────────────
-  // 浏览器 File 没有 gateway 侧路径；把字节存成“虚拟路径 + 内存 dataURL
-  // 缓存”，让渲染层的本地路径模型（attachImagePath → attachmentPreviewDataUrl
-  // → readFileDataUrl）在 Web 上走通，提交时 image.attach_bytes 直接复用
-  // previewUrl 的全文件 base64（上游 remote 提交链路原生支持）。
+  // ── 附件字节存储（ADR-0020：File 引用 + OPFS；0012 的存储介质延伸）────────
+  // 浏览器 File 没有 gateway 侧路径；把附件字节存成“虚拟路径”让渲染层的本地
+  // 路径模型（attachImageBlob/attachFileBlob → attachImagePath/attachContextFilePath
+  // → attachmentPreviewDataUrl → readFileDataUrl）在 Web 上走通，提交时
+  // image.attach_bytes / file.attach 复用 data_url（上游 remote 链路原生支持）。
+  //
+  // 存储模型二分（ADR-0020）：
+  //   - 拖入的 File 磁盘-backed、零常驻字节 → 保留引用存 blobFiles Map，
+  //     读时 arrayBuffer() 瞬态进 b64，读完即弃；chip 移除 releaseBlobFile
+  //     释放（Map.delete），残留由页面刷新兜底（Map 随页面消亡）。
+  //   - 纯内存字节（粘贴图片 / HTML 预览拼接）→ OPFS web-blobs/ 目录落盘
+  //     （页面载入初始化清空，无 TTL）；读时 getFile() 瞬态进 b64。
+  // 虚拟路径统一 web-blob://attach/<id>-<name>（嵌真实文件名，file.attach 的
+  // name 参数取自 pathLabel(path)）。
 
+  /**
+   * 保存附件 File/Blob：File → 保留引用；Blob → OPFS 流式写盘。
+   * 返回虚拟路径（web-blob://attach/<id>-<name>）；失败返回 ''。
+   */
+  async saveImageFile(blob: Blob, name: string): Promise<string> {
+    try {
+      const id = ++BrowserAdapter.nextBlobId
+      const safeName = sanitizeBlobName(name)
+      const path = 'web-blob://attach/' + id + '-' + safeName
+
+      if (blob instanceof File) {
+        BrowserAdapter.blobFiles.set(path, blob)
+      } else {
+        await this.blobStore.write(id + '-' + safeName, blob)
+      }
+
+      return path
+    } catch {
+      return ''
+    }
+  }
+
+  /** 保存图片字节（保持签名，兼容 HTML 预览调用方）：bytes → Blob → OPFS 写。 */
   async saveImageBuffer(data: ArrayBuffer | Uint8Array, ext: string): Promise<string> {
     try {
       const bytes = data instanceof Uint8Array ? data : new Uint8Array(data)
@@ -331,20 +376,51 @@ export class BrowserAdapter {
         bytes.byteOffset,
         bytes.byteOffset + bytes.byteLength,
       ) as ArrayBuffer
-      const dataUrl = await blobToDataUrl(new Blob([buffer], { type: mime }))
-      const id = ++BrowserAdapter.nextBlobId
-      const path = 'web-blob://attach/' + id + (ext.startsWith('.') ? ext : '.' + ext)
-      BrowserAdapter.blobFiles.set(path, dataUrl)
+      const extSafe = ext.startsWith('.') ? ext : '.' + ext
 
-      return path
+      return this.saveImageFile(new Blob([buffer], { type: mime }), 'image' + extSafe)
     } catch {
       return ''
     }
   }
 
-  /** 虚拟路径命中缓存返回 dataURL；非虚拟路径返回 ''（adapter 组合层 fallback 到 gateway REST）。 */
+  /** 释放虚拟附件字节：File → Map.delete；OPFS → remove()。 */
+  async releaseBlobFile(filePath: string): Promise<void> {
+    if (BrowserAdapter.blobFiles.delete(filePath)) {
+      return
+    }
+
+    const name = blobNameFromPath(filePath)
+
+    if (name) {
+      await this.blobStore.remove(name).catch(() => undefined)
+    }
+  }
+
+  /** 虚拟路径命中返回 dataURL（File 瞬态 b64 / OPFS getFile 瞬态 b64）；
+   *  非虚拟路径返回 ''（adapter 组合层 fallback 到 gateway REST）。 */
   async readFileDataUrl(filePath: string): Promise<string> {
-    return BrowserAdapter.blobFiles.get(filePath) ?? ''
+    try {
+      const file = BrowserAdapter.blobFiles.get(filePath)
+
+      if (file) {
+        return await blobToDataUrl(file)
+      }
+
+      const name = blobNameFromPath(filePath)
+
+      if (name) {
+        const blob = await this.blobStore.read(name)
+
+        if (blob) {
+          return await blobToDataUrl(blob)
+        }
+      }
+    } catch {
+      // 读失败按未命中处理（与桌面取不到返回空一致）。
+    }
+
+    return ''
   }
 
   /** 粘贴剪贴板图片：ClipboardItem → 虚拟路径（无图片 / 无权限返回 ''，
@@ -365,13 +441,12 @@ export class BrowserAdapter {
         }
 
         const blob = await item.getType(type)
-        const bytes = new Uint8Array(await blob.arrayBuffer())
         const ext =
           Object.entries(BrowserAdapter.EXT_MIME_TYPES).find(
             ([, mime]) => mime === blob.type,
           )?.[0] ?? '.png'
 
-        return this.saveImageBuffer(bytes, ext)
+        return this.saveImageFile(blob, 'pasted' + ext)
       }
 
       return ''
@@ -389,6 +464,23 @@ function blobToDataUrl(blob: Blob): Promise<string> {
     reader.onerror = () => reject(reader.error ?? new Error('blob read failed'))
     reader.readAsDataURL(blob)
   })
+}
+
+/** 虚拟路径里的文件名消毒：去掉路径分隔符与危险字符（嵌进虚拟路径要可被
+ *  pathLabel 当 basename 解析，且 OPFS 文件名不能含 '/' 或 NUL）。 */
+function sanitizeBlobName(name: string): string {
+  return name
+    .replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_')
+    .replace(/^\.+$/, 'file')
+    .slice(0, 200) || 'file'
+}
+
+/** 从虚拟路径提取 OPFS 文件名（web-blob://attach/<id>-<name> → <id>-<name>）；
+ *  非虚拟路径返回 ''。 */
+function blobNameFromPath(path: string): string {
+  const prefix = 'web-blob://attach/'
+
+  return path.startsWith(prefix) ? path.slice(prefix.length) : ''
 }
 
 interface BatteryLike {

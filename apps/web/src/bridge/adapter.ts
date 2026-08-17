@@ -20,14 +20,19 @@ import type {
 } from '@/global'
 
 import { BrowserAdapter } from './browser'
+import type { AttachmentBlobStore } from './blob-store'
 import { DeniedAdapter } from './denied'
 import { GatewayAdapter, type WebBridgeOptions } from './gateway'
 
 type Bridge = Window['hermesDesktop']
 
-export function buildWebBridge(options: WebBridgeOptions = {}): Bridge {
+export function buildWebBridge(
+  options: WebBridgeOptions = {},
+  blobStore?: AttachmentBlobStore,
+): Bridge {
   const gateway = new GatewayAdapter(options)
-  const browser = new BrowserAdapter()
+  // ADR-0020：附件字节存储默认 OPFS；测试注入 MemoryBlobStore（jsdom 无 OPFS）。
+  const browser = new BrowserAdapter(blobStore)
   const denied = new DeniedAdapter()
 
   const bridge: Bridge = {
@@ -119,9 +124,12 @@ export function buildWebBridge(options: WebBridgeOptions = {}): Bridge {
     readDir: (path) => gateway.readDir(path),
     readFileText: (path) => gateway.readFileText(path),
     writeTextFile: (path, content) => gateway.writeTextFile(path, content),
-    // 虚拟 blob 路径（web-blob://，ADR-0011）优先浏览器缓存；其余走 gateway REST。
+    // 虚拟 blob 路径（web-blob://，ADR-0020）优先浏览器存储（File 引用 /
+    // OPFS）；其余走 gateway REST。
     readFileDataUrl: async (path) =>
       (await browser.readFileDataUrl(path)) || gateway.readFileDataUrl(path),
+    saveImageFile: (blob, name) => browser.saveImageFile(blob, name),
+    releaseBlobFile: (path) => browser.releaseBlobFile(path),
     gitRoot: (path) => gateway.gitRoot(path),
     git: gateway.git,
 
@@ -139,6 +147,7 @@ export function buildWebBridge(options: WebBridgeOptions = {}): Bridge {
     saveImageFromUrl: (url) => browser.saveImageFromUrl(url),
     saveImageBuffer: (data, ext) => browser.saveImageBuffer(data, ext),
     saveClipboardImage: () => browser.saveClipboardImage(),
+    // ADR-0020 附件字节存储：File 引用 / OPFS 落盘（见 browser.ts）。
     normalizePreviewTarget: (target) => denied.normalizePreviewTarget(target),
     watchPreviewFile: (url) => denied.watchPreviewFile(url),
     stopPreviewFileWatch: (id) => denied.stopPreviewFileWatch(id),
@@ -182,8 +191,11 @@ export function buildWebBridge(options: WebBridgeOptions = {}): Bridge {
 }
 
 /** 安装桥到 window.hermesDesktop（必须在渲染树挂载前执行）。返回桥实例。 */
-export function installWebBridge(options: WebBridgeOptions = {}): Bridge {
-  const bridge = buildWebBridge(options)
+export function installWebBridge(
+  options: WebBridgeOptions = {},
+  blobStore?: AttachmentBlobStore,
+): Bridge {
+  const bridge = buildWebBridge(options, blobStore)
   window.hermesDesktop = bridge
 
   return bridge

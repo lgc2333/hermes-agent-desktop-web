@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { buildWebBridge, installWebBridge } from './adapter'
+import { MemoryBlobStore } from './blob-store'
 import { loadRegistry } from './registry'
 
 type Bridge = Window['hermesDesktop']
@@ -78,11 +79,14 @@ describe('buildWebBridge / installWebBridge', () => {
   })
 })
 
-describe('browser virtual blob files (ADR-0010: saveImageBuffer/saveClipboardImage)', () => {
+describe('browser virtual blob files (ADR-0020: saveImageBuffer/saveClipboardImage)', () => {
+  // jsdom 无 OPFS：blob 存储注入内存 fake（ADR-0020 存储层抽象）。
+  const makeBridge = () => buildWebBridge({}, new MemoryBlobStore())
+
   it('saveImageBuffer returns a virtual path whose bytes read back as a data URL (no gateway fetch)', async () => {
     const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
-    const bridge = buildWebBridge()
+    const bridge = makeBridge()
 
     const path = await bridge.saveImageBuffer(new Uint8Array([1, 2, 3]), '.png')
     expect(path).toMatch(/^web-blob:\/\/attach\//)
@@ -102,7 +106,7 @@ describe('browser virtual blob files (ADR-0010: saveImageBuffer/saveClipboardIma
       }),
     )
     vi.stubGlobal('fetch', fetchMock)
-    const bridge = buildWebBridge()
+    const bridge = makeBridge()
 
     const dataUrl = await bridge.readFileDataUrl('/repo/a.png')
     expect(dataUrl).toBe('data:image/png;base64,AAAA')
@@ -113,7 +117,7 @@ describe('browser virtual blob files (ADR-0010: saveImageBuffer/saveClipboardIma
   })
 
   it('saveImageBuffer accepts ArrayBuffer input', async () => {
-    const bridge = buildWebBridge()
+    const bridge = makeBridge()
 
     const path = await bridge.saveImageBuffer(new Uint8Array([255]).buffer, '.jpg')
     expect(path).toMatch(/^web-blob:\/\/attach\//)
@@ -121,7 +125,7 @@ describe('browser virtual blob files (ADR-0010: saveImageBuffer/saveClipboardIma
   })
 
   it('saveClipboardImage returns empty when the clipboard API is unavailable', async () => {
-    const bridge = buildWebBridge()
+    const bridge = makeBridge()
 
     expect(await bridge.saveClipboardImage()).toBe('')
   })
@@ -137,7 +141,7 @@ describe('browser virtual blob files (ADR-0010: saveImageBuffer/saveClipboardIma
     ;(navigator as { clipboard?: unknown }).clipboard = {
       read: vi.fn(async () => [item]),
     }
-    const bridge = buildWebBridge()
+    const bridge = makeBridge()
 
     const path = await bridge.saveClipboardImage()
     expect(path).toMatch(/^web-blob:\/\/attach\//)

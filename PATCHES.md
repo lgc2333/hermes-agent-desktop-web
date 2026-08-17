@@ -89,6 +89,16 @@ git subtree merge --prefix=vendor/hermes-desktop $NEW_FILTERED --squash
   - 原因：Web 端 find 桥面布尔门 denied（ADR-0010/0011），命中会 preventDefault + 打开无功能 find-bar、吞掉浏览器原生查找；handler 缺失 → dispatch 走 "无 handler → return"（不 preventDefault），浏览器原生查找（Ctrl/Cmd+F）接管（ADR-0019）。重绑/多绑定语义自动正确：任何 combo 命中 view.findInPage 都无效，mod+f 改绑其他动作照常执行
   - 同步注意：桌面构建不读 VITE_WEB_BUILD，行为不变；上游若重构 handlersRef 或 view.findInPage 接线，按"Web 构建不注册该 handler"语义恢复
 
+- vendor/hermes-desktop/src/global.d.ts
+  - 改动：`hermesDesktop` 表面新增可选 `saveImageFile(blob, name)` 与 `releaseBlobFile(filePath)`（ADR-0020 附件字节存储二分：File 引用 / OPFS）。桌面端 main 进程不注册（保持可选），Web 桥面 adapter.ts 实现
+  - 原因：Web 端浏览器 File 无 gateway 侧路径，附件字节存储改 File 引用 + OPFS 落盘（ADR-0020），渲染层经这两入口存取/释放本地字节；submit 提交链路复用 data_url 零改动
+  - 同步注意：上游若增改 hermesDesktop 附件相关表面，按"saveImageFile 优先、saveImageBuffer 回退"语义合并（见 use-composer-actions.ts 条目）
+
+- vendor/hermes-desktop/src/app/chat/hooks/use-composer-actions.ts
+  - 改动：三处（ADR-0020）——① attachImageBlob 去掉无条件 arrayBuffer()，改为优先调 `window.hermesDesktop.saveImageFile(blob, name)`（Web：File 保留引用 / Blob 落 OPFS），桌面端无该表面时回落旧 `saveImageBuffer` bytes 路径；② 新增 `attachFileBlob(file)`：`saveImageFile(file) → attachContextFilePath(虚拟路径)`，attachDroppedItems 非图片分支在 `!filePath`（浏览器 File 无路径）时调用；③ removeAttachment 对 `web-blob://` 前缀路径附件调 `releaseBlobFile` 显式释放本地字节
+  - 原因：Web 端非图片文件拖拽恢复可用（ADR-0020），图片迁移到 File 引用 / OPFS；chip 移除释放字节，残留由页面刷新兜底
+  - 同步注意：桌面构建 `saveImageFile` 为 undefined → 走原 saveImageBuffer 路径，行为不变；上游若重构 attach 链路（如新增桥面方法），按"Web 专有扩展可选 + 窄回退"语义合并；`attachFileBlob` 仅浏览器 File 无路径分支生效，不触及桌面路径附加
+
 ## 5. 需注意的上游联动
 
 非 vendor 但依赖 vendor/上游结构、subtree pull 后需核对的 Web 侧文件：

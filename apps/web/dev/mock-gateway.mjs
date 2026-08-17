@@ -17,6 +17,9 @@
  */
 
 import http from 'node:http'
+import fs from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { createHash, randomBytes } from 'node:crypto'
 import { WebSocketServer } from 'ws'
 
@@ -32,6 +35,11 @@ const OAUTH_MODE = (process.env.MOCK_OAUTH ?? '0') === '1'
 // 旧网关或 password-only provider 形态）：/auth/password-login 换 cookie 会话，
 // /api/* 全部挂 cookie 门，WS 走 ?ticket=。dev 凭据 admin/admin。
 const PASSWORD_MODE = (process.env.MOCK_PASSWORD ?? '0') === '1'
+
+// ── M8（ADR-0020）：file.attach 落盘目录（e2e 验收查这里；temp/ 已 gitignore）──
+// 仓库根路径经 import.meta.url 定位，避免依赖启动 cwd。
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
+const MOCK_ATTACHMENTS_DIR = path.join(REPO_ROOT, 'temp', 'mock-attachments')
 
 // ── OAuth 模拟状态（进程内存，对齐真 gateway 的 dashboard_auth/native_flow）──
 // broker_state -> { code_challenge, redirect_uri, client_state, expires_at }
@@ -378,6 +386,32 @@ const RPC_HANDLERS = {
     return { ok: false, error: 'no pending approval' }
   },
   'process.kill': () => ({ ok: true }),
+  // M8（ADR-0020）：file.attach——字节经 data_url 上传时解码落盘到 mock
+  // attachments 目录（真 gateway 写 <profile_home>/attachments/），返回
+  // ref_text 供提交链路改写 @file: 引用。
+  'file.attach': (params) => {
+    const session = getSessionByRuntime(params?.session_id)
+    const name = String(params?.name ?? 'file')
+    const dataUrl = params?.data_url == null ? '' : String(params.data_url)
+    const b64 = dataUrl.includes(',') ? dataUrl.split(',')[1] ?? '' : ''
+    const bytes = Buffer.from(b64, 'base64')
+    fs.mkdirSync(MOCK_ATTACHMENTS_DIR, { recursive: true })
+    const safeName = name.replace(/[^\w.-]+/g, '_') || 'file'
+    const refPath = path.join(MOCK_ATTACHMENTS_DIR, `${Date.now().toString(36)}-${safeName}`)
+    fs.writeFileSync(refPath, bytes)
+
+    return {
+      attached: true,
+      path: refPath,
+      ref_path: refPath,
+      ref_text: `@file:${refPath}`,
+      uploaded: true,
+      name,
+      // 供 e2e 断言尺寸（与真 gateway 字段无关，mock 专属调试字段）。
+      _mock_bytes: bytes.length,
+      sessionStored: session ? session.storedId : null,
+    }
+  },
   'approval.received': () => ({ ok: true }),
   'approval.pending': () => ({ ok: true }),
   'clarify.respond': () => ({ ok: true }),
