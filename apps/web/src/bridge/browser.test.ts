@@ -35,18 +35,20 @@ describe('BlobStore 抽象', () => {
           yield [name, entry]
         }
       }),
-      getDirectoryHandle: vi.fn(async (name: string, options?: { create?: boolean }) => {
-        if (options?.create !== false && options?.create !== undefined) {
-          // sub directory handle not exercised here
-        }
-        throw new Error('not a directory op')
-      }),
+      getDirectoryHandle: vi.fn(
+        async (name: string, options?: { create?: boolean }) => {
+          if (options?.create !== false && options?.create !== undefined) {
+            // sub directory handle not exercised here
+          }
+          throw new Error('not a directory op')
+        },
+      ),
       getFileHandle: vi.fn(async (name: string) => ({
         createWritable: vi.fn(async () => ({
           write: vi.fn(async (data: Blob) => {
             files.set(name, { data: await data.text(), blob: data })
           }),
-          close: vi.fn(async () => undefined)
+          close: vi.fn(async () => undefined),
         })),
         getFile: vi.fn(async () => {
           const entry = files.get(name)
@@ -56,24 +58,27 @@ describe('BlobStore 抽象', () => {
           }
 
           return new Blob([entry.data], { type: 'text/plain' })
-        })
+        }),
       })),
       removeEntry: vi.fn(async (name: string) => {
         files.delete(name)
-      })
+      }),
     }
     const rootHandle = {
       getDirectoryHandle: vi.fn(async (name: string) => {
         expect(name).toBe(WEB_BLOBS_DIR)
         return dirHandle
-      })
+      }),
     }
     const storage = { getDirectory: vi.fn(async () => rootHandle) }
     vi.stubGlobal('navigator', { storage } as never)
 
     const store = new OpfsBlobStore()
 
-    await store.write('x/1.txt'.replace('/', '-'), new Blob(['abc'], { type: 'text/plain' }))
+    await store.write(
+      'x/1.txt'.replace('/', '-'),
+      new Blob(['abc'], { type: 'text/plain' }),
+    )
     const readBack = await store.read('x-1.txt')
     expect(await readBack?.text()).toBe('abc')
 
@@ -164,7 +169,9 @@ describe('BrowserAdapter 附件存储（ADR-0020）', () => {
 
   it('虚拟路径嵌真实文件名：pathLabel 语义取 basename 供 file.attach name 用', async () => {
     const adapter = makeAdapter()
-    const file = new File(['hello'], 'quarterly report.pdf', { type: 'application/pdf' })
+    const file = new File(['hello'], 'quarterly report.pdf', {
+      type: 'application/pdf',
+    })
 
     const path = await adapter.saveImageFile(file, 'quarterly report.pdf')
     // web-blob://attach/<id>-<name>：末段 = <id>-<name>，嵌真实文件名。

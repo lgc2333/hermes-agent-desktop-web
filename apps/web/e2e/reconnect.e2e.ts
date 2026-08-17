@@ -74,7 +74,9 @@ describe('reconnect A: token disconnect → auto-reconnect', () => {
       page,
       () => {
         const sb = document.querySelector('[data-slot="statusbar"]')?.innerText || ''
-        return sb.includes('ready') || /open|connected/i.test(sb) ? sb.slice(0, 120) : null
+        return sb.includes('ready') || /open|connected/i.test(sb)
+          ? sb.slice(0, 120)
+          : null
       },
       { timeout: 45000, label: 'reconnect ready' },
     )
@@ -120,11 +122,10 @@ describe('reconnect C: feedback when sending while connecting', () => {
 
     // No fake success: the canned reply cannot stream from a dead gateway, and
     // either the composer is disabled or an error/offline hint is visible.
-    const disFeedback = await page.evaluate(
-      () =>
-        /not connected|unavailable|failed|error|offline|connection lost/i.test(
-          document.body.innerText.slice(-700),
-        ),
+    const disFeedback = await page.evaluate(() =>
+      /not connected|unavailable|failed|error|offline|connection lost/i.test(
+        document.body.innerText.slice(-700),
+      ),
     )
     const gotReply = await page.evaluate(() =>
       document.body.innerText.includes('Hello from the mock gateway'),
@@ -138,7 +139,9 @@ describe('reconnect C: feedback when sending while connecting', () => {
       page,
       () => {
         const sb = document.querySelector('[data-slot="statusbar"]')?.innerText || ''
-        return sb.includes('ready') || /open|connected/i.test(sb) ? sb.slice(0, 120) : null
+        return sb.includes('ready') || /open|connected/i.test(sb)
+          ? sb.slice(0, 120)
+          : null
       },
       { timeout: 45000, label: 'mock recovered' },
     )
@@ -190,9 +193,10 @@ describe('reconnect C2: submit while statusbar shows connecting', () => {
       const txt = document.body.innerText
       return {
         msgInTranscript: txt.includes('SEND-WHILE-OFFLINE'),
-        errorVisible: /not connected|unavailable|failed to|offline|connection lost/i.test(
-          txt.slice(-700),
-        ),
+        errorVisible:
+          /not connected|unavailable|failed to|offline|connection lost/i.test(
+            txt.slice(-700),
+          ),
       }
     })
     expect(disState.errorVisible || !disState.msgInTranscript).toBe(true)
@@ -204,7 +208,9 @@ describe('reconnect C2: submit while statusbar shows connecting', () => {
       page,
       () => {
         const sb = document.querySelector('[data-slot="statusbar"]')?.innerText || ''
-        return sb.includes('ready') || /open|connected/i.test(sb) ? sb.slice(0, 120) : null
+        return sb.includes('ready') || /open|connected/i.test(sb)
+          ? sb.slice(0, 120)
+          : null
       },
       { timeout: 40000, label: 'ready again' },
     )
@@ -253,7 +259,7 @@ describe('reconnect B: OAuth session lost on proxy restart', () => {
             /sign in with/i.test(x.textContent ?? '') ||
             /^sign in$/i.test((x.textContent ?? '').trim()),
         )
-        return b ? b.textContent?.trim() ?? null : null
+        return b ? (b.textContent?.trim() ?? null) : null
       },
       { timeout: 30000, label: 'sign in button' },
     )
@@ -283,10 +289,12 @@ describe('reconnect B: OAuth session lost on proxy restart', () => {
       { timeout: 45000, label: 'oauth connected UI' },
     )
     expect(connected).toBe(true)
-    expect(await poll(() => getConfig(page).then((c) => c.remoteOauthConnected === true), {
-      timeout: 15000,
-      label: 'bridge oauth connected',
-    })).toBe(true)
+    expect(
+      await poll(() => getConfig(page).then((c) => c.remoteOauthConnected === true), {
+        timeout: 15000,
+        label: 'bridge oauth connected',
+      }),
+    ).toBe(true)
   })
 
   it('streams a chat reply over the oauth session', async () => {
@@ -324,7 +332,7 @@ describe('reconnect B: OAuth session lost on proxy restart', () => {
             /sign in with/i.test(x.textContent ?? '') ||
             /^sign in$/i.test((x.textContent ?? '').trim()),
         )
-        return b ? b.textContent?.trim() ?? null : null
+        return b ? (b.textContent?.trim() ?? null) : null
       },
       { timeout: 30000, label: 'sign in returns after restart' },
     )

@@ -3,9 +3,9 @@ services:
     image: nousresearch/hermes-agent:latest
     container_name: hermes-agent
     restart: unless-stopped
-    command: ["gateway", "run"]
+    command: ['gateway', 'run']
     ports:
-      - "${HERMES_DASHBOARD_PORT:-9119}:9119"
+      - '${HERMES_DASHBOARD_PORT:-9119}:9119'
       # - "8642:8642"  # gateway port, if you want
     volumes:
       - ./data:/opt/data
@@ -28,7 +28,7 @@ services:
     depends_on:
       - hermes
     ports:
-      - "${WEB_PORT:-6722}:6722"
+      - '${WEB_PORT:-6722}:6722'
     environment:
       - WEB_DEFAULT_GATEWAY_URL=${WEB_DEFAULT_GATEWAY_URL:-http://hermes:9119}
       - WEB_PROXY_ALLOWED_TARGETS=${WEB_PROXY_ALLOWED_TARGETS:-http://hermes:9119}

@@ -135,7 +135,10 @@ export async function wsJsonRpc(
         }
       })
       let id = 1
-      const pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>()
+      const pending = new Map<
+        number,
+        { resolve: (v: unknown) => void; reject: (e: Error) => void }
+      >()
       const reply = (m: string, p: unknown) =>
         new Promise((resolve, reject) => {
           const myId = id++
@@ -147,7 +150,9 @@ export async function wsJsonRpc(
         if (frame.id && pending.has(frame.id)) {
           const p = pending.get(frame.id)!
           pending.delete(frame.id)
-          frame.error ? p.reject(new Error(JSON.stringify(frame.error))) : p.resolve(frame.result)
+          frame.error
+            ? p.reject(new Error(JSON.stringify(frame.error)))
+            : p.resolve(frame.result)
         } else if (frame.method === 'event') {
           const { type, payload } = frame.params
           if (type === 'message.delta') (out.replies as string[]).push(payload.text)

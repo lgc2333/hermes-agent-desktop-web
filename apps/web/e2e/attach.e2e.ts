@@ -76,7 +76,10 @@ describe('attach: non-image file → chip → send → gateway lands it (ADR-002
     )
     expect(res.ok).toBe(true)
     // The attachment chip should surface the file name in the DOM.
-    await waitForBodyText(page, FILE_NAME, { timeout: 20000, label: 'attachment chip visible' })
+    await waitForBodyText(page, FILE_NAME, {
+      timeout: 20000,
+      label: 'attachment chip visible',
+    })
   })
 
   it('sends the message and the mock gateway lands the file under temp/mock-attachments/', async () => {
@@ -105,7 +108,9 @@ describe('attach: non-image file → chip → send → gateway lands it (ADR-002
     const landed = await poll(
       () => {
         if (!fs.existsSync(ATTACH_DIR)) return null
-        const files = fs.readdirSync(ATTACH_DIR).filter((f) => f.endsWith(`-${FILE_NAME}`))
+        const files = fs
+          .readdirSync(ATTACH_DIR)
+          .filter((f) => f.endsWith(`-${FILE_NAME}`))
         return files.length ? files[0] : null
       },
       { timeout: 10000, label: 'attachment landed' },

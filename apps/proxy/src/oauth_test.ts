@@ -633,31 +633,37 @@ Deno.test('handlePaste: bare ?code=..&state=.. query works', async () => {
   const res = await endpoints.handlePaste(
     new Request('http://127.0.0.1:6722/auth/native/paste', {
       method: 'POST',
-      body: JSON.stringify({ target: 'http://gw:9119', url: `?code=gw-code&state=${state}` }),
+      body: JSON.stringify({
+        target: 'http://gw:9119',
+        url: `?code=gw-code&state=${state}`,
+      }),
     }),
   )
   assertEquals(res.status, 200)
   assertEquals(store.sessionCount, 1)
 })
 
-Deno.test('handlePaste: forged/unknown state rejected (CSRF), no exchange', async () => {
-  const deps = makeDeps()
-  const store = new OAuthStore(deps)
-  const endpoints = makeEndpoints(store)
+Deno.test(
+  'handlePaste: forged/unknown state rejected (CSRF), no exchange',
+  async () => {
+    const deps = makeDeps()
+    const store = new OAuthStore(deps)
+    const endpoints = makeEndpoints(store)
 
-  const res = await endpoints.handlePaste(
-    new Request('http://127.0.0.1:6722/auth/native/paste', {
-      method: 'POST',
-      body: JSON.stringify({
-        target: 'http://gw:9119',
-        url: '?code=x&state=forged',
+    const res = await endpoints.handlePaste(
+      new Request('http://127.0.0.1:6722/auth/native/paste', {
+        method: 'POST',
+        body: JSON.stringify({
+          target: 'http://gw:9119',
+          url: '?code=x&state=forged',
+        }),
       }),
-    }),
-  )
-  assertEquals(res.status, 400)
-  assertEquals(deps.calls.length, 0)
-  assertEquals(store.sessionCount, 0)
-})
+    )
+    assertEquals(res.status, 400)
+    assertEquals(deps.calls.length, 0)
+    assertEquals(store.sessionCount, 0)
+  },
+)
 
 Deno.test('handlePaste: target mismatch rejected, pending kept for retry', async () => {
   const store = new OAuthStore(makeDeps())

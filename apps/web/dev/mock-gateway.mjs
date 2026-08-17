@@ -38,7 +38,12 @@ const PASSWORD_MODE = (process.env.MOCK_PASSWORD ?? '0') === '1'
 
 // ── M8（ADR-0020）：file.attach 落盘目录（e2e 验收查这里；temp/ 已 gitignore）──
 // 仓库根路径经 import.meta.url 定位，避免依赖启动 cwd。
-const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
+const REPO_ROOT = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '..',
+  '..',
+  '..',
+)
 const MOCK_ATTACHMENTS_DIR = path.join(REPO_ROOT, 'temp', 'mock-attachments')
 
 // ── OAuth 模拟状态（进程内存，对齐真 gateway 的 dashboard_auth/native_flow）──
@@ -393,11 +398,14 @@ const RPC_HANDLERS = {
     const session = getSessionByRuntime(params?.session_id)
     const name = String(params?.name ?? 'file')
     const dataUrl = params?.data_url == null ? '' : String(params.data_url)
-    const b64 = dataUrl.includes(',') ? dataUrl.split(',')[1] ?? '' : ''
+    const b64 = dataUrl.includes(',') ? (dataUrl.split(',')[1] ?? '') : ''
     const bytes = Buffer.from(b64, 'base64')
     fs.mkdirSync(MOCK_ATTACHMENTS_DIR, { recursive: true })
     const safeName = name.replace(/[^\w.-]+/g, '_') || 'file'
-    const refPath = path.join(MOCK_ATTACHMENTS_DIR, `${Date.now().toString(36)}-${safeName}`)
+    const refPath = path.join(
+      MOCK_ATTACHMENTS_DIR,
+      `${Date.now().toString(36)}-${safeName}`,
+    )
     fs.writeFileSync(refPath, bytes)
 
     return {

@@ -92,7 +92,12 @@ export function startProxy(port = PROXY_PORT): ChildProcess {
   const c = spawn(
     'deno',
     ['run', '--allow-net', '--allow-read', '--allow-env', proxyEntry],
-    { cwd: repoRoot, detached: true, stdio: 'ignore', env: { ...process.env, PORT: String(port) } },
+    {
+      cwd: repoRoot,
+      detached: true,
+      stdio: 'ignore',
+      env: { ...process.env, PORT: String(port) },
+    },
   )
   c.unref()
   track(`proxy:${port}`, c)
@@ -177,7 +182,13 @@ export function teardownAll(): void {
     }
   }
   children.clear()
-  for (const port of [PROXY_PORT, VITE_PORT, MOCK_TOKEN_PORT, MOCK_OAUTH_PORT, MOCK_PASSWORD_PORT]) {
+  for (const port of [
+    PROXY_PORT,
+    VITE_PORT,
+    MOCK_TOKEN_PORT,
+    MOCK_OAUTH_PORT,
+    MOCK_PASSWORD_PORT,
+  ]) {
     killPort(port)
   }
 }

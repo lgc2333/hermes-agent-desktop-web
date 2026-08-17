@@ -27,8 +27,14 @@ export interface AttachmentBlobStore {
 
 interface OpfsFileSystemDirectoryHandle {
   entries(): AsyncIterable<[string, unknown]>
-  getDirectoryHandle(name: string, options?: { create?: boolean }): Promise<OpfsFileSystemDirectoryHandle>
-  getFileHandle(name: string, options?: { create?: boolean }): Promise<OpfsFileSystemFileHandle>
+  getDirectoryHandle(
+    name: string,
+    options?: { create?: boolean },
+  ): Promise<OpfsFileSystemDirectoryHandle>
+  getFileHandle(
+    name: string,
+    options?: { create?: boolean },
+  ): Promise<OpfsFileSystemFileHandle>
   removeEntry(name: string): Promise<void>
 }
 
@@ -85,7 +91,9 @@ export class OpfsBlobStore implements AttachmentBlobStore {
       entries.push(name)
     }
 
-    await Promise.all(entries.map((name) => dir.removeEntry(name).catch(() => undefined)))
+    await Promise.all(
+      entries.map((name) => dir.removeEntry(name).catch(() => undefined)),
+    )
   }
 
   async write(name: string, blob: Blob): Promise<void> {

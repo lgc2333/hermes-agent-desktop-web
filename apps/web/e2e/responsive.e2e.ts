@@ -1,8 +1,20 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import type { Browser, Page } from 'playwright'
 import { launchMobilePage } from './helpers/browser'
-import { APP_URL, MOCK_TOKEN_PORT, startMock, stopByPort, waitForHttp } from './helpers/topology'
-import { waitForReady, waitFor, waitForBodyText, bootClean, gotoHash } from './helpers/bridge'
+import {
+  APP_URL,
+  MOCK_TOKEN_PORT,
+  startMock,
+  stopByPort,
+  waitForHttp,
+} from './helpers/topology'
+import {
+  waitForReady,
+  waitFor,
+  waitForBodyText,
+  bootClean,
+  gotoHash,
+} from './helpers/bridge'
 
 // From cdp-mobile3.mjs + cdp-statusbar-check.mjs — M4 responsive acceptance on a
 // mobile viewport (390x844). The plain token mock (MOCK_TOKEN_PORT) boots the SPA

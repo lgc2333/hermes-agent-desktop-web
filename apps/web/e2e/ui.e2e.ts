@@ -1,7 +1,13 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import type { Browser, Page } from 'playwright'
 import { launchBrowser } from './helpers/browser'
-import { APP_URL, MOCK_TOKEN_PORT, startMock, stopByPort, waitForHttp } from './helpers/topology'
+import {
+  APP_URL,
+  MOCK_TOKEN_PORT,
+  startMock,
+  stopByPort,
+  waitForHttp,
+} from './helpers/topology'
 import {
   waitForReady,
   waitFor,
@@ -47,7 +53,7 @@ describe('ui: settings OAuth sign-in + chat + persistence', () => {
             /sign in with/i.test(x.textContent ?? '') ||
             /^sign in$/i.test((x.textContent ?? '').trim()),
         )
-        return b ? b.textContent?.trim() ?? null : null
+        return b ? (b.textContent?.trim() ?? null) : null
       },
       { timeout: 30000, label: 'sign in button' },
     )
@@ -66,8 +72,11 @@ describe('ui: settings OAuth sign-in + chat + persistence', () => {
     const connected = await waitFor(
       page,
       () => {
-        const btns = [...document.querySelectorAll('button')].map((b) => b.textContent?.trim() ?? '')
-        return btns.some((x) => /sign out/i.test(x)) || btns.some((x) => /signed in|connected to/i.test(x))
+        const btns = [...document.querySelectorAll('button')].map(
+          (b) => b.textContent?.trim() ?? '',
+        )
+        return btns.some((x) => /sign out/i.test(x)) ||
+          btns.some((x) => /signed in|connected to/i.test(x))
           ? true
           : null
       },
@@ -85,7 +94,10 @@ describe('ui: settings OAuth sign-in + chat + persistence', () => {
   it('streams a chat reply typed in the composer', async () => {
     await gotoHash(page, '#/')
     await sendChat(page, 'hello from m3 ui')
-    await waitForBodyText(page, 'Hello from the mock gateway', { timeout: 30000, label: 'reply' })
+    await waitForBodyText(page, 'Hello from the mock gateway', {
+      timeout: 30000,
+      label: 'reply',
+    })
   })
 
   it('keeps the oauth session across a refresh and restores the chat', async () => {
@@ -94,6 +106,8 @@ describe('ui: settings OAuth sign-in + chat + persistence', () => {
     const config = await getConfig(page)
     expect(config.remoteOauthConnected).toBe(true)
     await waitForBodyText(page, 'Hello from the mock gateway', { timeout: 20000 })
-    expect(await page.evaluate(() => document.body.innerText)).toMatch(/hello from m3 ui/i)
+    expect(await page.evaluate(() => document.body.innerText)).toMatch(
+      /hello from m3 ui/i,
+    )
   })
 })

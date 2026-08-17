@@ -77,7 +77,8 @@ describe('oauth-paste: paste-back login completes an oauth session', () => {
       page,
       () => {
         const t = [...document.querySelectorAll('textarea')].find(
-          (x) => /callback/i.test(x.placeholder ?? '') || /回调/i.test(x.placeholder ?? ''),
+          (x) =>
+            /callback/i.test(x.placeholder ?? '') || /回调/i.test(x.placeholder ?? ''),
         )
         return t ? t.placeholder : null
       },
@@ -91,7 +92,8 @@ describe('oauth-paste: paste-back login completes an oauth session', () => {
     // React controlled textarea — use the native setter + input event.
     await page.evaluate((value) => {
       const ta = [...document.querySelectorAll('textarea')].find(
-        (x) => /callback/i.test(x.placeholder ?? '') || /回调/i.test(x.placeholder ?? ''),
+        (x) =>
+          /callback/i.test(x.placeholder ?? '') || /回调/i.test(x.placeholder ?? ''),
       ) as HTMLTextAreaElement
       const setter = Object.getOwnPropertyDescriptor(
         window.HTMLTextAreaElement.prototype,
@@ -110,10 +112,13 @@ describe('oauth-paste: paste-back login completes an oauth session', () => {
       return true
     })
     expect(clicked).toBe(true)
-    const connected = await poll(() => getConfig(page).then((c) => c.remoteOauthConnected === true), {
-      timeout: 15000,
-      label: 'oauth connected after paste',
-    })
+    const connected = await poll(
+      () => getConfig(page).then((c) => c.remoteOauthConnected === true),
+      {
+        timeout: 15000,
+        label: 'oauth connected after paste',
+      },
+    )
     expect(connected).toBe(true)
   })
 

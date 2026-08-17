@@ -24,10 +24,10 @@ ADR-0012 用"虚拟路径 + 内存 dataURL 缓存"让图片附件在 Web 上走�
   createWritable + file.stream() 流式写盘，零依赖。
 - 备选方案对比：
   a) **File 引用 + OPFS 二分**（本 ADR）：File 零拷贝零常驻；Blob 落盘；
-     存储层小接口可单测（内存 fake）；
+  存储层小接口可单测（内存 fake）；
   b) 维持内存 dataURL 缓存（ADR-0012）：非图片仍不可用，大文件常驻堆；
   c) multipart upload-stream（/api/files/upload-stream）：gateway 端点存在
-     但多一套字节通道 + 新提交链路，造轮子，弃。
+  但多一套字节通道 + 新提交链路，造轮子，弃。
 - 生命周期取舍：File 引用 Map 随页面消亡（刷新即清，无泄漏）；OPFS
   web-blobs/ 目录页面载入时初始化清空（无 TTL、无增量清理，磁盘空间
   不心疼）；附件移除（chip ×）时 releaseBlobFile 显式释放。

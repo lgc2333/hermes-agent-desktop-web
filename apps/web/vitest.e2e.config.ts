@@ -28,4 +28,3 @@ export default defineConfig({
     globalSetup: [path.join(here, 'e2e', 'global-setup.ts')],
   },
 })
-

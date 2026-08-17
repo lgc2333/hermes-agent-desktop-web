@@ -405,7 +405,11 @@ function normalizeTargetUrl(raw: string): string {
 export function createSessionEndpoints(
   store: SessionStore,
   ctx: SessionHandlerContext,
-  opts: { /** 目标白名单（ADR-0015）：返回 false 时 login 拒绝 403。 */ allowTarget?: (target: string) => boolean } = {},
+  opts: {
+    /** 目标白名单（ADR-0015）：返回 false 时 login 拒绝 403。 */ allowTarget?: (
+      target: string,
+    ) => boolean
+  } = {},
 ): SessionEndpoints {
   const readTarget = (body: unknown): string => {
     const target = String((body as { target?: unknown })?.target ?? '')

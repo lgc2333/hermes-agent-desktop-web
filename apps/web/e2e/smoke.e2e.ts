@@ -1,7 +1,13 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import type { Browser, Page } from 'playwright'
 import { launchBrowser } from './helpers/browser'
-import { APP_URL, MOCK_TOKEN_PORT, startMock, stopByPort, waitForHttp } from './helpers/topology'
+import {
+  APP_URL,
+  MOCK_TOKEN_PORT,
+  startMock,
+  stopByPort,
+  waitForHttp,
+} from './helpers/topology'
 import { clearRegistry } from './helpers/registry'
 import { waitForReady, waitFor } from './helpers/bridge'
 

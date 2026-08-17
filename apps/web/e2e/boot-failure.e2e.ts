@@ -116,7 +116,9 @@ describe('boot-failure: unreachable gateway overlay + recovery hiding', () => {
     const visibleCards = await waitFor(
       page,
       () => {
-        const cards = [...document.querySelectorAll('.grid.auto-rows-fr.grid-cols-1 > button')]
+        const cards = [
+          ...document.querySelectorAll('.grid.auto-rows-fr.grid-cols-1 > button'),
+        ]
         if (cards.length === 0) return null
         return cards
           .filter((b) => getComputedStyle(b).display !== 'none')

@@ -34,7 +34,11 @@ export const readRegistry = (page: Page) =>
   ) as Promise<WebConnectionsStore>
 
 /** A token-mode registry pointing at a single gateway URL. */
-export function tokenRegistry(url: string, token = 'mock-token', id = 'gw'): WebConnectionsStore {
+export function tokenRegistry(
+  url: string,
+  token = 'mock-token',
+  id = 'gw',
+): WebConnectionsStore {
   return {
     version: 1,
     primary: id,

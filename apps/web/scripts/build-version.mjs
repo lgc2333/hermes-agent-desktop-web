@@ -56,7 +56,10 @@ export function composeWebVersion(desktopVersion, projectId) {
 export function webVersionString(webRoot) {
   const repoRoot = path.resolve(webRoot, '../..')
   const desktopPkg = JSON.parse(
-    fs.readFileSync(path.join(repoRoot, 'vendor', 'hermes-desktop', 'package.json'), 'utf8'),
+    fs.readFileSync(
+      path.join(repoRoot, 'vendor', 'hermes-desktop', 'package.json'),
+      'utf8',
+    ),
   )
   const webPkg = JSON.parse(fs.readFileSync(path.join(webRoot, 'package.json'), 'utf8'))
   const git = gitInfo(repoRoot)

@@ -804,10 +804,14 @@ export function createOauthEndpoints(
 
         await exchangeCode(store, state, parsed.code)
 
-        return json(200, { ok: true }, {
-          'Cache-Control': 'no-store',
-          'Set-Cookie': sessionCookieValue(pending.sessionKey),
-        })
+        return json(
+          200,
+          { ok: true },
+          {
+            'Cache-Control': 'no-store',
+            'Set-Cookie': sessionCookieValue(pending.sessionKey),
+          },
+        )
       } catch (error) {
         if (state) {
           store.removePending(state)

@@ -79,7 +79,7 @@ describe('oauth: bridge-level native login + chat + persistence', () => {
         const b = [...document.querySelectorAll('button')].find((x) =>
           /sign in|log in|oauth|sign-in/i.test(x.textContent ?? ''),
         )
-        return b ? b.textContent?.trim() ?? null : null
+        return b ? (b.textContent?.trim() ?? null) : null
       },
       { timeout: 30000, label: 'oauth button' },
     )

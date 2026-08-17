@@ -76,8 +76,8 @@ describe('find: Ctrl+F does not open the vendor find-bar (ADR-0019)', () => {
     const palette = await waitFor(
       page,
       () =>
-        [...document.querySelectorAll('[role="dialog"]')].some(
-          (d) => /search sessions/i.test(d.querySelector('input')?.placeholder ?? ''),
+        [...document.querySelectorAll('[role="dialog"]')].some((d) =>
+          /search sessions/i.test(d.querySelector('input')?.placeholder ?? ''),
         )
           ? true
           : null,
