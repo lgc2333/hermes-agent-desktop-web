@@ -47,11 +47,20 @@ ws.onmessage = (event) => {
   }
 }
 async function evalIn(sessionId, expression, awaitPromise = true) {
-  const res = await send(
-    'Runtime.evaluate',
-    { expression, awaitPromise, returnByValue: true },
-    sessionId,
-  )
+  let res
+  try {
+    res = await send(
+      'Runtime.evaluate',
+      { expression, awaitPromise, returnByValue: true },
+      sessionId,
+    )
+  } catch (e) {
+    // 页面导航/重载期间 Runtime.evaluate 会以 -32000 失败
+    // （Inspected target navigated or closed）——视为"尚未就绪"，
+    // 让 waitFor 继续轮询，而不是让整个脚本崩溃。
+    if (/navigated or closed/i.test(String(e.message))) return undefined
+    throw e
+  }
   if (res.exceptionDetails)
     throw new Error(
       'eval failed: ' +
@@ -81,14 +90,19 @@ async function pressCtrl(sessionId, key, code, vk) {
 
 const { targetId } = await send('Target.createTarget', { url: 'about:blank' })
 const { sessionId } = await send('Target.attachToTarget', { targetId, flatten: true })
+console.log('INFO: target attached', targetId)
 await send('Runtime.enable', {}, sessionId)
 await send('Page.enable', {}, sessionId)
 await send('Page.navigate', { url: APP }, sessionId)
+console.log('INFO: navigated to', APP)
 // 清注册表避免脚本间污染（e2e 约定），等 boot。
 await waitFor(sessionId, '!!window.hermesDesktop', 60000, 'boot')
+console.log('INFO: booted (window.hermesDesktop present)')
 await evalIn(sessionId, `(() => { localStorage.removeItem('hermes-web.connections.v1'); return true })()`)
+console.log('INFO: registry cleared, reloading')
 await send('Page.reload', {}, sessionId)
 await waitFor(sessionId, '!!window.hermesDesktop', 60000, 'boot-after-reset')
+console.log('INFO: rebooted after registry reset')
 
 // ── 场景 1：合成 Ctrl+F —— vendor dispatch 不应 preventDefault ─────────
 const synth = await evalIn(
@@ -147,7 +161,9 @@ if (nativeFindNode) {
 await pressCtrl(sessionId, 'k', 'KeyK', 75)
 const palette = await waitFor(
   sessionId,
-  `!![...document.querySelectorAll('[role="dialog"]')].find(d => /command|命令|palette/i.test(d.getAttribute('aria-label') ?? d.className ?? ''))`,
+  // palette 是 Radix Dialog：aria-label 为 null、className 全是 tailwind 类，
+  // 稳定的语义锚点是它内部的搜索框 placeholder（"Search sessions, views, and actions"）。
+  `!![...document.querySelectorAll('[role="dialog"]')].find(d => /search sessions/i.test(d.querySelector('input')?.placeholder ?? ''))`,
   15000,
   'command palette dialog',
 ).catch(() => null)
