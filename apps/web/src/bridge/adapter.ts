@@ -185,6 +185,9 @@ export function buildWebBridge(
     setTranslucency: (payload) => denied.setTranslucency(payload),
     setKeepAwake: (on) => denied.setKeepAwake(on),
     setPreviewShortcutActive: (active) => denied.setPreviewShortcutActive(active),
+    // main 新增桥面：桌面插件 profile 路由表（跨联合注册表免凭证路由）。Web 无
+    // 桌面主进程/插件层，恒返回空表（类 3 空实现）。
+    getProfileRoutes: async () => [],
     readWindowBelow: async () => null,
   }
 
