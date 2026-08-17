@@ -130,6 +130,12 @@ describe('reconnect C: feedback when sending while connecting', () => {
     const gotReply = await page.evaluate(() =>
       document.body.innerText.includes('Hello from the mock gateway'),
     )
+    // DIAG: capture real page state at the failure point
+    const diagC = await page.evaluate(() => ({
+      statusbar: (document.querySelector('[data-slot="statusbar"]')?.innerText || '').slice(0, 120),
+      tail: document.body.innerText.slice(-300),
+    }))
+    console.log('[DIAG reconnect C]', JSON.stringify(diagC))
     expect(disFeedback || !gotReply).toBe(true)
 
     // restart the mock and confirm the connection recovers to ready
@@ -174,14 +180,23 @@ describe('reconnect C2: submit while statusbar shows connecting', () => {
     stopByPort(MOCK_TOKEN_PORT)
 
     // wait until the UI has registered the disconnect (connecting state)
-    await waitFor(
+    const connectingShown = await waitFor(
       page,
       () =>
         (document.querySelector('[data-slot="statusbar"]')?.innerText || '').includes(
           'connecting',
         ),
       { timeout: 20000, label: 'statusbar connecting' },
-    )
+    ).catch((e) => {
+      // DIAG: capture real page state at the failure point
+      return page.evaluate(() => {
+        const sb = (document.querySelector('[data-slot="statusbar"]') as HTMLElement | null)?.innerText || ''
+        return { stillShown: null, statusbar: sb.slice(0, 150), tail: document.body.innerText.slice(-250) }
+      }).then((s) => {
+        console.log('[DIAG reconnect C2 connecting]', JSON.stringify(s))
+        throw e
+      })
+    })
     await page.waitForTimeout(1000)
 
     await sendChat(page, 'SEND-WHILE-OFFLINE')
@@ -315,12 +330,24 @@ describe('reconnect B: OAuth session lost on proxy restart', () => {
     await page.waitForTimeout(3000)
 
     // In-memory oauth token set is gone: bridge reports disconnected.
-    expect(
-      await poll(() => getConfig(page).then((c) => c.remoteOauthConnected === false), {
+    const oauthLost = await poll(
+      () => getConfig(page).then((c) => c.remoteOauthConnected === false),
+      {
         timeout: 20000,
         label: 'oauth session lost',
-      }),
-    ).toBe(true)
+      },
+    ).catch(async (e) => {
+      // DIAG: capture proxy + config state at the failure point
+      const cfg = await getConfig(page)
+      const diagB = await page.evaluate(() => ({
+        statusbar: (document.querySelector('[data-slot="statusbar"]') as HTMLElement | null)?.innerText || '',
+        hasSignIn: [...document.querySelectorAll('button')].some((b) => /sign in/.test(b.textContent ?? '')),
+        tail: document.body.innerText.slice(-250),
+      }))
+      console.log('[DIAG reconnect B]', JSON.stringify({ cfg, ...diagB }))
+      throw e
+    })
+    expect(oauthLost).toBe(true)
 
     // Settings page falls back to "Sign in".
     await gotoHash(page, '#/settings?tab=gateway')
