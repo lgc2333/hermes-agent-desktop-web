@@ -1,10 +1,11 @@
 import { useEffect, useRef } from 'react'
-import { useNavigate } from 'react-router'
+import { useLocation, useNavigate } from 'react-router'
 
 import { closeActiveTab } from '@/app/chat/close-tab'
 import { hudTargetSessionId } from '@/app/hud/handoff'
 import { setTerminalTakeover } from '@/app/right-sidebar/store'
 import { closeActiveTerminal, createTerminal, cycleTerminal } from '@/app/right-sidebar/terminal/terminals'
+import { appViewForPath, isOverlayView } from '@/app/routes'
 import {
   activateTreeTabSlot,
   cycleTreeTabInFocusedZone,
@@ -87,6 +88,8 @@ export interface KeybindRuntimeDeps {
   openNewSessionTab: () => void
   /** Pin/unpin the active session. */
   toggleSelectedPin: () => void
+  /** Archive the active session. */
+  archiveSelectedSession: () => void
 }
 
 type HandlerMap = Record<string, () => void>
@@ -96,6 +99,7 @@ type HandlerMap = Record<string, () => void>
 // mode is active (edit overlay / panel rebind) — records the pressed combo.
 export function useKeybinds(deps: KeybindRuntimeDeps): void {
   const navigate = useNavigate()
+  const location = useLocation()
   const { resolvedMode, setMode } = useTheme()
 
   // Keep the latest closures without re-subscribing the listener.
@@ -211,6 +215,7 @@ export function useKeybinds(deps: KeybindRuntimeDeps): void {
     ...sessionSlotHandlers,
     'session.focusSearch': requestSessionSearchFocus,
     'session.togglePin': deps.toggleSelectedPin,
+    'session.archive': deps.archiveSelectedSession,
     // openWorktreeDialog resolves the target. There is no test for a repo
     // here, so the key works from a detached session that sits inside a
     // project, and not only from a session with a repo. When no repo is in
@@ -258,7 +263,16 @@ export function useKeybinds(deps: KeybindRuntimeDeps): void {
     // preventDefault、不开 find-bar），浏览器原生查找（Ctrl/Cmd+F）自然接管。
     // 桌面构建不读 VITE_WEB_BUILD，原行为不变；重绑/多绑定语义自动正确
     // （任何 combo 命中 view.findInPage 都无效；mod+f 改绑其他动作照常执行）。
-    ...(import.meta.env.VITE_WEB_BUILD === '1' ? {} : { 'view.findInPage': openFindBar }),
+    // 上游 0.17→v2026.8.16 给桌面 handler 加了 overlay 路由抑制（isOverlayView），
+    // Web 构建分支下不携带（Web 不注册，无 overlay 冲突问题）。
+    ...(import.meta.env.VITE_WEB_BUILD === '1' ? {} : { 'view.findInPage': () => {
+      // Suppress on overlay routes so it doesn't collide with overlay-specific
+      // search surfaces (e.g. Settings search bar).
+      if (!isOverlayView(appViewForPath(location.pathname))) {
+        openFindBar()
+      }
+    } }),
+
     // ⌘G / ⌘⇧G are handled by the find bar's own capture-phase listener while
     // it is open (so they don't collide with `view.toggleReview`). These
     // registry handlers cover a user-assigned dedicated chord: stepping is a
@@ -297,6 +311,16 @@ export function useKeybinds(deps: KeybindRuntimeDeps): void {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      // An active IME composition owns the keyboard. Windows Chinese IMEs
+      // (Microsoft Pinyin, Sogou) use Ctrl+, as their punctuation-mode toggle,
+      // so without this guard that keystroke ALSO matched `nav.settings` and
+      // navigated away mid-word — unmounting the composer and destroying the
+      // unsent draft (#41079). The draft stash below makes navigation safe;
+      // this makes the IME keystroke not navigate at all.
+      if (event.isComposing) {
+        return
+      }
+
       // Capture mode: the next real key becomes the binding. Swallow everything
       // so e.g. ⌘K rebinds instead of opening the palette.
       const capturing = $capture.get()
