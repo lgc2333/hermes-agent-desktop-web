@@ -12,6 +12,10 @@ import { test } from 'vitest'
 import type { ConnectionRegistry } from './connection-registry'
 import {
   agentHandle,
+  backendScopeKey,
+  backendScopePrefix,
+  buildAgentRoster,
+  connectionDialFieldsChanged,
   connectionIdForLabel,
   labelKey,
   labelSlug,
@@ -22,8 +26,10 @@ import {
   normalizeRegistry,
   REGISTRY_VERSION,
   removeConnection,
+  resolveRegistryLocalRoute,
   setPrimaryConnection,
   uniqueLabel,
+  updateEligibility,
   upsertConnection
 } from './connection-registry'
 
@@ -68,6 +74,137 @@ test('uniqueLabel counts up (never "X 2 2") and clamps long candidates', () => {
   const long = 'x'.repeat(300)
   assert.ok(uniqueLabel(long, []).length <= 64)
   assert.ok(uniqueLabel(long, [uniqueLabel(long, [])]).length <= 64)
+})
+
+// --- backendScopeKey (composite pool keys) ---
+
+// The electron and @hermes/shared implementations MUST stay byte-identical —
+// the renderer keys its socket registry with the shared copy while the main
+// process keys the backend pool with this one. This contract test is the
+// enforcement (see the NOTE on backendScopeKey).
+test('backendScopeKey: electron and shared implementations agree everywhere', async () => {
+  // Non-literal specifier on purpose: tsconfig.electron.json's project
+  // boundary excludes apps/shared sources, but vitest resolves the workspace
+  // package fine at runtime — which is exactly what this test needs.
+  const shared = (await import(String('@hermes/shared'))) as {
+    backendScopeKey: typeof backendScopeKey
+    backendScopePrefix: typeof backendScopePrefix
+    LOCAL_CONNECTION_ID: string
+  }
+
+  const cases: [null | string | undefined, null | string | undefined][] = [
+    [null, null],
+    [undefined, undefined],
+    ['', ''],
+    ['local', 'research'],
+    ['homelab', 'research'],
+    ['homelab', ''],
+    ['  homelab  ', '  research  '],
+    ['spark-2', 'default']
+  ]
+
+  for (const [conn, profile] of cases) {
+    assert.equal(backendScopeKey(conn, profile), shared.backendScopeKey(conn, profile))
+  }
+
+  assert.equal(backendScopePrefix('homelab'), shared.backendScopePrefix('homelab'))
+  assert.equal(LOCAL_CONNECTION_ID, shared.LOCAL_CONNECTION_ID)
+})
+
+test('backendScopeKey: local/empty connection keeps the bare profile key', () => {
+  assert.equal(backendScopeKey(null, 'research'), 'research')
+  assert.equal(backendScopeKey('', 'research'), 'research')
+  assert.equal(backendScopeKey(LOCAL_CONNECTION_ID, 'research'), 'research')
+  assert.equal(backendScopeKey('local', ''), 'default')
+  assert.equal(backendScopeKey(undefined, undefined), 'default')
+})
+
+test('backendScopeKey: non-local connections get an unambiguous composite', () => {
+  assert.equal(backendScopeKey('homelab', 'research'), 'conn:homelab::research')
+  assert.equal(backendScopeKey('homelab', ''), 'conn:homelab::default')
+  // Composite keys can never collide with a plain profile name, and the
+  // prefix helper matches exactly the keys the connection owns.
+  assert.ok(backendScopeKey('homelab', 'research').startsWith(backendScopePrefix('homelab')))
+  assert.ok(!backendScopeKey('homelab-2', 'research').startsWith(backendScopePrefix('homelab')))
+  assert.ok(!'research'.startsWith(backendScopePrefix('homelab')))
+})
+
+// --- resolveRegistryLocalRoute (registry 'local' entry vs the v1 route) ---
+
+test('registry local route: delegates to the legacy path when v1 is local (single-source users byte-identical)', () => {
+  assert.deepEqual(resolveRegistryLocalRoute('research', {}), { delegate: true, poolKey: 'research' })
+  assert.deepEqual(resolveRegistryLocalRoute('', {}), { delegate: true, poolKey: 'default' })
+  assert.deepEqual(resolveRegistryLocalRoute(null, { globalRemote: false }), { delegate: true, poolKey: 'default' })
+})
+
+test('registry local route: v1 REMOTE global mode forces a genuinely-local backend (migration scenario)', () => {
+  // The migration keeps the mandatory 'local' entry AND makes the v1 remote
+  // the registry primary. If 'local' delegated to the v1 route here, the
+  // roster's "This device" rows would enumerate + dial the REMOTE primary —
+  // every profile duplicated and local agents talking to the remote box.
+  const route = resolveRegistryLocalRoute('default', { globalRemote: true })
+
+  assert.equal(route.delegate, false)
+  // The forced-local child must NOT pool under the bare profile key: that
+  // slot is where the v1 route caches the REMOTE descriptor. The composite
+  // form is prefix-owned by the local connection and collision-free.
+  assert.equal(route.poolKey, 'conn:local::default')
+  assert.ok(route.poolKey.startsWith(backendScopePrefix(LOCAL_CONNECTION_ID)))
+  assert.notEqual(route.poolKey, backendScopeKey(LOCAL_CONNECTION_ID, 'default'))
+})
+
+test('registry local route: a per-profile remote override also forces local', () => {
+  const route = resolveRegistryLocalRoute('research', { profileRemoteOverride: true })
+
+  assert.deepEqual(route, { delegate: false, poolKey: 'conn:local::research' })
+})
+
+// --- buildAgentRoster (union roster + @name-device rule) ---
+
+test('roster: unique profiles keep bare handles; duplicates get @name-device', () => {
+  const local = { id: 'local', kind: 'local' as const, label: 'This device' }
+  const homelab = { id: 'homelab', kind: 'remote' as const, label: 'Homelab', url: 'http://h:1' }
+
+  const roster = buildAgentRoster([
+    { connection: local, profiles: ['default', 'research'] },
+    { connection: homelab, profiles: ['research', 'coder'] }
+  ])
+
+  const byKey = new Map(roster.map(a => [`${a.connectionId}/${a.profile}`, a.handle]))
+
+  // research exists on both sources → both disambiguate.
+  assert.equal(byKey.get('local/research'), 'research-this-device')
+  assert.equal(byKey.get('homelab/research'), 'research-homelab')
+  // default and coder are unique → bare names.
+  assert.equal(byKey.get('local/default'), 'default')
+  assert.equal(byKey.get('homelab/coder'), 'coder')
+  assert.equal(roster.length, 4)
+})
+
+test('roster: unreachable sources contribute no rows and cannot fake duplicates', () => {
+  const local = { id: 'local', kind: 'local' as const, label: 'This device' }
+  const dead = { id: 'dead', kind: 'remote' as const, label: 'Dead box', url: 'http://d:1' }
+
+  const roster = buildAgentRoster([
+    { connection: local, profiles: ['research'] },
+    { connection: dead, profiles: null, error: 'unreachable' }
+  ])
+
+  assert.equal(roster.length, 1)
+  // Only one live source has research → bare handle, no phantom duplicate.
+  assert.equal(roster[0].handle, 'research')
+})
+
+// --- updateEligibility ---
+
+test('update fan-out: cloud is platform-managed, everything else eligible', () => {
+  assert.deepEqual(updateEligibility({ id: 'c', kind: 'cloud', label: 'Cloud' }), {
+    eligible: false,
+    reason: 'cloud-managed'
+  })
+  assert.equal(updateEligibility({ id: 'local', kind: 'local', label: 'x' }).eligible, true)
+  assert.equal(updateEligibility({ id: 'r', kind: 'remote', label: 'x' }).eligible, true)
+  assert.equal(updateEligibility({ id: 's', kind: 'ssh', label: 'x' }).eligible, true)
 })
 
 // --- normalizeConnectionInput ---
@@ -116,6 +253,7 @@ test('merge preserves fields the editor does not carry (org, ssh extras)', () =>
     org: 'nous',
     url: 'https://a.cloud'
   }
+
   const renamed = mergeConnectionInput({ id: 'c', kind: 'cloud', label: 'Renamed', url: 'https://a.cloud' }, cloud)
 
   assert.equal(renamed.org, 'nous')
@@ -416,4 +554,52 @@ test('upsertConnection replaces by id and appends new ids', () => {
 
   assert.equal(registry.connections.filter(c => c.id === a.id).length, 1)
   assert.equal(registry.connections.find(c => c.id === a.id)?.url, 'http://a:2')
+})
+
+// --- connectionDialFieldsChanged (edit → recycle decision) ---
+
+test('connectionDialFieldsChanged: label-only edits do not recycle', () => {
+  const before = {
+    id: 'homelab',
+    kind: 'remote',
+    label: 'Homelab',
+    url: 'http://10.0.0.5:9119',
+    authMode: 'token',
+    token: { encoding: 'safeStorage', value: 'abc' }
+  } as const
+
+  assert.equal(connectionDialFieldsChanged(before, { ...before, label: 'Home lab (renamed)' }), false)
+  // Identity edit is also a no-op.
+  assert.equal(connectionDialFieldsChanged(before, { ...before }), false)
+})
+
+test('connectionDialFieldsChanged: url / auth / token changes recycle', () => {
+  const before = {
+    id: 'homelab',
+    kind: 'remote',
+    label: 'Homelab',
+    url: 'http://10.0.0.5:9119',
+    authMode: 'token',
+    token: { encoding: 'safeStorage', value: 'abc' }
+  } as const
+
+  assert.equal(connectionDialFieldsChanged(before, { ...before, url: 'http://10.0.0.9:9119' }), true)
+  assert.equal(connectionDialFieldsChanged(before, { ...before, authMode: 'oauth', token: undefined }), true)
+  assert.equal(
+    connectionDialFieldsChanged(before, { ...before, token: { encoding: 'safeStorage', value: 'NEW' } }),
+    true
+  )
+})
+
+test('connectionDialFieldsChanged: ssh routing fields recycle, kind change recycles', () => {
+  const before = { id: 'box', kind: 'ssh', label: 'Box', host: 'box.lan', user: 'me', port: 22 } as const
+
+  assert.equal(connectionDialFieldsChanged(before, { ...before, label: 'Box 2' }), false)
+  assert.equal(connectionDialFieldsChanged(before, { ...before, host: 'other.lan' }), true)
+  assert.equal(connectionDialFieldsChanged(before, { ...before, port: 2222 }), true)
+  assert.equal(connectionDialFieldsChanged(before, { ...before, remoteProfile: 'work' }), true)
+  assert.equal(
+    connectionDialFieldsChanged(before, { id: 'box', kind: 'remote', label: 'Box', url: 'http://x:1' }),
+    true
+  )
 })

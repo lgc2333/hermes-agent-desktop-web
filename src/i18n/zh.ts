@@ -127,6 +127,14 @@ export const zh: Translations = {
     updateReadyMessage: count => `有 ${count} 项新更改可用。`,
     updateReadyMessageUnknown: '有新更新可用。',
     seeWhatsNew: '查看更新内容',
+    mcp: {
+      needsAuthTitle: 'MCP 服务器需要重新认证',
+      needsAuthMessage: name => `${name} MCP 需要重新认证。`,
+      errorTitle: 'MCP 服务器无法连接',
+      errorMessage: name => `${name} MCP 健康检查失败。`,
+      signIn: '登录',
+      view: '查看'
+    },
     errors: {
       elevenLabsNeedsKey: 'ElevenLabs STT 需要 ELEVENLABS_API_KEY。',
       elevenLabsRejectedKey: 'ElevenLabs 拒绝了该 API key (401)。',
@@ -201,7 +209,7 @@ export const zh: Translations = {
     enterHud: 'HUD 模式',
     exitHud: '退出 HUD 模式',
     layoutEditor: '布局编辑器',
-    layoutEditorTitle: '布局编辑器 — ⌘ 点击重置布局'
+    layoutEditorTitle: mod => `布局编辑器 — ${mod} 点击重置布局`
   },
 
   keybinds: {
@@ -248,6 +256,7 @@ export const zh: Translations = {
       'session.slot.9': '切换到最近会话 9',
       'session.focusSearch': '搜索会话',
       'session.togglePin': '固定/取消固定当前会话',
+      'session.archive': '归档当前会话',
       'workspace.newWorktree': '新建工作树',
       'workspace.openFolder': '打开文件夹为项目',
       'composer.focus': '聚焦输入框',
@@ -448,9 +457,16 @@ export const zh: Translations = {
       colorModeDesc: '选择固定模式，或让 Hermes 跟随系统设置。',
       toolViewTitle: '工具调用显示',
       toolViewDesc: '产品模式隐藏原始工具数据；技术模式显示完整输入/输出。',
+      reasoningCollapsedTitle: '默认折叠推理过程',
+      reasoningCollapsedDesc: '保留流式推理内容，但在您打开前保持折叠。',
       uiScaleTitle: '界面缩放',
       uiScaleDesc: (percent: number) =>
         `缩放整个应用的文字和界面。也可使用 Cmd/Ctrl 加 +、- 或 0 调整。当前：${percent}%`,
+      sessionDensityTitle: '会话列表密度',
+      sessionDensityDesc: '选择侧边栏会话标题下方显示的信息量。',
+      sessionDensityCompact: '紧凑',
+      sessionDensityComfortable: '舒适',
+      sessionDensityDetailed: '详细',
       terminalFontTitle: '终端字体',
       terminalFontDesc:
         '选择已安装的字体用于桌面端终端。Nerd Font 可正确显示 Powerlevel10k 和 Shell 图标；留空则使用内置的 JetBrains Mono。',
@@ -463,6 +479,8 @@ export const zh: Translations = {
       backdropDesc: '对话后方那张淡淡的雕像图片。',
       reactionsTitle: '消息回应',
       reactionsDesc: 'iMessage 风格的表情回应 — 你可以给消息添加回应，Hermes 也能回应你的消息。',
+      composerPopoutTitle: '悬浮输入框',
+      composerPopoutDesc: '允许将输入框拖出底部停靠区。关闭后，输入框会锁定在底部。',
       embedsTitle: '内嵌预览',
       embedsDesc:
         '富预览会从第三方网站（YouTube、X 等）加载。询问会在你允许前显示占位符；总是会自动加载；关闭则保留纯链接。',
@@ -792,8 +810,12 @@ export const zh: Translations = {
       autosaveFailed: '自动保存失败',
       imported: '配置已导入',
       invalidJson: '配置 JSON 无效',
+      toolsetsWipeConfirm:
+        '确定移除所有已启用的工具集吗？这将禁用记忆、终端、网络搜索、委派以及大多数其他工具，直到你重新启用它们。',
       keepAwakeTitle: '保持电脑唤醒',
       keepAwakeDesc: '阻止本机休眠，让长时间或通宵运行继续进行。屏幕仍可变暗。',
+      disableF12Title: '禁用 F12 开发者工具',
+      disableF12Desc: '阻止 F12 打开开发者工具。Ctrl+Shift+I（Mac 上为 Cmd+Opt+I）仍然可用。',
       attachmentSizeTitle: '预览 / 图片加载大小上限',
       attachmentSizeDesc:
         '桌面端为预览和图片附件加载本地文件的大小上限（MB）。默认为 16。远程非图片附件使用单独的 256 MB 上限。设置过大会将整个文件读入内存，可能导致应用卡死或崩溃。',
@@ -833,7 +855,7 @@ export const zh: Translations = {
     connections: {
       title: '连接',
       intro: '注册你的智能体所在的每个位置——本机、局域网中的远程网关、Hermes Cloud 实例——全部保存在这里。',
-      stagedNote: '多来源路由正在分阶段推出：目前在此管理连接，活动连接仍在“设置 → 网关”中选择。',
+      stagedNote: '聊天和智能体列表会跟随你选择的来源；应用管理的窗口后端仍在“设置 → 网关”中选择。',
       loadFailed: '无法加载连接',
       primaryPill: '主连接',
       managedPill: '本机',
@@ -848,6 +870,11 @@ export const zh: Translations = {
       testFailed: '连接测试失败',
       saveFailed: '无法保存连接',
       removeFailed: '无法移除连接',
+      updateAll: '更新所有实例',
+      updateAllRunning: '正在更新所有实例…',
+      updateAllDone: '更新已分发',
+      updateAllFailed: '批量更新失败',
+      updateSkippedCloud: '由 Hermes Cloud 托管',
       kindLocal: '本地',
       kindRemote: '远程网关',
       kindCloud: 'Hermes Cloud',
@@ -1065,6 +1092,9 @@ export const zh: Translations = {
       catalogEnvRequired: '安装前请填写必需的值。',
       capabilitySummary: (tools, prompts, resources) =>
         `已启用 ${[`${tools} 个工具`, ...(prompts ? [`${prompts} 个提示`] : []), ...(resources ? [`${resources} 个资源`] : [])].join('、')}`,
+      costTokens: tokens => `每次调用约 ${tokens} token`,
+      usage30d: uses => `30 天内 ${uses} 次调用`,
+      unusedPill: '未使用',
       statusConnecting: '连接中…',
       statusNeedsAuth: '需要认证',
       statusError: '错误',
@@ -1077,7 +1107,25 @@ export const zh: Translations = {
       unsavedConnect: '未保存 — 保存 mcp.json 以连接。',
       enableTool: tool => `启用 ${tool}`,
       disableTool: tool => `禁用 ${tool}`,
-      noOutput: '暂无输出。'
+      noOutput: '暂无输出。',
+      deepLinkTitle: '添加 MCP 服务器？',
+      deepLinkDescription:
+        '一个链接请求将此 MCP 服务器添加到 Hermes。请检查下方的完整配置——它来自该链接，而非 Hermes。',
+      deepLinkStdioWarning: '此服务器会使用下方所示命令在你的电脑上运行本地进程。仅在信任其来源时继续。',
+      deepLinkConfirm: '添加服务器',
+      deepLinkNameInvalid: '名称须为 1-64 个字母、数字、点、连字符或下划线。',
+      deepLinkNameConflict: name => `已存在名为 ${name} 的服务器——请改用其他名称或取消。`,
+      deepLinkErrorTitle: 'MCP 安装链接已拒绝',
+      deepLinkErrorName: '链接中的服务器名称缺失或无效。',
+      deepLinkErrorConfig: '链接中的配置不是有效的 base64 编码 JSON。',
+      deepLinkErrorShape: '配置必须是包含字符串 `url` 或 `command` 字段的 JSON 对象。',
+      deepLinkErrorUrl: '仅允许 http:// 和 https:// 服务器地址。',
+      deepLinkErrorTooLarge: '配置负载超过 32KB 上限。',
+      importButton: '导入',
+      importPlaceholder: '粘贴 mcp.json 片段、npx/docker 命令、claude mcp add 命令、URL 或 Cursor 链接…',
+      importNoMatch: '粘贴的文本中未识别到服务器配置。',
+      importConfirm: '添加到 mcp.json',
+      importConfirmMany: count => `添加 ${count} 个服务器到 mcp.json`
     },
     model: {
       loading: '正在加载模型配置...',
@@ -1252,7 +1300,6 @@ export const zh: Translations = {
     tabToolsets: '工具集',
     configuringProfile: '正在配置：',
     tabMcp: 'MCP',
-    tabHub: '浏览技能中心',
     all: '全部',
     searchSkills: '搜索技能…',
     searchToolsets: '搜索工具集…',
@@ -1345,6 +1392,11 @@ export const zh: Translations = {
       updateStarted: '正在更新已安装技能…',
       actionFailed: '技能操作失败',
       actionLog: '操作日志',
+      alreadyInstalled: name => `“${name}”已安装`,
+      pickerTitle: '技能中心',
+      pickerBrowse: '浏览完整技能中心',
+      pickerHide: '隐藏技能中心浏览器',
+      pickerHint: '点击任意技能上的“+ Add to this Agent”即可安装，安装后会出现在上方列表中。',
       loadFailed: '技能中心加载失败',
       previewFailed: '技能预览失败',
       scanFailed: '安全扫描失败',
@@ -1829,6 +1881,7 @@ export const zh: Translations = {
     showAllProfiles: '显示全部配置档案',
     switchToProfile: name => `切换到 ${name}`,
     manageProfiles: '管理配置档案…',
+    connectGateway: '连接另一个 Hermes 网关…',
     actions: '操作',
     color: '颜色…',
     colorFor: '颜色',
@@ -2196,9 +2249,14 @@ export const zh: Translations = {
     loading: '加载中…',
     loadMore: '加载更多',
     loadCount: step => `再加载 ${step} 个`,
+    messageCount: count => `${count} 条消息`,
+    toolCallCount: count => `${count} 次工具调用`,
     row: {
       pin: '置顶',
       unpin: '取消置顶',
+      markUnread: '标记为未读',
+      markRead: '标记为已读',
+      unreadFailed: '无法更新未读状态',
       copyId: '复制 ID',
       export: '导出',
       branchFrom: '分支',
@@ -2225,6 +2283,10 @@ export const zh: Translations = {
       renameTitle: '重命名会话',
       renameDesc: '留空则清除。',
       untitledPlaceholder: '无标题会话',
+      deleteTitle: '删除会话？',
+      deleteDesc: title => `这将永久删除“${title}”，且无法撤销。`,
+      deleting: '正在删除…',
+      deleted: '会话已删除',
       untitledChat: id => `会话 ${id}`,
       messageCount: count => `${count} 条消息`,
       todoProgress: '任务完成度',
@@ -2243,7 +2305,8 @@ export const zh: Translations = {
     statusDivider: {
       working: '进行中',
       done: '已完成'
-    }
+    },
+    markAllRead: '全部标记为已读'
   },
 
   composer: {
@@ -2381,6 +2444,12 @@ export const zh: Translations = {
       done: skill => `已添加 /${skill}`,
       doneTip: '发送时将加载该技能'
     },
+    githubSuggestions: {
+      label: '设置 GitHub',
+      tip: '这里通过 gh CLI 技能使用 GitHub — 点击连接你的账号',
+      done: '已添加 /github-auth',
+      doneTip: '发送消息后，agent 将引导你完成 GitHub 登录'
+    },
     repairSuggestions: {
       label: server => `重新连接 ${server}`,
       tip: server => `${server} 调用刚因连接错误失败`,
@@ -2459,7 +2528,7 @@ export const zh: Translations = {
       scopeLastTurn: '上一轮',
       commit: '提交',
       commitAndPush: '提交并推送',
-      commitPlaceholder: '信息（⌘↵ 提交）',
+      commitPlaceholder: shortcut => `信息（${shortcut} 提交）`,
       generateCommitMessage: '生成提交信息',
       stopGenerating: '停止生成',
       createPr: '创建 PR',
@@ -2522,6 +2591,17 @@ export const zh: Translations = {
     applyingClose: '此窗口会在更新期间关闭，随后 Hermes 会自动重新打开。',
     errorTitle: '更新未完成',
     errorBody: '没有数据丢失。你可以现在重试。',
+    blockerTitle: '关闭本地预览以更新 Hermes？',
+    blockerBody: 'Hermes 需要在更新前停止这些本地预览。这不会修改或删除你的文件。',
+    foreignBlockerTitle: '关闭其他进程以更新 Hermes',
+    foreignBlockerBody: 'Hermes 无法安全地自动关闭这些进程。请关闭拥有这些进程的应用、终端或服务，然后重试更新。',
+    mixedBlockerBody: 'Hermes 可以关闭下方列出的本地预览。其他进程必须手动关闭，更新才能继续。',
+    closePreviewsAndUpdate: '关闭预览并更新',
+    closePreviewsAndCheckAgain: '关闭预览并重新检查',
+    localPreview: '本地预览',
+    portLabel: port => `端口 ${port}`,
+    pidLabel: pid => `PID ${pid}`,
+    technicalDetails: '技术详情',
     notNow: '暂不',
     applyStatus: {
       preparing: '正在更新后端…',
@@ -3013,6 +3093,7 @@ export const zh: Translations = {
       thought: '已思考',
       thoughtBriefly: '思考了片刻',
       thoughtFor: duration => `思考了 ${duration}`,
+      turnDuration: duration => `本轮耗时 ${duration}`,
       today: time => `今天，${time}`,
       yesterday: time => `昨天，${time}`,
       copy: '复制',
@@ -3205,6 +3286,7 @@ export const zh: Translations = {
     stopFailed: '停止失败',
     regenerateFailed: '重新生成失败',
     editFailed: '编辑失败',
+    editTurnUnavailable: '此回合已不在服务器历史中（可能已被压缩移除）。',
     resumeFailed: '恢复失败',
     resumeStrandedTitle: '无法加载此会话',
     resumeStrandedBody: '与此会话的连接失败，自动重试已停止。请确认网关正在运行，然后重试。',

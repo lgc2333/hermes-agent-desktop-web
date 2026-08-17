@@ -134,6 +134,154 @@ export function agentHandle(profile: string, connectionLabel: string, duplicated
   return duplicated ? `${name}-${labelSlug(connectionLabel)}` : name
 }
 
+/**
+ * Pool key for a backend serving (connection, profile). The local/primary
+ * connection keeps the BARE profile key so every legacy pool entry, reaper
+ * log line, and touch call stays byte-identical for single-source users;
+ * non-local connections get an unambiguous composite (`conn:<id>::<profile>`)
+ * that cannot collide with a plain profile name (colons are invalid in
+ * profile names).
+ *
+ * NOTE: the renderer's socket registry uses the twin implementation in
+ * apps/shared/src/backend-scope.ts (`@hermes/shared`) — tsconfig project
+ * boundaries prevent a single physical module here. The two are pinned
+ * byte-identical by the cross-copy contract test in
+ * connection-registry.test.ts; change BOTH or that test fails.
+ */
+export function backendScopeKey(connectionId: null | string | undefined, profile: null | string | undefined): string {
+  const profileKey = String(profile ?? '').trim() || 'default'
+  const connection = String(connectionId ?? '').trim()
+
+  if (!connection || connection === LOCAL_CONNECTION_ID) {
+    return profileKey
+  }
+
+  return `conn:${connection}::${profileKey}`
+}
+
+/** All pool keys owned by a connection share this prefix (used to stop them on remove). */
+export function backendScopePrefix(connectionId: string): string {
+  return `conn:${String(connectionId).trim()}::`
+}
+
+export interface RegistryLocalRoute {
+  /** Reuse the legacy v1 ensureBackend path — it already resolves to the
+   * app's own local runtime, so single-source behavior stays byte-identical. */
+  delegate: boolean
+  /** Pool key for the forced-local child when not delegating. */
+  poolKey: string
+}
+
+/**
+ * How the registry's 'local' entry resolves a backend for `profile`.
+ *
+ * The 'local' entry means THIS machine's runtime — always. The legacy
+ * ensureBackend() path instead follows the v1 connection.json routing table,
+ * where a global remote mode (or a per-profile remote override) resolves to a
+ * REMOTE descriptor. A migrated user whose v1 global mode was remote gets that
+ * remote as the registry primary AND keeps the mandatory 'local' entry, so
+ * delegating 'local' to the v1 route made the roster's "This device" rows
+ * enumerate and dial the remote box: every profile appeared twice (forcing
+ * -slug handles) and "local" agents talked to the remote.
+ *
+ * When the v1 route is already local we delegate (legacy path, byte-identical
+ * pool keys). When v1 says remote, the local entry spawns its own genuinely
+ * local child under a composite pool key: backendScopeKey('local', p) maps to
+ * the BARE profile key by design, and that slot may already hold the v1
+ * route's REMOTE descriptor — so the forced-local child pools under the
+ * `conn:local::<profile>` form instead (colons are invalid in profile names,
+ * so it cannot collide).
+ */
+export function resolveRegistryLocalRoute(
+  profile: null | string | undefined,
+  opts: { globalRemote?: boolean; profileRemoteOverride?: boolean } = {}
+): RegistryLocalRoute {
+  const profileKey = String(profile ?? '').trim() || 'default'
+
+  if (opts.globalRemote || opts.profileRemoteOverride) {
+    return { delegate: false, poolKey: `${backendScopePrefix(LOCAL_CONNECTION_ID)}${profileKey}` }
+  }
+
+  return { delegate: true, poolKey: profileKey }
+}
+
+// ── Union agent roster ──────────────────────────────────────────────────────
+
+export interface ConnectionAgents {
+  connection: RegistryConnection
+  /** Profile names enumerated from the connection, or null when unreachable /
+   * connect-on-demand (ssh not yet dialed). */
+  profiles: null | string[]
+  /** Present when profiles is null: why enumeration was skipped. */
+  error?: string
+}
+
+export interface RosterAgent {
+  connectionId: string
+  connectionKind: ConnectionKind
+  connectionLabel: string
+  profile: string
+  /** Bare profile name, or `<profile>-<label-slug>` when the profile name
+   * exists on more than one registered source (the @name-device rule). */
+  handle: string
+}
+
+/**
+ * Flatten per-connection profile enumerations into the union roster, applying
+ * the duplicate-handle rule ONCE across all sources. Pure so the disambiguation
+ * policy is testable without IPC; main.ts feeds it live enumerations.
+ */
+export function buildAgentRoster(enumerations: ConnectionAgents[]): RosterAgent[] {
+  const counts = new Map<string, number>()
+
+  for (const { profiles } of enumerations) {
+    for (const profile of profiles || []) {
+      const name = String(profile || '').trim() || 'default'
+      counts.set(name, (counts.get(name) || 0) + 1)
+    }
+  }
+
+  const roster: RosterAgent[] = []
+
+  for (const { connection, profiles } of enumerations) {
+    for (const profile of profiles || []) {
+      const name = String(profile || '').trim() || 'default'
+
+      roster.push({
+        connectionId: connection.id,
+        connectionKind: connection.kind,
+        connectionLabel: connection.label,
+        profile: name,
+        handle: agentHandle(name, connection.label, (counts.get(name) || 0) > 1)
+      })
+    }
+  }
+
+  return roster
+}
+
+// ── Fan-out update eligibility ──────────────────────────────────────────────
+
+export interface UpdateEligibility {
+  eligible: boolean
+  /** Present when not eligible: 'cloud-managed' (platform updates it). */
+  reason?: 'cloud-managed'
+}
+
+/**
+ * Whether "Update all instances" may drive this connection. Hermes Cloud
+ * instances are platform-managed — we never run `hermes update` against them.
+ * Local, remote, and ssh sources are all eligible (reachability and busy
+ * checks happen at dispatch time, not here).
+ */
+export function updateEligibility(connection: RegistryConnection): UpdateEligibility {
+  if (connection.kind === 'cloud') {
+    return { eligible: false, reason: 'cloud-managed' }
+  }
+
+  return { eligible: true }
+}
+
 /** Mint a registry-unique id from a label (slug, then -2/-3… suffixes). */
 export function connectionIdForLabel(label: string, taken: Iterable<string>): string {
   const used = new Set([...taken])
@@ -305,6 +453,43 @@ export function mergeConnectionInput(input: ConnectionInput, existing?: null | R
   }
 
   return merged
+}
+
+/**
+ * True when an edit changes how a connection is DIALED — endpoint, auth, or
+ * ssh routing fields — as opposed to a cosmetic label rename. Callers use
+ * this to decide whether live pooled backends / renderer sockets for the
+ * connection must be recycled after a save: a label-only edit keeps traffic
+ * flowing, while a url/token/host change means everything currently open
+ * points at the OLD target and must be torn down and re-dialed.
+ */
+export function connectionDialFieldsChanged(before: RegistryConnection, after: RegistryConnection): boolean {
+  if (before.kind !== after.kind) {
+    return true
+  }
+
+  const fields: (keyof RegistryConnection)[] = [
+    'url',
+    'authMode',
+    'org',
+    'host',
+    'user',
+    'port',
+    'keyPath',
+    'remoteHermesPath',
+    'remoteProfile'
+  ]
+
+  for (const field of fields) {
+    if ((before[field] ?? null) !== (after[field] ?? null)) {
+      return true
+    }
+  }
+
+  // Token envelopes are opaque here (main.ts encrypts). An edit that carries
+  // no new token inherits the stored envelope verbatim, so structural
+  // equality is exact for the label-only case.
+  return JSON.stringify(before.token ?? null) !== JSON.stringify(after.token ?? null)
 }
 
 // ── Registry-level operations (all pure: return a new registry) ────────────
