@@ -1,4 +1,5 @@
 import { spawn, execSync, type ChildProcess } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 
@@ -42,7 +43,13 @@ export const MOCK_OAUTH_PORT = portOf('E2E_MOCK_OAUTH_PORT', 5192)
 export const MOCK_PASSWORD_PORT = portOf('E2E_MOCK_PASSWORD_PORT', 5193)
 
 export const proxyEntry = path.join(repoRoot, 'apps', 'proxy', 'src', 'main.ts')
-export const viteBin = path.join(appRoot, 'node_modules', 'vite', 'bin', 'vite.js')
+// The workspace uses pnpm's hoisted nodeLinker, so vite lives at the repo-root
+// node_modules, not apps/web/node_modules. Resolve whichever exists (CI installs
+// fresh; the hoisted root is where `pnpm install --frozen-lockfile` puts it).
+export const viteBin = [
+  path.join(appRoot, 'node_modules', 'vite', 'bin', 'vite.js'),
+  path.join(repoRoot, 'node_modules', 'vite', 'bin', 'vite.js'),
+].find((p) => existsSync(p))!
 export const mockEntry = path.join(appRoot, 'dev', 'mock-gateway.mjs')
 
 const children = new Map<string, ChildProcess>()
