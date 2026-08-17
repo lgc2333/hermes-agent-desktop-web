@@ -183,12 +183,16 @@ m3/main 实测：上游 main 相对上一基准只改了 11 个补丁文件里�
 2. `pnpm --filter @hermes-web/web typecheck` + 关键 vitest/e2e
 3. 更新 §1 基准 SHA 与本文档
 
-> v2026.8.16 同步备注：apps/web/tsconfig.json 增加 `exclude`，把 `vendor/**/*.test.*`
-> 移出 web typecheck 程序。上游桌面测试会 import 其仓库根 `tests/fixtures/*`（子树外），
-> 同步后新增此类引用会破坏本仓库 typecheck；vendor 测试并非本仓库运行/校验范围，
-> apps/web 自身测试（src/bridge/*.test.ts）仍受检。
->
-> 桥层同步：上游新增 `hermesDesktop.onOpenFindBarRequested` 表面（find overlay 接口），
-> Web find 桥面延续布尔门 denied（ADR-0010/0011/0019），已在
-> apps/web/src/bridge/denied.ts 加 `onOpenFindBarRequested = noopUnsub` 并在
-> adapter.ts 透传；use-keybinds.ts 桌面分支并入上游 overlay 路由抑制（见 §4）。
+## 7. 同步备注
+
+### v2026.8.16
+
+apps/web/tsconfig.json 增加 `exclude`，把 `vendor/**/*.test.*`
+移出 web typecheck 程序。上游桌面测试会 import 其仓库根 `tests/fixtures/*`（子树外），
+同步后新增此类引用会破坏本仓库 typecheck；vendor 测试并非本仓库运行/校验范围，
+apps/web 自身测试（src/bridge/*.test.ts）仍受检。
+
+桥层同步：上游新增 `hermesDesktop.onOpenFindBarRequested` 表面（find overlay 接口），
+Web find 桥面延续布尔门 denied（ADR-0010/0011/0019），已在
+apps/web/src/bridge/denied.ts 加 `onOpenFindBarRequested = noopUnsub` 并在
+adapter.ts 透传；use-keybinds.ts 桌面分支并入上游 overlay 路由抑制（见 §4）。
