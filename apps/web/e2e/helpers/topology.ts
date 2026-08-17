@@ -1,5 +1,5 @@
 import { spawn, execSync, type ChildProcess } from 'node:child_process'
-import { existsSync, readdirSync, readFileSync, readlinkSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 
@@ -54,48 +54,57 @@ export const mockEntry = path.join(appRoot, 'dev', 'mock-gateway.mjs')
 
 const children = new Map<string, ChildProcess>()
 
-/** PIDs of processes listening on `port` (TCP). Linux/macOS: parse /proc (the
- *  container runner may lack fuser/lsof). Windows: via PowerShell. Returns []
- *  if nothing is listening. Exported for e2e diagnostic use. */
-export function pidsByPort(port: number): number[] {
-  if (process.platform === 'win32') return []
-  const hex = port.toString(16).padStart(4, '0')
-  const inodes = new Set<string>()
-  for (const f of ['/proc/net/tcp', '/proc/net/tcp6']) {
-    let txt: string
-    try {
-      txt = readFileSync(f, 'utf8')
-    } catch {
-      continue
+/** system tool to enumerate PIDs listening on `port`; returns [] if none. */
+function pidsByPortSystem(port: number): number[] {
+  // ss -ltnp lines look like:
+  //   LISTEN 0 511 127.0.0.1:5190 0.0.0.0:* users:(("node-MainThread",pid=123,fd=18))
+  // Match line-by-line so we only take pids from the exact port.
+  try {
+    const out = execSync(`ss -ltnp 2>/dev/null || true`, { encoding: 'utf8' })
+    const pids = new Set<number>()
+    for (const line of out.split('\n')) {
+      if (!new RegExp(`:${port}\\b`, 'i').test(line)) continue
+      for (const m of line.matchAll(/pid=(\d+)/g)) pids.add(Number(m[1]))
     }
-    for (const line of txt.split('\n').slice(1)) {
-      const parts = line.trim().split(/\s+/)
-      if (!parts[0]) continue
-      const [, localHex, st] = parts
-      // /proc/net/tcp prints hex port UPPERCASE; compare case-insensitively.
-      if (st === '0A' && localHex.split(':')[1].toLowerCase() === hex) {
-        inodes.add(parts[9])
-      }
-    }
+    if (pids.size) return [...pids]
+  } catch {
+    /* ss unavailable — fall through to fuser */
   }
-  const pids = new Set<number>()
-  for (const pid of readdirSync('/proc')) {
-    if (!/^\d+$/.test(pid)) continue
-    try {
-      for (const fd of readdirSync(`/proc/${pid}/fd`)) {
-        const link = readlinkSync(`/proc/${pid}/fd/${fd}`)
-        const m = link.match(/socket:\[(\d+)\]/)
-        if (m && inodes.has(m[1])) pids.add(Number(pid))
-      }
-    } catch {
-      /* fd may have vanished */
+  // fallback: fuser PORT/tcp prints "6305/tcp:  123"
+  try {
+    const out = execSync(`fuser ${port}/tcp 2>/dev/null || true`, { encoding: 'utf8' })
+    const pids = new Set<number>()
+    for (const tok of out.split(/[\s(),"pid=]+/)) {
+      const n = Number(tok)
+      if (Number.isInteger(n) && n > 0) pids.add(n)
     }
+    return [...pids]
+  } catch {
+    return []
   }
-  return [...pids]
 }
 
-/** Kill every process listening on `port` (Windows: PowerShell; Linux/macOS: /proc). */
+/**
+ * PIDs of processes listening on `port` (TCP). Uses the system socket tools
+ * (`ss`/`fuser`, reliable on Linux/CI runners) rather than a hand-rolled
+ * /proc scan — the /proc inode→fd walk is brittle (perm-denied on other
+ * users' /proc/*/fd aborts the walk, and a plain readdir mishandles
+ * reaped/vanished fds). Windows: via PowerShell. Returns [] if none.
+ */
+export function pidsByPort(port: number): number[] {
+  return process.platform === 'win32' ? [] : pidsByPortSystem(port)
+}
+
+/** Kill every process listening on `port` (system tools on Linux/macOS; PowerShell on Windows). */
 export function killPort(port: number): void {
+  const pids = process.platform === 'win32' ? [] : pidsByPortSystem(port)
+  for (const pid of pids) {
+    try {
+      process.kill(pid, 'SIGKILL')
+    } catch {
+      /* already gone */
+    }
+  }
   if (process.platform === 'win32') {
     try {
       execSync(
@@ -104,14 +113,6 @@ export function killPort(port: number): void {
       )
     } catch {
       /* nothing listening on that port — fine */
-    }
-    return
-  }
-  for (const pid of pidsByPort(port)) {
-    try {
-      process.kill(pid, 'SIGKILL')
-    } catch {
-      /* already gone */
     }
   }
 }
