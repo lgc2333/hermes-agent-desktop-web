@@ -1,0 +1,105 @@
+name: CI
+
+on:
+  # push:
+  #   branches: ['main']
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '22'
+
+permissions:
+  contents: read
+
+jobs:
+  # ── 单测（桥层 vitest，apps/web）──────────────────────────────
+  unit:
+    name: unit (vitest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11.22.0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @hermes-web/web test
+
+  # ── TypeScript 类型检查（apps/web）────────────────────────────
+  typecheck:
+    name: typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11.22.0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+
+  # ── 编译（生产构建 → apps/web/dist）───────────────────────────
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11.22.0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+
+  # ── Deno：类型检查 + 代理单测（apps/proxy）────────────────────
+  deno:
+    name: deno (check + test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: deno check
+        working-directory: apps/proxy
+        run: deno check src/main.ts
+      - name: deno test
+        working-directory: apps/proxy
+        run: deno task test
+
+  # ── E2E（Vitest + Playwright 客户端，端口 E2E_*_PORT 独立）─────
+  e2e:
+    name: e2e (playwright)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11.22.0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Install Chromium (Playwright)
+        run: pnpm --filter @hermes-web/web e2e:install
+      - name: Run e2e suite
+        run: pnpm --filter @hermes-web/web test:e2e
