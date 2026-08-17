@@ -2,7 +2,7 @@
 
 把 Hermes 桌面端渲染层移植为浏览器 Web 应用，经一个 **Deno 无状态薄代理** 连接任意远程 Hermes gateway。
 
-## 拓扑（一句话）
+## 拓扑
 
 ```
 浏览器 ──同源──> proxy(Deno, 6722) ──X-Hermes-Target 转发──> gateway(/api/* + /api/ws + /auth/native/* + /auth/password-login)
@@ -12,19 +12,19 @@
 ## 常用命令
 
 ```bash
-pnpm install                                   # 首次（pnpm 11，node >=22.22）
-pnpm dev                                       # mock(5180) + proxy(6722) + vite(5173)，SPA 只走代理（ADR-0016）
-pnpm --filter @hermes-web/web dev:remote       # proxy + vite，无 mock（连自己的 gateway）
-pnpm --filter @hermes-web/web test             # vitest（桥单测，apps/web）
-pnpm typecheck                                 # apps/web 类型检查（typecheck.mjs）
-pnpm format                                    # 格式化
-pnpm build                                     # 生产构建 → apps/web/dist
-cd apps/proxy && deno task test                # 代理单测（deno test，42+ 用例）
-deno run --allow-net --allow-read --allow-env apps/proxy/src/main.ts   # 手动起代理
-MOCK_OAUTH=1 node apps/web/dev/mock-gateway.mjs 5182   # gated mock（native OAuth 面）
+pnpm install     # 首次（pnpm 11，node >=22.22）
+pnpm dev         # mock(5180) + proxy(6722) + vite(5173)，SPA 只走代理（ADR-0016）
+pnpm dev:remote  # proxy + vite，无 mock（连自己的 gateway）
+pnpm --filter @hermes-web/web test  # vitest（桥单测，apps/web）
+pnpm typecheck   # apps/web 类型检查（typecheck.mjs）
+pnpm format      # 格式化
+pnpm build       # 生产构建 → apps/web/dist
+cd apps/proxy && deno task test  # 代理单测（deno test，42+ 用例）
+deno run --allow-net --allow-read --allow-env apps/proxy/src/main.ts  # 手动起代理
+MOCK_OAUTH=1 node apps/web/dev/mock-gateway.mjs 5182  # gated mock（native OAuth 面）
 MOCK_PASSWORD=1 node apps/web/dev/mock-gateway.mjs 5183  # 密码门禁 mock（admin/admin，M5）
-docker compose up -d --build                  # 生产部署（见 README.md「快速开始」）
-bash scripts/sync-upstream.sh [tag]            # 上游 subtree 同步（PATCHES.md §3）
+docker compose up -d --build  # 生产部署（见 README.md「快速开始」）
+bash scripts/sync-upstream.sh [tag]  # 上游 subtree 同步（PATCHES.md §3）
 ```
 
 浏览器验收（headless Chrome + CDP 9224，脚本在 apps/web/e2e/，从仓库根运行）：
@@ -118,3 +118,17 @@ hermes-agent-desktop-web/
 - **WEB_DIST 裸路径**：Dockerfile ENV 传的是 `/app/web-dist` 这种裸路径，且目录 URL 必须带尾斜杠（`new URL('index.html', base)` 对无尾斜杠 base 会替换末段路径）——容器静态面曾因此静默全灭（400）；`resolveWebDist()`（apps/proxy/src/main.ts）统一归一化成带尾斜杠的 file URL。
 
 - **直连已删（ADR-0016）**：SPA 无直连路径，`proxyBaseUrl()` 恒非空；`vite preview`/静态裸托管不是可用拓扑（/api/* 会打 SPA fallback）。旧镜像（v0.1.0 tag 前）bundle 里 `proxyBaseUrl()` 被编译成 `return null` → `/api/proxy/meta` 0 请求、预填永不触发、探活直连假绿/假红——部署必须用新构建镜像。
+
+- **上游 sync 必须浅取 + 用后清理**（PATCHES.md §3）：上游 hermes 是 monorepo，全量 `git fetch` 把整个仓库对象灌进本地，叠加断连中断的 `tmp_pack_*` 残留会让 .git 膨胀到 GB 级（实测追一次 tag 后 .git 冲到 1GB，~958MB 是 tmp_pack_*，`git gc` 不自动删这类垃圾需手动清）。用 `git fetch upstream --depth=1 <tag>`（脚本已内置）只取目标提交的 apps/desktop|shared 两棵子树（本地是 squash vendoring，不需要上游历史）；浅取对 tag 时 FETCH_HEAD 是 tag 对象，须 `^{commit}` peel。sync 落盘后删本地 tag 引用 + 清 `.git/shallow` 再 gc，恢复非 shallow 小体积仓库。
+
+## Commit
+
+Use English conventional commit messages:
+
+```text
+type(optional scope): description
+
+- List of change descriptions, focus one point per row
+
+Optional footer(s)
+```

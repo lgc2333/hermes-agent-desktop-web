@@ -37,11 +37,19 @@ git subtree add --prefix=vendor/hermes-shared  $FILTERED_SHARED --squash
 ### 3. 同步流程（subtree pull）
 
 因过滤提交不在上游历史中，同步用 `git subtree merge --squash` 对**新过滤提交**执行
-（见 scripts/sync-upstream.sh，工作流与 §2 相同）：
+（见 scripts/sync-upstream.sh，工作流与 §2 相同）。
+
+**fetch 必须 --depth=1（浅取）**：上游 hermes 是 monorepo 且 commit 极多，全量拉取
+会把整个仓库对象灌进本地；叠加断连中断的 tmp_pack 残留会让 .git 膨胀到 GB 级（实测追
+一次 tag 后 .git 冲到 1GB，其中 ~958MB 是中断打包的 tmp_pack_*。git gc 不自动删这类
+垃圾，需手动清 `git gc` 后再删 `.git/objects/pack/tmp_pack_*`）。本地 vendor 是 squash
+的，只要目标提交 apps/desktop|shared 两棵完整子树，不需要上游历史。浅取对 tag 时
+FETCH_HEAD 是 tag 对象，先 `^{commit}` peel 再取树。sync 落盘后应清理 shallow 边界与
+本地 tag 引用，恢复非 shallow 小体积仓库：
 
 ```bash
-git fetch upstream <tag-or-main>
-NEW_DESKTOP_TREE=$(git rev-parse FETCH_HEAD:apps/desktop)
+git fetch upstream --depth=1 <tag-or-main>
+NEW_DESKTOP_TREE=$(git rev-parse FETCH_HEAD^{commit}:apps/desktop)
 NEW_FILTERED=$(git commit-tree $NEW_DESKTOP_TREE -m "hermes-desktop @ <sha>")
 git subtree merge --prefix=vendor/hermes-desktop $NEW_FILTERED --squash
 # 同法处理 hermes-shared；同步后把新基准 SHA 记入 §1 清单
