@@ -116,7 +116,18 @@ describe('ui: settings OAuth sign-in + chat + persistence', () => {
     await waitForReady(page, 60000)
     const config = await getConfig(page)
     expect(config.remoteOauthConnected).toBe(true)
-    await waitForBodyText(page, 'Hello from the mock gateway', { timeout: 20000 })
+    await waitForBodyText(page, 'Hello from the mock gateway', { timeout: 20000 }).catch(
+      async (e) => {
+        // DIAG: what does the transcript actually hold after refresh?
+        const diagUi = await page.evaluate(() => ({
+          oauthConnected: undefined,
+          hasMock: document.body.innerText.includes('Hello from the mock gateway'),
+          tail: document.body.innerText.slice(-400),
+        }))
+        console.log('[DIAG ui refresh]', JSON.stringify({ config, ...diagUi }))
+        throw e
+      },
+    )
     expect(await page.evaluate(() => document.body.innerText)).toMatch(
       /hello from m3 ui/i,
     )

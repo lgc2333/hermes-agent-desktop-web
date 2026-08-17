@@ -11,6 +11,7 @@ import {
   stopByPort,
   startProxy,
   waitForHttp,
+  pidsByPort,
 } from './helpers/topology'
 import {
   waitForReady,
@@ -23,6 +24,21 @@ import {
   poll,
 } from './helpers/bridge'
 import { sendChat } from './helpers/chat'
+
+// Node-side diagnostic: probe whether a listener on `port` is actually gone.
+// Returns { pidCount, reachable } — pidCount>0 or reachable=true means the
+// kill did NOT land (or the process survived), independent of page state.
+async function diagPort(port: number): Promise<{ pidCount: number; reachable: boolean }> {
+  const pidCount = pidsByPort(port).length
+  let reachable = false
+  try {
+    const r = await fetch(`http://127.0.0.1:${port}/api/status`, { signal: AbortSignal.timeout(1500) })
+    reachable = r.ok || r.status === 401
+  } catch {
+    reachable = false
+  }
+  return { pidCount, reachable }
+}
 
 // From cdp-reconnect-a.mjs — token-mode WS disconnect → auto-reconnect.
 // Boot on the plain token mock, confirm baseline streaming, kill the mock,
@@ -114,6 +130,8 @@ describe('reconnect C: feedback when sending while connecting', () => {
 
   it('surfaces feedback when a message is sent while the gateway is down', async () => {
     stopByPort(MOCK_TOKEN_PORT)
+    // DIAG: is the mock port actually gone after the kill?
+    console.log('[DIAG C post-kill]', JSON.stringify(await diagPort(MOCK_TOKEN_PORT)))
     await page.waitForTimeout(5000)
 
     // attempt to send while disconnected
@@ -178,6 +196,8 @@ describe('reconnect C2: submit while statusbar shows connecting', () => {
 
   it('submits while disconnected and shows feedback, then recovers after restart', async () => {
     stopByPort(MOCK_TOKEN_PORT)
+    // DIAG: is the mock port actually gone after the kill?
+    console.log('[DIAG C2 post-kill]', JSON.stringify(await diagPort(MOCK_TOKEN_PORT)))
 
     // wait until the UI has registered the disconnect (connecting state)
     const connectingShown = await waitFor(
@@ -323,10 +343,14 @@ describe('reconnect B: OAuth session lost on proxy restart', () => {
 
   it('loses the oauth session once the proxy is restarted', async () => {
     stopByPort(PROXY_PORT)
+    // DIAG: is the proxy port actually gone after the kill?
+    console.log('[DIAG B post-kill]', JSON.stringify(await diagPort(PROXY_PORT)))
     await page.waitForTimeout(4000)
 
     startProxy()
     await waitForHttp(`${PROXY_URL}/api/proxy/meta`)
+    // DIAG: after restart, how many proxy pids hold the port now?
+    console.log('[DIAG B post-restart]', JSON.stringify(await diagPort(PROXY_PORT)))
     await page.waitForTimeout(3000)
 
     // In-memory oauth token set is gone: bridge reports disconnected.

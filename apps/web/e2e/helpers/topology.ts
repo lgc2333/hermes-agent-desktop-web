@@ -54,12 +54,10 @@ export const mockEntry = path.join(appRoot, 'dev', 'mock-gateway.mjs')
 
 const children = new Map<string, ChildProcess>()
 
-/**
- * PIDs of processes listening on `port` (TCP). Linux/macOS: parse /proc (the
- * container runner may lack fuser/lsof). Windows: via PowerShell. Returns [] if
- * nothing is listening.
- */
-function pidsByPort(port: number): number[] {
+/** PIDs of processes listening on `port` (TCP). Linux/macOS: parse /proc (the
+ *  container runner may lack fuser/lsof). Windows: via PowerShell. Returns []
+ *  if nothing is listening. Exported for e2e diagnostic use. */
+export function pidsByPort(port: number): number[] {
   if (process.platform === 'win32') return []
   const hex = port.toString(16).padStart(4, '0')
   const inodes = new Set<string>()
