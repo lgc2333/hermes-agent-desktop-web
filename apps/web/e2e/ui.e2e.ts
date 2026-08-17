@@ -4,6 +4,7 @@ import { launchBrowser } from './helpers/browser'
 import {
   APP_URL,
   MOCK_TOKEN_PORT,
+  MOCK_OAUTH_PORT,
   startMock,
   stopByPort,
   waitForHttp,
@@ -15,32 +16,42 @@ import {
   bootClean,
   gotoHash,
   getConfig,
+  saveOauthConnection,
 } from './helpers/bridge'
 import { sendChat } from './helpers/chat'
 import { readRegistry } from './helpers/registry'
 
 // From cdp-ui.mjs — UI-layer OAuth: settings "Sign in" → chat → refresh keep.
-// Uses the gated mock (MOCK_OAUTH=1) on 5180 so the settings page renders an
-// auth provider ("Sign in with …") and a full OAuth round-trip.
+// Uses the gated mock (MOCK_OAUTH=1) so the settings page renders an auth
+// provider ("Sign in with …") and a full OAuth round-trip. Mirror of
+// reconnect B's working flow: a plain token mock for the default-seed boot
+// probe, then an explicit oauth-mode connection saved to the gated target.
+const TARGET = `http://127.0.0.1:${MOCK_OAUTH_PORT}`
+
 describe('ui: settings OAuth sign-in + chat + persistence', () => {
   let browser: Browser
   let page: Page
 
   beforeAll(async () => {
-    startMock(MOCK_TOKEN_PORT, { oauth: true })
-    await waitForHttp(`http://127.0.0.1:${MOCK_TOKEN_PORT}/api/status`)
+    // Plain token mock for the default-seed boot probe (VITE_MOCK_GATEWAY_WS
+    // points at MOCK_TOKEN_PORT); gated OAuth mock as the connection target
+    // that renders an auth provider.
+    startMock(MOCK_TOKEN_PORT)
+    startMock(MOCK_OAUTH_PORT, { oauth: true })
+    await waitForHttp(`${TARGET}/api/status`)
     const launched = await launchBrowser()
     browser = launched.browser
     page = launched.page
     await page.goto(APP_URL)
     await waitForReady(page)
     await bootClean(page)
-    await waitForBodyText(page, 'Gateway', { timeout: 60000, label: 'Gateway ready' })
+    await saveOauthConnection(page, TARGET)
   })
 
   afterAll(async () => {
     await browser?.close()
     stopByPort(MOCK_TOKEN_PORT)
+    stopByPort(MOCK_OAUTH_PORT)
   })
 
   it('renders the OAuth sign-in button in settings', async () => {
