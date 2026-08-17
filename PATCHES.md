@@ -6,11 +6,11 @@
 ## 1. Subtree 基准（Baseline）
 
 - 上游仓库：https://github.com/NousResearch/hermes-agent.git
-- 基准提交：`d2672a349b6e783868e681735b45cad181cb05a8`（2026-08-15，桌面端 0.17.0）
+- 基准提交：`df4b65147d7ddd74dd449f9067aabbca5aef0ec7`（2026-08-16，上游 tag `v2026.8.16`，桌面端 0.20.2）
 - vendor/hermes-desktop：上游 `apps/desktop`（含 src/ 渲染层、scripts/、vite.config.ts 等）
 - vendor/hermes-shared：上游 `apps/shared`（`@hermes/shared` 源码）
 - 引入方式：`git subtree add --squash`（对过滤提交执行，见 §2）
-- 当前子树 split：hermes-desktop: `800e98cc0b2d547199df0e3056d169396e70ee71`；hermes-shared: `ca95b9cc143b0e7b4a749ef9d42bc22d31d82ff9`
+- 当前子树 split：hermes-desktop: `caf535b050d572588847b072b0339f8b7fdf72de`；hermes-shared: `8b09caae37870a2f2059fdda0250dc63bcec5f30`
 
 ### 2. 引入方式说明（重要）
 
@@ -88,6 +88,7 @@ git subtree merge --prefix=vendor/hermes-desktop $NEW_FILTERED --squash
   - 改动：`'view.findInPage': openFindBar` 改为条件展开——`import.meta.env.VITE_WEB_BUILD === '1'`（Web 构建时 vite define 注入，见 apps/web/vite.config.ts）时不注册该 handler
   - 原因：Web 端 find 桥面布尔门 denied（ADR-0010/0011），命中会 preventDefault + 打开无功能 find-bar、吞掉浏览器原生查找；handler 缺失 → dispatch 走 "无 handler → return"（不 preventDefault），浏览器原生查找（Ctrl/Cmd+F）接管（ADR-0019）。重绑/多绑定语义自动正确：任何 combo 命中 view.findInPage 都无效，mod+f 改绑其他动作照常执行
   - 同步注意：桌面构建不读 VITE_WEB_BUILD，行为不变；上游若重构 handlersRef 或 view.findInPage 接线，按"Web 构建不注册该 handler"语义恢复
+  - v2026.8.16 同步：上游给桌面 handler 内加了 overlay 路由抑制（`isOverlayView` + `appViewForPath`），已并入 Web 条件展开的桌面分支（Web 分支不注册，无 overlay 冲突）
 
 - vendor/hermes-desktop/src/global.d.ts
   - 改动：`hermesDesktop` 表面新增可选 `saveImageFile(blob, name)` 与 `releaseBlobFile(filePath)`（ADR-0020 附件字节存储二分：File 引用 / OPFS）。桌面端 main 进程不注册（保持可选），Web 桥面 adapter.ts 实现
@@ -153,3 +154,13 @@ git subtree merge --prefix=vendor/hermes-desktop $NEW_FILTERED --squash
 1. `pnpm install`（apps/web）
 2. `pnpm --filter @hermes-web/web typecheck` + 关键 vitest/e2e
 3. 更新 §1 基准 SHA 与本文档
+
+> v2026.8.16 同步备注：apps/web/tsconfig.json 增加 `exclude`，把 `vendor/**/*.test.*`
+> 移出 web typecheck 程序。上游桌面测试会 import 其仓库根 `tests/fixtures/*`（子树外），
+> 同步后新增此类引用会破坏本仓库 typecheck；vendor 测试并非本仓库运行/校验范围，
+> apps/web 自身测试（src/bridge/*.test.ts）仍受检。
+>
+> 桥层同步：上游新增 `hermesDesktop.onOpenFindBarRequested` 表面（find overlay 接口），
+> Web find 桥面延续布尔门 denied（ADR-0010/0011/0019），已在
+> apps/web/src/bridge/denied.ts 加 `onOpenFindBarRequested = noopUnsub` 并在
+> adapter.ts 透传；use-keybinds.ts 桌面分支并入上游 overlay 路由抑制（见 §4）。

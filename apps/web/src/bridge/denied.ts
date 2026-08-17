@@ -278,6 +278,7 @@ export class DeniedAdapter {
   onFocusSession = noopUnsub
   onNotificationAction = noopUnsub
   onFoundInPage = noopUnsub
+  onOpenFindBarRequested = noopUnsub
 
   async signalDeepLinkReady(): Promise<{ ok: boolean }> {
     return { ok: true }

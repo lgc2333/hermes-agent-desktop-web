@@ -40,5 +40,14 @@
     "src",
     "../../vendor/hermes-desktop/src",
     "../../vendor/hermes-shared/src"
+  ],
+  // vendor 内上游自带测试（*.test.*）不在本仓库构建/校验范围（上游测试常
+  // import 自身仓库根 tests/fixtures 等子树外资源）。保留 apps/web 自身测试
+  // 受检，仅排除 vendor 测试文件，避免同步后上游新增 fixture 引用破坏 typecheck。
+  "exclude": [
+    "../../vendor/hermes-desktop/src/**/*.test.*",
+    "../../vendor/hermes-desktop/src/**/*.spec.*",
+    "../../vendor/hermes-shared/src/**/*.test.*",
+    "../../vendor/hermes-shared/src/**/*.spec.*"
   ]
 }

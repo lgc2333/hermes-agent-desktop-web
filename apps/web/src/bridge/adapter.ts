@@ -169,6 +169,7 @@ export function buildWebBridge(
     // denied 的 on* 订阅成员是 0 参 noopUnsub；直接透传（少参数函数可赋值给
     // 带参签名），避免包一层再把回调吞掉。
     onFoundInPage: denied.onFoundInPage,
+    onOpenFindBarRequested: denied.onOpenFindBarRequested,
     onClosePreviewRequested: denied.onClosePreviewRequested,
     onOpenFolderRequested: denied.onOpenFolderRequested,
     onOpenUpdatesRequested: denied.onOpenUpdatesRequested,
