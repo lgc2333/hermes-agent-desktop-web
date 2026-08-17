@@ -6,7 +6,7 @@
 ## 1. Subtree 基准（Baseline）
 
 - 上游仓库：https://github.com/NousResearch/hermes-agent.git
-- 基准提交：`cf64ca20c5ab99ebf7e8ca272c69edc7ea0636ed`（上游 **main** HEAD，2026-08-16 之后继续开发线，桌面端含 v2026.8.16→main 的 137 文件变更）
+- 基准提交：`9ed4a7c0251478dc5b6c6cf34f2c06625db23783`(上游 **main** HEAD，2026-08-17)
 - vendor/hermes-desktop：上游 `apps/desktop`（含 src/ 渲染层、scripts/、vite.config.ts 等）
 - vendor/hermes-shared：上游 `apps/shared`（`@hermes/shared` 源码）
 - 引入方式：`git subtree add --squash`（对过滤提交执行，见 §2）
@@ -194,6 +194,21 @@ m3/main 实测：上游 main 相对上一基准只改了 11 个补丁文件里�
 3. 更新 §1 基准 SHA 与本文档
 
 ## 7. 同步备注
+
+### 2026-08-17（→ main 9ed4a7c）
+
+追上游 **main** `9ed4a7c…`（相对上一基准 cf64ca20）。用**手工三路**而非
+`git subtree merge`：早前 `git gc --prune=now` 清掉了 git-subtree 依赖的历史
+split 对象，subtree 直接 fatal `could not rev-parse split hash`（PATCHES §3）。
+流程：新 desktop 过滤提交（`128cbb93…`，树 = 上游 apps/desktop@9ed4a7c）read-tree
+挂到 vendor/hermes-desktop/，12 个 §4 补丁文件在上游 base→new 间**全部未变**，
+直接保留为 HEAD 版（无冲突、无 3-way）。hermes-shared base 与 new 树 SHA 相同
+（未变），未动。本轮 desktop 净变更 21 文件（+1865/−139，主要为 hermes-bots
+插件、budgeted-loop、image-generation-placeholder、connection-registry 等上游新增）。
+
+清理（浅取副作用）：已 `git update-ref -d refs/tags/main`（若存在）、
+`rm -f .git/shallow`、`git gc` 可恢复非 shallow 小体积仓库（未 prune 过滤提交，
+本轮不再 prune，避免再次破坏 subtree split——后续同步继续用手工三路）。
 
 ### v2026.8.16
 
