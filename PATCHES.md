@@ -83,9 +83,9 @@ m3/main 实测：上游 main 相对上一基准只改了 11 个补丁文件里�
   - 同步注意：路径相对 styles.css（位于 vendor/hermes-desktop/src），指向 vendor 自身，subtree pull 后依旧有效；若上游改 styles.css 头部导致 @source 行丢失，按本条恢复
 
 - vendor/hermes-desktop/src/app/chat/index.tsx
-  - 改动：voice 配置 `enabled: true` 改为 `enabled: false`（附注释）
-  - 原因：Web 布尔门：语音移出 Web 计划，关闭 dictation pill（产品范围决策，非能力缺失；上游 remote 模式本身支持语音）
-  - 同步注意：上游若重构 voice 配置，按注释恢复（注释已注明 gates.ts 已删、语义权威 = 本文档）
+  - 改动：voice 配置 `enabled: false` 恢复为 `enabled: true`（附注释），去掉 Web 布尔门
+  - 原因：ADR-0022 语音入 Web 计划——上游 remote 模式原生支持语音，恢复 dictation pill（此前按产品范围关掉；如今流式 TTS + 听写 + 自动朗读已通 proxy 链路，麦克风门在 apps/web 桥层放行）
+  - 同步注意：上游若重构 voice 配置，按注释恢复（语义权威 = PATCHES.md §4 / ADR-0022）
 
 - vendor/hermes-desktop/src/global.d.ts
   - 改动：新增 `DesktopPasswordLoginResult` 接口 + `hermesDesktop.passwordLoginConnectionConfig` 表面（M5 密码 "dashboard login"）；新增 `oauthPasteConnectionConfig(remoteUrl, pasted)` 表面（M6 paste-back，ADR-0017）
@@ -127,6 +127,16 @@ m3/main 实测：上游 main 相对上一基准只改了 11 个补丁文件里�
   - 改动：三处（ADR-0020）——① attachImageBlob 去掉无条件 arrayBuffer()，改为优先调 `window.hermesDesktop.saveImageFile(blob, name)`（Web：File 保留引用 / Blob 落 OPFS），桌面端无该表面时回落旧 `saveImageBuffer` bytes 路径；② 新增 `attachFileBlob(file)`：`saveImageFile(file) → attachContextFilePath(虚拟路径)`，attachDroppedItems 非图片分支在 `!filePath`（浏览器 File 无路径）时调用；③ removeAttachment 对 `web-blob://` 前缀路径附件调 `releaseBlobFile` 显式释放本地字节
   - 原因：Web 端非图片文件拖拽恢复可用（ADR-0020），图片迁移到 File 引用 / OPFS；chip 移除释放字节，残留由页面刷新兜底
   - 同步注意：桌面构建 `saveImageFile` 为 undefined → 走原 saveImageBuffer 路径，行为不变；上游若重构 attach 链路（如新增桥面方法），按"Web 专有扩展可选 + 窄回退"语义合并；`attachFileBlob` 仅浏览器 File 无路径分支生效，不触及桌面路径附加
+
+- vendor/hermes-desktop/src/global.d.ts
+  - 改动：`hermesDesktop` 表面新增**可选** `streamMediaUrl(path): Promise<null|string>`（ADR-0022，媒体播放入口）。桌面端 main 进程不注册该表面（保持可选）→ 桌面 `resolveMediaPlaybackSrc` 走回 `hermes-media://` 协议，行为不变；Web 桥面 adapter.ts 实现（返回同源代理流 URL）
+  - 原因：浏览器无 Electron main 进程等价物，媒体元素发不了鉴权头；把"怎么流"还给各环境，Web 返回 /api/proxy/media-stream 代理流 URL（Range/seek）
+  - 同步注意：上游若新增同名桥面，按其签名对齐即可；remove 语义=回退 hermes-media，勿覆盖
+
+- vendor/hermes-desktop/src/lib/media.ts
+  - 改动：`resolveMediaPlaybackSrc` 的 audio/video 分支先委托 `window.hermesDesktop.streamMediaUrl?.(path)`（存在且返回非 null 则用之），否则回退现有 `isRemoteGateway() ? mediaGatewayStreamUrl : mediaStreamUrl`（桌面 hermes-media:// 协议）
+  - 原因：ADR-0022 桥优先级——Web 桥面返回同源代理流 URL；桌面无该表面时零回归
+  - 同步注意：上游若改 resolveMediaPlaybackSrc 分支结构，保留"桥委托 + null/缺省回退"语义
 
 ## 5. 需注意的上游联动
 

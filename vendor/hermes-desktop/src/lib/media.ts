@@ -92,6 +92,14 @@ export async function resolveMediaPlaybackSrc(path: string): Promise<string> {
   }
 
   if (window.hermesDesktop && ['audio', 'video'].includes(mediaKind(path))) {
+    // ADR-0022：桥优先级——环境自报"怎么流"。Web 桥面返回同源代理流 URL；
+    // 缺省/返回 null 时回退到桌面 hermes-media:// 协议（Electron 主进程处理）。
+    const viaBridge = await window.hermesDesktop.streamMediaUrl?.(path).catch(() => null)
+
+    if (viaBridge) {
+      return viaBridge
+    }
+
     return isRemoteGateway() ? mediaGatewayStreamUrl(path) : mediaStreamUrl(path)
   }
 

@@ -283,14 +283,12 @@ describe('same-origin proxy (no VITE_PROXY_URL — ADR-0016)', () => {
   })
 
   it('getConnectionConfig prefills default gateway from same-origin /api/proxy/meta', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValue(
-        jsonResponse(200, {
-          defaultGatewayUrl: 'http://hermes:9119',
-          allowedTargets: [],
-        }),
-      )
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse(200, {
+        defaultGatewayUrl: 'http://hermes:9119',
+        allowedTargets: [],
+      }),
+    )
     vi.stubGlobal('fetch', fetchMock)
     const adapter = new GatewayAdapter()
 
@@ -497,7 +495,10 @@ describe('M3 OAuth (proxy mode)', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     await expect(
-      adapter.oauthPasteConnectionConfig('http://127.0.0.1:9119', '?code=x&state=forged'),
+      adapter.oauthPasteConnectionConfig(
+        'http://127.0.0.1:9119',
+        '?code=x&state=forged',
+      ),
     ).rejects.toThrow('Unknown or expired login state')
   })
 
@@ -745,12 +746,18 @@ describe('M3 OAuth (proxy mode)', () => {
 
     // "仅保存（Save for next restart）" 不触发重连事件——只有 apply 会。
     onApplied.mockClear()
-    await adapter.saveConnectionConfig({ mode: 'remote', remoteUrl: 'http://127.0.0.1:9119' })
+    await adapter.saveConnectionConfig({
+      mode: 'remote',
+      remoteUrl: 'http://127.0.0.1:9119',
+    })
     expect(onApplied).not.toHaveBeenCalled()
 
     // 退订后不再收到事件。
     unsubscribe()
-    await adapter.applyConnectionConfig({ mode: 'remote', remoteUrl: 'http://127.0.0.1:9119' })
+    await adapter.applyConnectionConfig({
+      mode: 'remote',
+      remoteUrl: 'http://127.0.0.1:9119',
+    })
     expect(onApplied).not.toHaveBeenCalled()
     vi.unstubAllGlobals()
   })
@@ -1153,5 +1160,66 @@ describe('WEB_VERSION (build-injected client identity, ADR-0014)', () => {
   // 项目标识：HEAD 打 tag → 版本号；否则 → g<短sha>（无 git 时退回项目版本号）。
   it('follows the <desktop version>+web.<tag version | g<sha>> shape', () => {
     expect(WEB_VERSION).toMatch(/^\d+\.\d+\.\d+\+web\.(?:g[0-9a-f]+|\d+\.\d+\.\d+)$/)
+  })
+})
+
+describe('GatewayAdapter.streamMediaUrl (ADR-0022)', () => {
+  beforeEach(() => {
+    window.localStorage.clear()
+    loadRegistry()
+  })
+
+  it('builds a same-origin proxy media-stream URL with target/path/token', async () => {
+    const adapter = new GatewayAdapter()
+    const url = await adapter.streamMediaUrl('/tmp/a.ogg')
+    const parsed = new URL(String(url))
+    expect(parsed.origin).toBe(window.location.origin)
+    expect(parsed.pathname).toBe('/api/proxy/media-stream')
+    expect(parsed.searchParams.get('target')).toBe('http://127.0.0.1:5180')
+    expect(parsed.searchParams.get('path')).toBe('/tmp/a.ogg')
+    expect(parsed.searchParams.get('token')).toBe('mock-token')
+    expect(parsed.searchParams.has('profile')).toBe(false)
+  })
+
+  it('strips file: prefix and adds profile when set', async () => {
+    window.localStorage.setItem('hermes-web.profile.v1', 'voice reviewer')
+    const adapter = new GatewayAdapter()
+    const url = await adapter.streamMediaUrl('file:///tmp/voice.ogg')
+    const parsed = new URL(String(url))
+    expect(parsed.searchParams.get('path')).toBe('/tmp/voice.ogg')
+    expect(parsed.searchParams.get('profile')).toBe('voice reviewer')
+  })
+
+  it('omits token for oauth connections (cookie-session auth)', async () => {
+    const { upsertConnection, setPrimaryConnection } = await import('../registry')
+    upsertConnection({
+      id: 'c2',
+      label: 'g',
+      kind: 'remote',
+      url: 'https://gw.example.com',
+      authMode: 'oauth',
+      token: '',
+    })
+    setPrimaryConnection('c2')
+    const adapter = new GatewayAdapter()
+    const url = await adapter.streamMediaUrl('/tmp/a.ogg')
+    const parsed = new URL(String(url))
+    expect(parsed.searchParams.has('token')).toBe(false)
+    expect(parsed.searchParams.get('target')).toBe('https://gw.example.com')
+  })
+
+  it('returns null when the primary connection has no url', async () => {
+    const { upsertConnection, setPrimaryConnection } = await import('../registry')
+    upsertConnection({
+      id: 'c3',
+      label: 'x',
+      kind: 'remote',
+      url: '',
+      authMode: 'token',
+      token: '',
+    })
+    setPrimaryConnection('c3')
+    const adapter = new GatewayAdapter()
+    expect(await adapter.streamMediaUrl('/tmp/a.ogg')).toBeNull()
   })
 })

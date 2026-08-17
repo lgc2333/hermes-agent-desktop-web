@@ -143,7 +143,11 @@ export function buildWebBridge(
     petOverlay: denied.petOverlay,
     hud: denied.hud,
     quickEntry: denied.quickEntry,
-    requestMicrophoneAccess: () => denied.requestMicrophoneAccess(),
+    // ADR-0022：语音放行——requestMicrophoneAccess 从 denied 切到浏览器等价
+    // （getUserMedia 原生处理权限）；denied.ts 保留布尔门实现便于隔离测试。
+    requestMicrophoneAccess: () => browser.requestMicrophoneAccess(),
+    // ADR-0022：媒体播放入口——Web 桥返回同源代理流 URL（/api/proxy/media-stream）。
+    streamMediaUrl: (path) => gateway.streamMediaUrl(path),
     saveImageFromUrl: (url) => browser.saveImageFromUrl(url),
     saveImageBuffer: (data, ext) => browser.saveImageBuffer(data, ext),
     saveClipboardImage: () => browser.saveClipboardImage(),

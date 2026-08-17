@@ -76,6 +76,21 @@ export const WEB_VERSION =
 export { toHermesConnection, webApi } from './rest'
 export type { BridgeApi } from './fs-git'
 
+/**
+ * ADR-0022：媒体路径 → 网关侧文件路径（镜像 vendor media.ts filePathFromMediaPath：
+ * 摘掉 file: 前缀并解码；其余原样返回）。
+ */
+function mediaFilePath(path: string): string {
+  if (!path.startsWith('file:')) {
+    return path
+  }
+  try {
+    return decodeURIComponent(new URL(path).pathname)
+  } catch {
+    return path.replace(/^file:\/\//, '')
+  }
+}
+
 export interface WebBridgeOptions {
   /** M1 默认目标 = 注册表主连接（mock gateway）；M2 注入同源代理地址。 */
   api?: typeof webApi
@@ -119,6 +134,38 @@ export class GatewayAdapter {
 
   api<T>(request: HermesApiRequest): Promise<T> {
     return this.apiImpl<T>(request)
+  }
+
+  // ── 媒体播放入口（ADR-0022）──────────────────────────────────────────────
+
+  /**
+   * ADR-0022：返回同源可播媒体 URL（audio/video 附件走 /api/proxy/media-stream，
+   * Range/seek）。浏览器媒体元素发不了 X-Hermes-Target 头，目标经 query 指定；
+   * OAuth/密码会话靠同源 httpOnly cookie 认证，token 模式把 token 放 query。
+   * 非流式类型/无连接时返回 null（vendor media.ts 回退 data-url / hermes-media）。
+   */
+  async streamMediaUrl(path: string): Promise<null | string> {
+    const conn = getPrimaryConnection()
+
+    if (!conn?.url) {
+      return null
+    }
+
+    const params = new URLSearchParams({
+      target: conn.url.replace(/\/+$/, ''),
+      path: mediaFilePath(path), // 原始路径，URLSearchParams 自行编码一次
+    })
+    const profile = readProfilePreference() ?? ''
+
+    if (profile) {
+      params.set('profile', profile)
+    }
+
+    if (conn.authMode !== 'oauth') {
+      params.set('token', conn.token ?? '')
+    }
+
+    return `${proxyBaseUrl()}/api/proxy/media-stream?${params.toString()}`
   }
 
   // ── boot 面（无后端进程，语义 = 连接探测，渲染层自己推进 renderer.* 步骤）──

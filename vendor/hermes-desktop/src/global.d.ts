@@ -193,6 +193,12 @@ declare global {
       api: <T>(request: HermesApiRequest) => Promise<T>
       notify: (payload: HermesNotification) => Promise<boolean>
       requestMicrophoneAccess: () => Promise<boolean>
+      /**
+       * ADR-0022: 返回可 Range/seek 的媒体播放入口 URL（audio/video）；null =
+       * 无法流式（调用方走 data-url 兜底）。桥优先级能力——Electron 桌面端不实现
+       * （回退 renderer 的 hermes-media:// 协议），Web 桥面返回同源代理流 URL。
+       */
+      streamMediaUrl?: (path: string) => Promise<null | string>
       /** read_window_below tool: metadata for the OS window directly underneath this one (never pixels). */
       readWindowBelow?: () => Promise<{
         frontmost: { app: string; title: string } | null

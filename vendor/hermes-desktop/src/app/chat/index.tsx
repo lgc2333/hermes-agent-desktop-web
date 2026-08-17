@@ -504,9 +504,9 @@ export const ChatView = memo(function ChatView({
         suggestions: contextSuggestions
       },
       voice: {
-        // Web 布尔门（PATCHES.md §4 登记）：语音移出 Web 计划（PLAN §1），
-        // 关闭 dictation pill（gates.ts 已删，语义权威 = PATCHES.md §4）。
-        enabled: false,
+        // Web 语音已入计划（ADR-0022）：上游 remote 模式原生支持语音，
+        // 恢复 dictation pill（语义权威 = PATCHES.md §4 / ADR-0022）。
+        enabled: true,
         active: false
       }
     }),

@@ -123,7 +123,9 @@ export function upstreamWsUrl(target: string, proxyUrl: URL): URL {
   const parsed = new URL(target)
   // pathname 为 '/'（根目标）时省略前缀，避免拼出 '//api/ws' 双斜杠。
   const prefix = parsed.pathname === '/' ? '' : parsed.pathname
-  const upstream = new URL(`${wsScheme}://${parsed.host}${prefix}/api/ws`)
+  // ADR-0022：透传客户端 pathname（默认 /api/ws）——流式 TTS 的
+  // /api/audio/speak-stream 等 WS 端点因此能到达网关；只剔除代理私有 target。
+  const upstream = new URL(`${wsScheme}://${parsed.host}${prefix}${proxyUrl.pathname}`)
   proxyUrl.searchParams.forEach((value, key) => {
     if (key !== 'target') {
       upstream.searchParams.append(key, value)
@@ -227,6 +229,46 @@ export async function relayRest(
     status: upstream.status,
     statusText: upstream.statusText,
     headers: outHeaders,
+  })
+}
+
+/** 媒体流请求头白名单（与桌面 electron/media-protocol.ts 一致：Range/seek 那套）。 */
+const MEDIA_STREAM_REQUEST_HEADERS = [
+  'accept',
+  'if-modified-since',
+  'if-none-match',
+  'if-range',
+  'range',
+] as const
+
+/**
+ * ADR-0022：构造指向 gateway /api/files/stream 的合成 GET（Range 端点），只带
+ * 浏览器媒体元素实际会发的 seek 头；由 relayRest 透传并注入鉴权。`filePath` 为已
+ * 解码的文件路径，searchParams.set 会再 URL 编码（与桌面 remoteMediaEndpoint 一致）。
+ */
+export function mediaStreamUpstreamRequest(
+  target: string,
+  filePath: string,
+  profile: string | undefined,
+  sourceHeaders: Headers,
+): Request {
+  const targetBase = target.replace(/\/+$/, '')
+  const usp = new URLSearchParams()
+  usp.set('path', filePath)
+  if (profile) {
+    usp.set('profile', profile)
+  }
+  const headers = new Headers()
+  for (const name of MEDIA_STREAM_REQUEST_HEADERS) {
+    const value = sourceHeaders.get(name)
+    if (value) {
+      headers.set(name, value)
+    }
+  }
+
+  return new Request(`${targetBase}/api/files/stream?${usp.toString()}`, {
+    method: 'GET',
+    headers,
   })
 }
 

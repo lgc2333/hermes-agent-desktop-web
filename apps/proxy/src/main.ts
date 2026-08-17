@@ -29,6 +29,7 @@ import {
 } from './oauth.ts'
 import {
   dialUpstreamWs,
+  mediaStreamUpstreamRequest,
   normalizeTarget,
   parseAllowedTargets,
   relayRest,
@@ -319,7 +320,6 @@ async function handleWs(
   const ticket =
     (await oauthStore.wsTicketFor(oauthKey, target)) ??
     (await sessionStore.wsTicketFor(sessionKey, target))
-
   // 无会话且无静态 token：gated gateway 拨号必败。必须在 upgrade 前拒绝
   // （401），否则浏览器先拿 101、随后立刻断开——渲染层误判已连接 → 跳
   // 模型选择 → 鉴权 401 → 跳回 setup → 重拨循环（OAuth 取消后实测的闪断
@@ -370,6 +370,60 @@ async function handleWs(
       request,
     )
   }
+}
+
+/**
+ * ADR-0022：/api/proxy/media-stream —— 同源音频/视频附件可播源（Range/seek）。
+ * 浏览器媒体元素 GET 带不了 X-Hermes-Target 头，故目标编码进 query；本路由是
+ * 浏览器里"main 进程取数"的等价物：目标白名单（ADR-0015）+ 按会话/token 注入
+ * 鉴权 + 透传 Range → gateway /api/files/stream，把 206 流式回传。
+ */
+async function handleMediaStream(
+  request: Request,
+  oauthStore: OAuthStore,
+  sessionStore: SessionStore,
+  allowTarget: (target: string) => boolean,
+): Promise<Response> {
+  const url = new URL(request.url)
+  const rawTarget = url.searchParams.get('target') ?? ''
+  let target: string
+  try {
+    target = normalizeTarget(rawTarget)
+  } catch (error) {
+    return jsonResponse(
+      400,
+      { detail: error instanceof Error ? error.message : String(error) },
+      request,
+    )
+  }
+  if (!allowTarget(target)) {
+    return jsonResponse(403, { detail: 'target not allowed' }, request)
+  }
+  const filePath = url.searchParams.get('path') ?? ''
+  if (!filePath) {
+    return jsonResponse(400, { detail: 'path required' }, request)
+  }
+  const profile = url.searchParams.get('profile')?.trim() || undefined
+  const token = url.searchParams.get('token') || null
+
+  const cookies = parseCookies(request.headers.get('cookie'))
+  const oauthKey = cookies[SESSION_COOKIE_NAME] ?? null
+  const sessionKey = cookies[PASSWORD_SESSION_COOKIE] ?? null
+  const bearer = await oauthStore.bearerFor(oauthKey, target)
+  const cookie = sessionStore.cookieFor(sessionKey, target)
+
+  const upstream = mediaStreamUpstreamRequest(
+    target,
+    filePath,
+    profile,
+    request.headers,
+  )
+  // token 模式（无 OAuth/密码会话）：把 query 里的 token 转成上游凭证头。
+  if (!bearer && !cookie && token) {
+    upstream.headers.set('x-hermes-session-token', token)
+  }
+
+  return withCors(await relayRest(upstream, target, { bearer, cookie }), request)
 }
 
 /** 构造单 handler（测试可注入配置；生产从 env 读取）。 */
@@ -510,6 +564,12 @@ export function createProxyHandler(
     }
     if (url.pathname === '/api/proxy/session/logout' && request.method === 'POST') {
       return withCors(await session.handleLogout(request), request)
+    }
+
+    // ADR-0022：同源媒体元素可播源（GET，媒体元素发不了 X-Hermes-Target 头，
+    // 目标经 query 指定）。白名单 + 鉴权注入与转发面同语义。
+    if (url.pathname === '/api/proxy/media-stream' && request.method === 'GET') {
+      return handleMediaStream(request, oauthStore, sessionStore, allowTarget)
     }
 
     // 分支 6：转发（白名单已校验；WS 在 handleWs 内 upgrade 前校验）。

@@ -4,6 +4,7 @@
  */
 import { assertEquals, assertStrictEquals, assertThrows } from 'jsr:@std/assert'
 import {
+  mediaStreamUpstreamRequest,
   normalizeTarget,
   parseAllowedTargets,
   relayRest,
@@ -75,3 +76,59 @@ Deno.test('upstreamUrl: target + pathname + search', () => {
     'http://gw:9119/hermes/api/profiles/sessions/sidebar',
   )
 })
+
+Deno.test('upstreamWsUrl: default /api/ws, strips proxy target param', () => {
+  const url = new URL(
+    'ws://proxy:8787/api/ws?token=tok123&target=' +
+      encodeURIComponent('http://gw:9119'),
+  )
+  const upstream = upstreamWsUrl('http://gw:9119', url)
+  assertStrictEquals(upstream.href, 'ws://gw:9119/api/ws?token=tok123')
+})
+
+Deno.test('upstreamWsUrl: ADR-0022 forwards client pathname (speak-stream)', () => {
+  const url = new URL(
+    'ws://proxy:8787/api/audio/speak-stream?token=tok123&target=' +
+      encodeURIComponent('http://gw:9119'),
+  )
+  const upstream = upstreamWsUrl('http://gw:9119', url)
+  assertStrictEquals(upstream.href, 'ws://gw:9119/api/audio/speak-stream?token=tok123')
+})
+
+Deno.test('upstreamWsUrl: preserves gateway prefix path on custom pathname', () => {
+  const url = new URL(
+    'ws://proxy:8787/api/audio/speak-stream?target=' +
+      encodeURIComponent('http://gw:9119/hermes'),
+  )
+  const upstream = upstreamWsUrl('http://gw:9119/hermes', url)
+  assertStrictEquals(upstream.href, 'ws://gw:9119/hermes/api/audio/speak-stream')
+})
+
+Deno.test(
+  'mediaStreamUpstreamRequest: builds gateway /api/files/stream with media headers only',
+  () => {
+    const source = new Headers({
+      range: 'bytes=0-1023',
+      'if-range': 'etag-1',
+      accept: 'audio/webm',
+      'x-hermes-target': 'http://danger:1', // must NOT leak
+      cookie: 'secret=1', // must NOT leak
+    })
+    const req = mediaStreamUpstreamRequest(
+      'http://gw:9119/',
+      '/tmp/a b.ogg',
+      'reviewer',
+      source,
+    )
+    assertStrictEquals(req.method, 'GET')
+    assertStrictEquals(
+      req.url,
+      'http://gw:9119/api/files/stream?path=%2Ftmp%2Fa+b.ogg&profile=reviewer',
+    )
+    assertStrictEquals(req.headers.get('range'), 'bytes=0-1023')
+    assertStrictEquals(req.headers.get('if-range'), 'etag-1')
+    assertStrictEquals(req.headers.get('accept'), 'audio/webm')
+    assertStrictEquals(req.headers.has('x-hermes-target'), false)
+    assertStrictEquals(req.headers.has('cookie'), false)
+  },
+)

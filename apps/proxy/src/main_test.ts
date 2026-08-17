@@ -36,6 +36,23 @@ function startTargetHttp(): { url: string; close: () => Promise<void> } {
 
       return new Response(body, { status: 200 })
     }
+    if (url.pathname === '/api/files/stream') {
+      const range = request.headers.get('range') ?? ''
+      const body = JSON.stringify({
+        path: url.searchParams.get('path'),
+        profile: url.searchParams.get('profile'),
+        token: request.headers.get('x-hermes-session-token'),
+        range,
+      })
+      return new Response(body, {
+        status: range ? 206 : 200,
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept-Ranges': 'bytes',
+          ...(range ? { 'Content-Range': 'bytes 0-10/1000' } : {}),
+        },
+      })
+    }
     return new Response(JSON.stringify({ detail: 'No such API endpoint' }), {
       status: 404,
     })
@@ -84,7 +101,11 @@ function startTargetWs(): { url: string; close: () => Promise<void> } {
 
 /** 起一个完整代理实例。 */
 async function startProxy(
-  opts: { allowedTargets?: string[]; webDist?: string; defaultGatewayUrl?: string } = {},
+  opts: {
+    allowedTargets?: string[]
+    webDist?: string
+    defaultGatewayUrl?: string
+  } = {},
 ): Promise<{
   url: string
   close: () => Promise<void>
@@ -163,6 +184,64 @@ Deno.test('proxy: passes through 404 and other statuses', async () => {
     })
     assertEquals(res.status, 404)
     assertEquals((await res.json()).detail, 'No such API endpoint')
+  } finally {
+    await proxy.close()
+    await target.close()
+  }
+})
+
+Deno.test(
+  'proxy: /api/proxy/media-stream streams gateway file with Range + token (ADR-0022)',
+  async () => {
+    const target = startTargetHttp()
+    const proxy = await startProxy()
+    try {
+      const res = await fetch(
+        `${proxy.url}/api/proxy/media-stream?target=${encodeURIComponent(target.url)}` +
+          `&path=${encodeURIComponent('/tmp/a.ogg')}&profile=reviewer&token=tok123`,
+        { headers: { range: 'bytes=0-10' } },
+      )
+      assertEquals(res.status, 206)
+      assertEquals(res.headers.get('content-range'), 'bytes 0-10/1000')
+      const json = await res.json()
+      assertEquals(json.path, '/tmp/a.ogg')
+      assertEquals(json.profile, 'reviewer')
+      assertEquals(json.token, 'tok123')
+      assertEquals(json.range, 'bytes=0-10')
+    } finally {
+      await proxy.close()
+      await target.close()
+    }
+  },
+)
+
+Deno.test(
+  'proxy: /api/proxy/media-stream gates non-allowlisted target (403)',
+  async () => {
+    const proxy = await startProxy({
+      allowedTargets: ['http://127.0.0.1:1'],
+    })
+    try {
+      const res = await fetch(
+        `${proxy.url}/api/proxy/media-stream?target=${encodeURIComponent('http://127.0.0.1:2')}` +
+          `&path=${encodeURIComponent('/tmp/a.ogg')}&token=tok123`,
+      )
+      assertEquals(res.status, 403)
+      assertEquals((await res.json()).detail, 'target not allowed')
+    } finally {
+      await proxy.close()
+    }
+  },
+)
+
+Deno.test('proxy: /api/proxy/media-stream rejects missing path (400)', async () => {
+  const target = startTargetHttp()
+  const proxy = await startProxy()
+  try {
+    const res = await fetch(
+      `${proxy.url}/api/proxy/media-stream?target=${encodeURIComponent(target.url)}`,
+    )
+    assertEquals(res.status, 400)
   } finally {
     await proxy.close()
     await target.close()
@@ -256,7 +335,10 @@ Deno.test('proxy: OAuth start rejects non-allowlisted target (403)', async () =>
       body: JSON.stringify({ target: 'http://127.0.0.1:5180' }),
     })
     assertEquals(ok.status, 200)
-    assertEquals((await ok.json()).authorizeUrl.startsWith('http://127.0.0.1:5180'), true)
+    assertEquals(
+      (await ok.json()).authorizeUrl.startsWith('http://127.0.0.1:5180'),
+      true,
+    )
   } finally {
     await proxy.close()
   }

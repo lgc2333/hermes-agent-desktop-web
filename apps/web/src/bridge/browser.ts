@@ -120,6 +120,12 @@ export class BrowserAdapter {
     void this.blobStore.clearAll().catch(() => undefined)
   }
 
+  async requestMicrophoneAccess(): Promise<boolean> {
+    // ADR-0022：语音放行——浏览器 getUserMedia 原生处理权限（一次性弹窗）；
+    // 无 MediaDevices/录音环境时返回 false（use-mic-recorder 拒绝启动）。
+    return Boolean(navigator.mediaDevices?.getUserMedia)
+  }
+
   async readClipboard(): Promise<string> {
     try {
       if (navigator.clipboard?.readText) {
