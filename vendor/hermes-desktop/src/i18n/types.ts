@@ -660,10 +660,15 @@ export interface Translations {
       signOut: string
       signInWith: (provider: string) => string
       authTitle: string
+      authUsername: string
+      authPassword: string
       authSignedInPassword: string
       authSignedInOauth: string
       authNeedsPassword: string
       authNeedsOauth: (provider: string) => string
+      authPasteHint: string
+      authPastePlaceholder: string
+      authPasteSubmit: string
       tokenTitle: string
       tokenDesc: string
       existingToken: (value: string) => string
@@ -2100,7 +2105,13 @@ export interface Translations {
     probeError: string
     identityProvider: string
     authTitle: string
+    authUsername: string
+    authPassword: string
+    authNeedsPassword: string
     authNeedsOauth: (provider: string) => string
+    authPasteHint: string
+    authPastePlaceholder: string
+    authPasteSubmit: string
     authSignedIn: string
     connected: string
     signIn: string

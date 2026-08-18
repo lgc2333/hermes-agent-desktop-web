@@ -9,7 +9,6 @@ import type { DesktopConnectionConfig } from '@/global'
 import { useI18n } from '@/i18n'
 import { ChevronLeft, FileText, Loader2, LogIn, RefreshCw, SlidersHorizontal, Wrench } from '@/lib/icons'
 import { $desktopBoot } from '@/store/boot'
-import { notify, notifyError } from '@/store/notifications'
 import { $desktopOnboarding } from '@/store/onboarding'
 
 import type { RemoteReauth } from './boot-failure-reauth'
@@ -162,40 +161,17 @@ export function BootFailureOverlay() {
     setBusy(null)
   }
 
-  // Clear the OAuth partition first, then open the gateway's login window
-  // (username/password form or OAuth redirect — the desktop drives both). A
-  // partition-wide sign-out drops stale gateway AND identity-provider cookies so
-  // an expired session can't silently bounce us back into the same state. On a
-  // successful sign-in the cookie is re-established; reload so boot mints a fresh
-  // ticket against a live session.
+  // M5 + ADR-0017: password AND OAuth reauth both route to the embedded
+  // Gateway settings panel — password shows the credential form, OAuth shows
+  // the sign-in button + paste fallback (same source as Settings, no parallel
+  // copy to drift). Remote browsers cannot reach the proxy's loopback redirect,
+  // so the paste affordance must live in exactly one place.
   const signInRemote = async () => {
     if (!remoteReauth) {
       return
     }
 
-    setBusy('signin')
-
-    try {
-      await window.hermesDesktop?.oauthLogoutConnectionConfig?.()
-      const result = await window.hermesDesktop?.oauthLoginConnectionConfig(remoteReauth.url)
-
-      if (result?.connected) {
-        notify({ kind: 'success', title: t.boot.failure.signedInTitle, message: t.boot.failure.signedInMessage })
-        window.location.reload()
-
-        return
-      }
-
-      notify({
-        kind: 'warning',
-        title: t.boot.failure.signInIncompleteTitle,
-        message: t.boot.failure.signInIncompleteMessage
-      })
-    } catch (err) {
-      notifyError(err, t.boot.failure.signInFailed)
-    } finally {
-      setBusy(null)
-    }
+    setView('connect')
   }
 
   const openLogs = () => void window.hermesDesktop?.revealLogs().catch(() => undefined)
