@@ -61,6 +61,7 @@ export default defineConfig(({ command }) => ({
       '@': path.join(vendorDesktop, 'src'),
       '@hermes/plugin-sdk': path.join(vendorDesktop, 'src/sdk/index.ts'),
       '@hermes/shared/billing': path.join(vendorShared, 'src/billing-types.ts'),
+      '@hermes/shared/translucency': path.join(vendorShared, 'src/translucency.ts'),
       '@hermes/shared': path.join(vendorShared, 'src'),
     },
     dedupe: ['react', 'react-dom', 'react-router'],

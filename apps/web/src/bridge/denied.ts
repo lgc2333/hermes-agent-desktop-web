@@ -31,6 +31,9 @@ import type {
   HermesTitleBarTheme,
 } from '@/global'
 import type { WakeIndicatorState } from '@/lib/wake-indicator'
+// 上游 2026-08-18 起 translucency 走 @hermes/shared/translucency（窗口玻璃
+// 效果）；Web 无桌面窗口面（布尔门），仅同步参数类型以匹配 global.d.ts。
+import type { TranslucencyState } from '@hermes/shared/translucency'
 // global.d.ts 只 import 这些类型而不 re-export —— 直接从源模块取。
 import type {
   PetOverlayBounds,
@@ -298,8 +301,8 @@ export class DeniedAdapter {
     // no-op
   }
 
-  setTranslucency(_payload: { intensity: number }): void {
-    // no-op
+  setTranslucency(_payload: TranslucencyState): void {
+    // no-op（Web 无桌面窗口玻璃面，布尔门）
   }
 
   setKeepAwake(_on: boolean): void {
