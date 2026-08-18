@@ -1,22 +1,24 @@
 {
-  "name": "hermes-agent-desktop-web",
+  "name": "@hermes/shared",
   "private": true,
   "version": "0.0.0",
-  "description": "Hermes Desktop renderer ported to the web (remote gateway via thin proxy).",
   "type": "module",
-  "engines": {
-    "node": ">=22.22.0"
+  "exports": {
+    ".": "./src/index.ts",
+    "./billing": "./src/billing-types.ts",
+    "./billing-policy": "./src/billing-policy.ts",
+    "./charge-settlement": "./src/charge-settlement.ts",
+    "./skin": "./src/skin.ts"
   },
-  "packageManager": "pnpm@11.22.0+sha512.1ff870c4c6133dfd88fb2afc46dd13d47f09c9794b438c6fdb47ca98caf3bc16381ee0be93a091b8e3824cf01f889f46d7d9e20910fb0be1ab0fb5baa80dd621",
+  "types": "./src/index.ts",
   "scripts": {
-    "dev": "pnpm --filter @hermes-web/web dev",
-    "dev:remote": "pnpm --filter @hermes-web/web dev:remote",
-    "build": "pnpm --filter @hermes-web/web build",
-    "typecheck": "pnpm --filter @hermes-web/web typecheck",
-    "sync:upstream": "bash scripts/sync-upstream.sh",
-    "format": "prettier -cw ."
+    "lint": "eslint src/",
+    "lint:fix": "eslint src/ --fix",
+    "fix": "npm run lint:fix",
+    "typecheck": "tsc -p . --noEmit",
+    "check": "npm run typecheck && npm run lint"
   },
   "devDependencies": {
-    "prettier": "^3.9.5"
+    "typescript": "6.0.3"
   }
 }
