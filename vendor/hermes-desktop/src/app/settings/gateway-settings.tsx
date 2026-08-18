@@ -604,7 +604,7 @@ export function GatewaySettings({ embedded = false }: { embedded?: boolean } = {
 
     try {
       await window.hermesDesktop.oauthPasteConnectionConfig(trimmedUrl, pastedUrl)
-      const refreshed = await window.hermesDesktop.getConnectionConfig(scope)
+      const refreshed = await window.hermesDesktop.getConnectionConfig(null)
       acceptSavedConfig(refreshed)
       notify({ kind: 'success', title: g.signedIn, message: g.connectedTo(providerLabel) })
     } catch (err) {
@@ -653,7 +653,6 @@ export function GatewaySettings({ embedded = false }: { embedded?: boolean } = {
       // trap after clearing cookies.
       const saved = await window.hermesDesktop.saveConnectionConfig({
         mode: state.mode,
-        profile: scope ?? undefined,
         remoteAuthMode: 'oauth',
         remoteUrl: trimmedUrl
       })
@@ -676,7 +675,7 @@ export function GatewaySettings({ embedded = false }: { embedded?: boolean } = {
       }
 
       if (result.connected) {
-        const refreshed = await window.hermesDesktop.getConnectionConfig(scope)
+        const refreshed = await window.hermesDesktop.getConnectionConfig(null)
         acceptSavedConfig(refreshed)
         setAuthPassword('')
         setAuthUsername('')
