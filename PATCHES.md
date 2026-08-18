@@ -6,7 +6,7 @@
 ## 1. Subtree 基准（Baseline）
 
 - 上游仓库：https://github.com/NousResearch/hermes-agent.git
-- 基准提交：`9ed4a7c0251478dc5b6c6cf34f2c06625db23783`(上游 **main** HEAD，2026-08-17)
+- 基准提交：`e624e9fde561e1add9388384012b295fde669ade`(上游 **main** HEAD，2026-08-18)
 - vendor/hermes-desktop：上游 `apps/desktop`（含 src/ 渲染层、scripts/、vite.config.ts 等）
 - vendor/hermes-shared：上游 `apps/shared`（`@hermes/shared` 源码）
 - 引入方式：`git subtree add --squash`（对过滤提交执行，见 §2）
@@ -194,6 +194,43 @@ m3/main 实测：上游 main 相对上一基准只改了 11 个补丁文件里�
 3. 更新 §1 基准 SHA 与本文档
 
 ## 7. 同步备注
+
+### 2026-08-18（→ main e624e9f）
+
+追上游 **main** `e624e9f…`（相对上一基准 9ed4a7c）。仍走**手工三路**
+（git-subtree 不可用，见下方「git-subtree 失效根因」）。本轮上游改动较大：
+desktop 净变更 136 文件（+13078/−1981，translucency 玻璃效果、kanban
+completion-notify、settings-scope、gateway 生命周期等）。
+
+**12 个 §4 补丁文件中 6 个上游也改了**（styles.css、global.d.ts、
+gateway-settings.tsx、i18n/en|zh|types），用 `git merge-file` 3-way
+（base=9ed4a7c 原版 / ours=HEAD 补丁版 / main=e624e9f 新上游）——**全部
+clean 零冲突**，Web 专有表面（passwordLogin/oauthPaste/streamMediaUrl/
+saveImageFile、@source 两行、passwordSignIn/pasteSignIn）逐一核对保留。
+其余 6 个补丁文件上游未变，直接保留 HEAD 版。hermes-shared 未动。
+
+流程脚本：`/tmp/vendor-merge2.sh`（build 构建树+commit 不落盘 / apply
+reset --hard 落地；CHANGED 文件 3-way、SAME 文件保留 HEAD、其余取新树）。
+
+### git-subtree 失效根因（2026-08-18 查证）
+
+`git subtree merge`/`split` 现在 fatal `could not rev-parse split hash
+8674f2c… from commit 4c67cd9`。根因链：
+
+1. vendor 引入用**过滤提交法**（本地 `commit-tree` 造的提交，树 = 上游
+   apps/desktop），squash 提交 `4c67cd9` 的 message 记着
+   `git-subtree-split: 8674f2c…`（指向本地过滤提交）。
+2. 过滤提交**不是上游历史对象、也不挂在任何 ref 上**，只被该 message 引用。
+3. 早前 `git gc --prune=now` 把它们当不可达对象回收（`cat-file` 已确认
+   `8674f2c`/`800e98c`/`caf535b`/`8b09caa` 全部丢失，reflog 无痕迹）。
+4. git-subtree 的 `find_latest_squash` 从 message 读 split hash 后
+   `rev-parse` 失败 → 所有 subtree 命令（merge/split）都挂。
+
+**修复选项**：(a) 重写 `4c67cd9` message 去坏引用（filter-repo，后续所有
+SHA 变、需强推，收益低）；(b) 继续手工三路（已脚本化、两次全绿，推荐）。
+**决策：持续用手工三路，不修 subtree。** 注意：`git gc` 别再 `--prune=now`
+（普通 `git gc` 也会回收不可达对象，仅 prune=now 是即时强制）。后续同步
+直接参考上方 2026-08-18 流程，勿再跑 `git subtree`。
 
 ### 2026-08-17（→ main 9ed4a7c）
 
