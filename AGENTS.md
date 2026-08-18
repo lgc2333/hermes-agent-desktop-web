@@ -1,136 +1,210 @@
-# Hermes-Agent-Desktop-Web — AGENTS.md
+# Desktop Engineering Guide
 
-注：如本文件同级有 `AGENTS.local.md` 文件且它不在你的上下文中，请读取它。
+How to build Hermes Desktop well. This is a judgment guide, not an inventory —
+it teaches the invariants and the reasoning behind them so a change fits the app
+even as files move. Read it with the repository `AGENTS.md` (root rules still
+apply) and [`DESIGN.md`](./DESIGN.md) for the visual and interaction contract.
 
-把 Hermes 桌面端渲染层移植为浏览器 Web 应用，经一个 **Deno 无状态薄代理** 连接任意远程 Hermes gateway。
+When a rule here and the code disagree, trust the code and fix whichever is
+wrong — but never break an invariant to make a change easier.
 
-## 拓扑
+## What this app is
 
-```
-浏览器 ──同源──> proxy(Deno, 6722) ──X-Hermes-Target 转发──> gateway(/api/* + /api/ws + /auth/native/* + /auth/password-login)
-                 └ 托管 SPA dist；零凭证落盘（OAuth token set / 密码会话 cookie 仅内存）
-```
+Desktop is its own native chat surface. It is not the browser dashboard and it
+does not embed the TUI. Three parties, each authoritative for one thing:
 
-## 常用命令
+- **Electron** owns the machine: process lifecycle, native filesystem/git/
+  windows, install/update, and a narrow, typed capability bridge.
+- **The renderer** owns the experience: navigation, presentation, and ephemeral
+  interaction state.
+- **The agent backend** owns the work: sessions, tools, model calls, streaming.
 
-```bash
-pnpm install     # 首次（pnpm 11，node >=22.22）
-pnpm dev         # mock(5180) + proxy(6722) + vite(5173)，SPA 只走代理（ADR-0016）
-pnpm dev:remote  # proxy + vite，无 mock（连自己的 gateway）
-pnpm --filter @hermes-web/web test  # vitest（桥单测，apps/web）
-pnpm typecheck   # apps/web 类型检查（typecheck.mjs）
-pnpm format      # 格式化
-pnpm build       # 生产构建 → apps/web/dist
-cd apps/proxy && deno task test  # 代理单测（deno test，42+ 用例）
-deno run --allow-net --allow-read --allow-env apps/proxy/src/main.ts  # 手动起代理
-MOCK_OAUTH=1 node apps/web/dev/mock-gateway.mjs 5182  # gated mock（native OAuth 面）
-MOCK_PASSWORD=1 node apps/web/dev/mock-gateway.mjs 5183  # 密码门禁 mock（admin/admin，M5）
-docker compose up -d --build  # 生产部署（见 README.md「快速开始」）
-bash scripts/sync-upstream.sh [tag]  # 上游 subtree 同步（PATCHES.md §3）
-```
+Keep the seams clean. The renderer never reaches for Node or Electron directly;
+native power arrives through a deliberate capability, not a general escape hatch.
+Agent behavior lives behind the gateway, never reimplemented in React. When a
+change blurs a seam, that is the smell — fix the seam, don't widen it.
 
-浏览器验收（Vitest + Playwright 客户端驱动 Chromium，独立于 dev 端口 5173/6722/5180，见 apps/web/e2e/AGENTS.md）：
+## Decide state by authority
 
-```bash
-pnpm --filter @hermes-web/web e2e:install   # 一次性装 Chromium
-pnpm --filter @hermes-web/web test:e2e      # 全量 e2e（串行单 worker）
-```
+The first question for any piece of state is *who is allowed to be right about
+it*, not where it is convenient to store it. Put state with its authority:
 
-## 项目结构
+- The **backend** is authoritative for anything another Hermes surface can also
+  change. Treat the renderer's copy as a cache of that truth.
+- **Electron** is authoritative for machine and runtime facts.
+- The **renderer** owns only what is purely about this window's presentation.
 
-```
-hermes-agent-desktop-web/
-├── AGENTS.md / CONTEXT.md / PATCHES.md / README.md      # 共识/术语/登记/入口
-├── package.json · pnpm-workspace.yaml · pnpm-lock.yaml  # pnpm workspaces（nodeLinker: hoisted）
-├── docker-compose.yml · .dockerignore                   # 生产编排
-├── docs/
-│   ├── adr/                    # 决策记录
-│   └── archived/               # 归档文档（handoff 等）
-├── apps/
-│   ├── web/                    # SPA 移植入口（Vite 构建 vendor 渲染层）
-│   │   ├── index.html          # 真文件（勿改回 symlink，rolldown 拒绝跨目录入口，上游更新注意 sync）
-│   │   ├── src/
-│   │   │   ├── main.tsx        # 入口：装桥 → import web.css → 挂 vendor 渲染树
-│   │   │   ├── web.css         # Web 覆盖层（响应式 + 隐藏桌面专属 UI，非 vendor）
-│   │   │   └── bridge/         # WebCapabilityAdapter 三类：browser（浏览器等价）/
-│   │   │                       #   gateway（走代理 RPC：注册表/api 转发/OAuth/探测）/
-│   │   │                       #   denied（布尔门空实现）；registry.ts = 连接注册表
-│   │   ├── dev/                # dev.mjs（恒起代理；--no-mock 形态）+ mock-gateway.mjs（mock 后端）
-│   │   ├── e2e/                # Vitest + Playwright 客户端 e2e（*.e2e.ts；端口用 E2E_*_PORT，见 e2e/AGENTS.md）
-│   │   ├── scripts/typecheck.mjs  # 项目类型检查（filter TS5101 等）
-│   │   └── vite.config.ts · vitest.config.ts · tsconfig.json
-│   └── proxy/                  # Deno 薄代理（无状态，零依赖）
-│       ├── src/main.ts         # 单 handler 三分支：静态(排除 /api/ /auth/) → OAuth/meta → 转发
-│       ├── src/relay.ts        # REST 透传（Bearer 注入）+ WS 双向中继（ticket）
-│       ├── src/oauth.ts        # native PKCE 中转：内存 token set + httpOnly cookie 会话
-│       ├── src/session.ts      # 密码 "dashboard login" 会话：内存 cookie jar + /api/proxy/session/*
-│       ├── src/*_test.ts       # deno test（main 端到端 / oauth 单测 / relay）
-│       ├── Dockerfile          # 多阶段：node 构建 SPA → deno 运行时（= compose webui）
-│       └── deno.json           # tasks（dev/test）+ 权限声明
-├── vendor/                     # git subtree 引入的上游（只读基准；改必登记 PATCHES.md）
-│   ├── hermes-desktop/         # 上游 apps/desktop（渲染层 src/ 是构建来源，别名 '@'）
-│   └── hermes-shared/          # 上游 apps/shared（@hermes/shared，JSON-RPC 客户端等）
-├── scripts/sync-upstream.sh    # 上游同步（过滤提交法 subtree merge，PATCHES.md §2-3）
-├── research/upstream/          # 上游全量克隆（只读调研；不进构建/不走 sync）
-└── temp/                       # 临时/验收产物（gitignore）
-```
+From that, everything else follows: shared renderer state lives in small stores
+owned by the feature that owns the concern; request-shaped server data that wants
+invalidation lives in the query layer; short-lived interaction detail stays in
+the component; hot coordination that must not paint stays in a ref. Reach for the
+narrowest home that still lets the state be correct. A new global store is a
+claim that many distant surfaces need it — earn that claim.
 
-## 工作流 Skill
+Persisted state must declare its scope in its own key: is this global, or does it
+belong to a connection, a profile, a stored session, a project, or a window?
+Getting the scope wrong is how one profile's setting bleeds into another.
 
-关于 `CONTEXT.md` 与 `docs/adr/`，参见 Skill `domain-modeling`。如上下文中没有，提醒用户是否安装它：`pnpx skills add https://github.com/mattpocock/skills --skill domain-modeling -p -y`。
+## Identity is not incidental
 
-## 规则
+Sessions have more than one identity, and conflating them is a recurring source
+of "session not found" and vanishing history. Reason about which identity a
+surface needs: durable navigation and anything the user pins or persists key off
+the stable/durable identity; live streaming keys off the runtime identity; state
+that must outlive compression keys off the lineage root. Keep the mapping between
+them explicit and translate at the boundary rather than passing the wrong id
+inward.
 
-- 用户决策在写代码前应及时进 ADR。写 ADR 前必须先查看 `domain-modeling` Skill。如在实现时遇到当前情况与 ADR 预想中不符，应及时更新当前 ADR。非本次对话中创建的 ADR 按惯例不应该修改其内容，只能修改 status，除非用户特别说明。
+## Server truth is cached, not owned
 
-- **vendor 纪律**（PLAN §5）：vendor/hermes-desktop|shared 内原位改动收敛到最少；能新加文件就不改旧文件；所有 vendor 改动必须登记 PATCHES.md（含同步注意）。
+The renderer paints from a cache of backend truth, so it must reconcile, not
+assume:
 
-- **凭证模型**（PLAN §6.1 / ADR-0002）：连接凭证只在浏览器（localStorage 注册表 `hermes-web.connections.v1`）；OAuth token set 只存代理内存（重启失效）；代理零凭证落盘、无状态。不要往代理加持久化/落盘凭证。
+- **Merge, don't clobber.** A refresh is new information layered over what you
+  already know, not a replacement that can drop live or pinned rows.
+- **Be optimistic, then honest.** Direct manipulation should paint immediately
+  from a snapshot; a failed write rolls back visibly and an authoritative
+  refresh gets the last word.
+- **Guard against the past.** Async results can arrive out of order; a stale
+  response must never overwrite newer intent. Generation counters and request
+  tokens exist for this.
+- **Isolate the foreground.** Only the surface the user is looking at may publish
+  into the shared view; background work updates its own cache quietly.
+- **Coalesce noise, flush signal.** Batch high-frequency cosmetic updates, but
+  let terminal transitions (a turn finishing, needing input, failing) reach the
+  user immediately.
+- **Preserve reference identity on no-ops.** Handing React a fresh array that
+  contains the same data re-renders expensive trees for nothing.
 
-- **认证三条路**：token（`X-Hermes-Session-Token` / WS `?token=`，loopback 未 gated 的 gateway）；OAuth（native PKCE 经代理 `/auth/native/*` 中转，REST Bearer + WS 单次 `?ticket=`，仅代理模式可用）；密码会话（"dashboard login"：`/auth/password-login` 换 cookie 会话，代理 `/api/proxy/session/*` 中转，cookie jar 仅内存 + 响应 Set-Cookie 轮换合并，REST Cookie + WS 经 ws-ticket，仅代理模式可用）。密码本体不落盘；代理重启即失效（与 OAuth token set 同取舍，ADR-0013）。
+## Switching context is a re-home, not a reboot
 
-- **布尔门**：用字面 `if (false)` 关功能入口（voice/terminal 等；artifacts/agents 曾 gate，按 ADR-0009 撤销——上游 remote 模式原生支持），不做 feature-flag 系统（gates.ts 已删）；入口关闭后渲染层自然降级。
+Changing profile, connection, or mode is a workspace switch, not a cold start.
+The shell and whatever the user was doing stay put; only the gateway-bound view
+is cleared and repopulated, and the previous context must not leak into the next
+one. Reserve the full-screen boot/connecting experience for a genuinely unusable
+backend.
 
-- **响应式覆盖**收敛在 `apps/web/src/web.css`（非 vendor）：移动端状态栏滚动、Connection mode 只留 remote、boot-failure 隐藏 use-local/repair/open-logs。改 vendor 布局前先看能否 CSS 覆盖。
+There are three distinct switch shapes, and conflating them is the classic bug:
 
-- **CORS**（M3 实测）：credentials:'include' 的跨源请求必须回显 `Origin` + `Access-Control-Allow-Headers` 回显预检头；`*` 通配符会挂。别回退成 `*`。
+- A **connection/mode apply** (local ↔ remote ↔ cloud) is the soft re-home:
+  shell mounted, gateway-bound stores explicitly wiped, then reconnect. Query
+  invalidation alone cannot evict live session stores — wipe them.
+- A **runtime home change** (switching the underlying `HERMES_HOME` profile) is
+  a hard re-home: the window legitimately reloads and state resets by remount.
+- A **live profile swap** in the same window activates another profile's socket
+  while background profiles keep streaming; lists merge rather than wipe, and
+  only an explicit user selection starts a fresh foreground draft.
 
-- **代理静态面**：`serveStatic` 必须排除 `/api/` 与 `/auth/` 前缀（否则 SPA fallback 吞掉 OAuth 端点）；默认 `webDist` 是 `../../web/dist/`（相对 src/，`defaultWebDist()` 纯函数），别写成 `../web/dist/`。`apps/web/index.html` 是**真文件**（不是 symlink——rolldown 构建拒绝跨目录 symlink 入口）。
+Treating a soft switch as hard flickers the app; treating a hard one as soft
+strands stale rows. After any swap, the active socket, active profile, and
+connection atoms must agree, or REST and filesystem calls route to the wrong
+backend.
 
-- **默认 URL**：`WEB_DEFAULT_GATEWAY_URL` → `/api/proxy/meta` 运行时下发前端预填；同一 dist 可部署任意环境，改 URL 不用重建。SPA 恒经同源代理（ADR-0016，`proxyBaseUrl()` 恒非空 = VITE_PROXY_URL → origin）：无直连路径，探活/预填/转发全部以代理为真实链路。
+## Cross everything as an observable ladder
 
-- **测试纪律**：桥层行为用 vitest（`apps/web/src/bridge/*.test.ts`），代理用 deno test；先写测试再实现（tdd）。改桥/代理协议后跑全量：`deno task test` + `pnpm --filter @hermes-web/web test` + `pnpm typecheck` 三件套全绿才提交。
+Desktop lives at the seams: versions, profiles, local vs remote vs cloud,
+partially installed runtimes, stale caches, older backends. The durable technique
+for all of it is the same — an ordered ladder of candidates:
 
-- **临时文件**放 `temp/`（已 gitignore）；验收记录 `temp/m*-acceptance*`。
+1. Precedence is written down, in one place, as data or a pure function.
+2. A candidate is trusted only after it is validated at the right boundary.
+   Existence is not proof; probe what you're about to rely on.
+3. A failed *read* falls to the next rung; a failed *authoritative write*
+   surfaces or rolls back rather than silently retargeting.
+4. A missing capability and a transient failure are different: the first may
+   enable a compatibility path or a disabled state; the second should retry.
+5. Retries are bounded and end in a real recovery affordance — never an infinite
+   spinner or a hot loop.
+6. One resolver owns each policy so every caller gets the same answer. Scatter is
+   how two call sites drift apart.
 
-## 常见坑
+This is the shape of backend discovery, command/version fallbacks, connection and
+auth resolution, workspace-cwd selection, capability detection, and preview
+normalization alike. Learn the shape, not a snapshot of the current rungs.
 
-- **CORS 通配符**：credentials 模式预检不接受 `Allow-Headers: *`（Chrome 151 实测）——必须回显。
+Two auth-flavored corollaries worth naming because they are easy to get wrong:
 
-- **弹窗拦截**：headless 验收需 `--disable-popup-blocking` + 独立 profile；`Runtime.evaluate` 里 `window.open` 无用户手势返回 null → oauthLogin ok:false。
+- **One-time credentials are never reused.** An OAuth gateway connection mints a
+  fresh WebSocket ticket on every dial and never falls back to the cached URL.
+  Only a confirmed 401/403 (or an explicitly tagged auth rejection) means
+  reauthentication; timeout, network, malformed-response, and server failures
+  remain connectivity errors. Only long-lived token/local auth may reuse a
+  cached URL as a lower rung.
+- **A connection test must exercise the leg you'll actually use.** An HTTP
+  status probe passing while the WebSocket/auth leg fails is a false positive
+  that ships as "it said connected but nothing works."
 
-- **OAuth 手势**：`oauthLoginConnectionConfig` 同步段先 `window.open` 再 await（保留手势上下文），别 await 后开窗。
+## Compatibility without carrying the past forever
 
-- **loopback redirect_uri**：上游 `/auth/native/authorize` 只收 127.0.0.1/::1（RFC 8252，安全边界无放宽渠道）；dev 同机开箱即用，远端浏览器需 SSH 隧道/VPN（README.md「安全模型」）。
+Desktop and its runtime update on separate clocks, so a change can meet an older
+backend. Keep those users working: preserve the current feature, keep the
+fallback narrow and tied to an identified older runtime, and cover it with a
+test. A fallback that quietly degrades the feature it's meant to protect is worse
+than the crash it replaced.
 
-- **mock gated 影响 boot**：`MOCK_OAUTH=1` 的 mock `auth_required=true`，页面 boot 会要求登录——验收先等 "Gateway ready"（注意 "Runtime not ready" 也含 ready 字样，判状态栏 token 更准）。
+## Keep the waist narrow, grow at the edges
 
-- **HashRouter**：设置页 URL 是 `/#/settings?tab=gateway`，pushState 无效。
+The root contribution rubric governs here too. New capability should arrive at
+the smallest surface that solves it: extend what exists, add a feature locally,
+lean on an existing seam — before you invent a framework. The shell's internal
+registries are composition seams, not a public plugin ABI; do not build a
+universal extension system, a manifest, or a plugin adapter for a single
+consumer. Design a shared contract only once more than one real consumer proves
+its shape. "Plugin" means several unrelated things across Hermes — do not assume
+one surface's extension model runs in another.
 
-- **WEB_DIST 裸路径**：Dockerfile ENV 传的是 `/app/web-dist` 这种裸路径，且目录 URL 必须带尾斜杠（`new URL('index.html', base)` 对无尾斜杠 base 会替换末段路径）——容器静态面曾因此静默全灭（400）；`resolveWebDist()`（apps/proxy/src/main.ts）统一归一化成带尾斜杠的 file URL。
+When the new capability is an **agent-callable** one — a tool that acts on this
+renderer (open a pane, read the in-app browser, react to a message) — it is a
+property of the SESSION's client, not of the backend host. Wire its
+availability off the session source the app already sends on `session.create`
+(`source: 'desktop'`), never off an env var on the backend process: that
+process might be a remote or cloud gateway this app merely connected to. See
+the root AGENTS.md, "Surface capability is a property of the SESSION."
 
-- **直连已删（ADR-0016）**：SPA 无直连路径，`proxyBaseUrl()` 恒非空；`vite preview`/静态裸托管不是可用拓扑（/api/* 会打 SPA fallback）。旧镜像（v0.1.0 tag 前）bundle 里 `proxyBaseUrl()` 被编译成 `return null` → `/api/proxy/meta` 0 请求、预填永不触发、探活直连假绿/假红——部署必须用新构建镜像。
+## Respect the person using it
 
-- **上游 sync 必须浅取 + 用后清理**（PATCHES.md §3）：上游 hermes 是 monorepo，全量 `git fetch` 把整个仓库对象灌进本地，叠加断连中断的 `tmp_pack_*` 残留会让 .git 膨胀到 GB 级（实测追一次 tag 后 .git 冲到 1GB，~958MB 是 tmp_pack_*，`git gc` 不自动删这类垃圾需手动清）。用 `git fetch upstream --depth=1 <tag>`（脚本已内置）只取目标提交的 apps/desktop|shared 两棵子树（本地是 squash vendoring，不需要上游历史）；浅取对 tag 时 FETCH_HEAD 是 tag 对象，须 `^{commit}` peel。sync 落盘后删本地 tag 引用 + 清 `.git/shallow` 再 gc，恢复非 shallow 小体积仓库。**但别把 git-subtree 依赖的旧过滤提交对象 prune 掉**（`gc --prune=now` 清掉后 `git subtree merge` 会报 `could not rev-parse split hash`，只能用 PATCHES §3 的手工三路方案）。
+Design and engineering meet at intent. The user's attention and context are
+sacred:
 
-## Commit
+- Never navigate, move focus, or open a surface because something *happened* in
+  the background. Offer; don't hijack.
+- The states around loading are distinct experiences — empty, loading,
+  reconnecting, degraded/stale, and exhausted-recovery each deserve their own
+  honest copy and their own way out.
+- Keyboard ownership follows focus. The focused surface wins its keys; one
+  cancel gesture does exactly one thing.
+- Expensive, stateful surfaces (terminals, live tools) stay alive when hidden.
+  Visibility is not lifecycle.
 
-Use English conventional commit messages:
+## Make it feel instant
 
-```text
-type(optional scope): description
+Performance is a feature the user feels, especially in drag, resize, scroll,
+typing, streaming, and terminals. The principles are timeless even as the code
+changes: keep hot-path state local or narrowly derived; don't subscribe heavy
+trees to per-frame updates; coalesce pointer work; avoid reading layout right
+after writing style; and don't mount expensive content mid-gesture. Prove speed
+against realistic content — a fast empty demo proves nothing about a long
+transcript. If motion is masking latency, remove the motion, don't tune it.
 
-- List of change descriptions, focus one point per row
+## Testing as a habit of proof
 
-Optional footer(s)
-```
+Test the behavior that would actually break a user, not a snapshot of today's
+data. Favor invariants over frozen values. Exercise the real path for anything
+at a seam — resolver precedence and its failure rungs, identity and scope
+boundaries, optimistic rollback and stale-response ordering, and both sides of a
+local/remote adapter with its profile routing intact. Match how the suite is
+actually run rather than inventing a command; when in doubt, read the scripts.
+
+## The taste test before you hand off
+
+- Does every piece of state live with its authority, at the narrowest scope?
+- Would a background event ever steal the foreground or the user's focus?
+- Does each resolver have one home, a validated ladder, and a bounded, recoverable
+  end?
+- Do local, remote, and profile routing still agree?
+- Does async failure leave a usable UI and a way forward?
+- Do hot interactions stay cheap under realistic load?
+- Does the change pass the [`DESIGN.md`](./DESIGN.md) checklist and update all
+  locales?
+
+If any answer is "not sure," that's the part to go verify.
