@@ -83,6 +83,8 @@ hermes-agent-desktop-web/
 
 - 用户决策在写代码前应及时进 ADR。写 ADR 前必须先查看 `domain-modeling` Skill。如在实现时遇到当前情况与 ADR 预想中不符，应及时更新当前 ADR。非本次对话中创建的 ADR 按惯例不应该修改其内容，只能修改 status，除非用户特别说明。
 
+- **版本 bump**：只看本项目（Web patch / 代理 / bridge / 本地代码）改动大小，不看上游 vendor 更新规模。本项目无大改 → 一律 **patch**（x.y.z → x.y.(z+1)）；本项目功能性大改 → minor；破坏性变更 → major。上游同步内容再大也不算 bump 理由。
+
 - **vendor 纪律**（PLAN §5）：vendor/hermes-desktop|shared 内原位改动收敛到最少；能新加文件就不改旧文件；所有 vendor 改动必须登记 PATCHES.md（含同步注意）。
 
 - **凭证模型**（PLAN §6.1 / ADR-0002）：连接凭证只在浏览器（localStorage 注册表 `hermes-web.connections.v1`）；OAuth token set 只存代理内存（重启失效）；代理零凭证落盘、无状态。不要往代理加持久化/落盘凭证。
@@ -121,7 +123,7 @@ hermes-agent-desktop-web/
 
 - **直连已删（ADR-0016）**：SPA 无直连路径，`proxyBaseUrl()` 恒非空；`vite preview`/静态裸托管不是可用拓扑（/api/* 会打 SPA fallback）。旧镜像（v0.1.0 tag 前）bundle 里 `proxyBaseUrl()` 被编译成 `return null` → `/api/proxy/meta` 0 请求、预填永不触发、探活直连假绿/假红——部署必须用新构建镜像。
 
-- **上游 sync 必须浅取 + 用后清理**（PATCHES.md §3）：上游 hermes 是 monorepo，全量 `git fetch` 把整个仓库对象灌进本地，叠加断连中断的 `tmp_pack_*` 残留会让 .git 膨胀到 GB 级（实测追一次 tag 后 .git 冲到 1GB，~958MB 是 tmp_pack_*，`git gc` 不自动删这类垃圾需手动清）。用 `git fetch upstream --depth=1 <tag>`（脚本已内置）只取目标提交的 apps/desktop|shared 两棵子树（本地是 squash vendoring，不需要上游历史）；浅取对 tag 时 FETCH_HEAD 是 tag 对象，须 `^{commit}` peel。sync 落盘后删本地 tag 引用 + 清 `.git/shallow` 再 gc，恢复非 shallow 小体积仓库。**但别把 git-subtree 依赖的旧过滤提交对象 prune 掉**（`gc --prune=now` 清掉后 `git subtree merge` 会报 `could not rev-parse split hash`，只能用 PATCHES §3 的手工三路方案）。
+- **上游 sync 必须浅取 + 用后清理**（PATCHES.md §3）：上游 hermes 是 monorepo，全量 `git fetch` 把整个仓库对象灌进本地，叠加断连中断的 `tmp_pack_*` 残留会让 .git 膨胀到 GB 级（实测追一次 tag 后 .git 冲到 1GB，~958MB 是 tmp_pack_*，`git gc` 不自动删这类垃圾需手动清）。用 `git fetch upstream --depth=1 <tag>`（脚本已内置）只取目标提交的 apps/desktop|shared 两棵子树（本地是 squash vendoring，不需要上游历史）；浅取对 tag 时 FETCH_HEAD 是 tag 对象，须 `^{commit}` peel。sync 落盘后删本地 tag 引用 + 清 `.git/shallow` 再 gc，恢复非 shallow 小体积仓库。**git-subtree 依赖的过滤提交（split 对象）不挂 ref、只被 squash message 引用，是"不可达对象"，任何 `git gc`（默认 2 周 grace 后）都会回收导致 `git subtree merge` fatal**——脚本已自动 `git update-ref refs/subtree-anchors/<dir> <sha>` 保护；若 ref 丢失需按 PATCHES §3 堆纯上游锚点恢复（勿再依赖"手工三路"旧方案之外的路径）。
 
 ## Commit
 
