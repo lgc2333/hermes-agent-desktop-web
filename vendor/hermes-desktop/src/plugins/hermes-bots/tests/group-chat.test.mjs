@@ -598,3 +598,88 @@ test('turn prompt: results are full quality — only chatter is asked to stay sh
   assert.match(prompt, /never thin out real content/i)
   assert.match(prompt, /Keep chatter short/i)
 })
+
+test('threads: room composer mints a new thread; replies land in it', async () => {
+  const gc = load(() => '(pass)')
+
+  const t1 = gc.sendToGroupChat('Rooms', [{ name: 'research', title: '' }], 'first topic')
+  for (let i = 0; i < 200 && (gc.$groupChats.get().Rooms || {}).running; i++) {
+    await new Promise(resolve => setImmediate(resolve))
+  }
+  const t2 = gc.sendToGroupChat('Rooms', [{ name: 'research', title: '' }], 'second topic')
+  for (let i = 0; i < 200 && (gc.$groupChats.get().Rooms || {}).running; i++) {
+    await new Promise(resolve => setImmediate(resolve))
+  }
+
+  assert.ok(t1 && t2 && t1 !== t2, 'each composer send mints a distinct thread')
+  const log = roomLog(gc, 'Rooms')
+  assert.equal(log[0].thread, t1)
+  assert.equal(log[1].thread, t2)
+})
+
+test('threads: replying with an explicit thread id continues that thread and scopes the member delta to it', async () => {
+  const prompts = []
+  const gc = load((profile, prompt) => {
+    prompts.push(prompt)
+    return prompt.includes('billing') ? 'On the billing fix.' : '(pass)'
+  })
+
+  const billing = gc.sendToGroupChat('Scoped', [{ name: 'research', title: '' }], 'fix the billing bug')
+  for (let i = 0; i < 200 && (gc.$groupChats.get().Scoped || {}).running; i++) {
+    await new Promise(resolve => setImmediate(resolve))
+  }
+  gc.sendToGroupChat('Scoped', [{ name: 'research', title: '' }], 'research pricing')
+  for (let i = 0; i < 200 && (gc.$groupChats.get().Scoped || {}).running; i++) {
+    await new Promise(resolve => setImmediate(resolve))
+  }
+
+  // Continue the BILLING thread explicitly.
+  const again = gc.sendToGroupChat('Scoped', [{ name: 'research', title: '' }], 'billing follow-up: ship it', billing)
+  for (let i = 0; i < 200 && (gc.$groupChats.get().Scoped || {}).running; i++) {
+    await new Promise(resolve => setImmediate(resolve))
+  }
+
+  assert.equal(again, billing, 'explicit thread id is reused, not re-minted')
+  const followUpPrompt = prompts.find(p => p.includes('ship it'))
+  assert.ok(followUpPrompt, 'follow-up turn ran')
+  assert.equal(followUpPrompt.includes('research pricing'), false, 'other thread never leaks into the delta')
+
+  // Member replies carry the thread of the turn that produced them.
+  const memberEntries = roomLog(gc, 'Scoped').filter(e => e.from.kind === 'member')
+  assert.ok(memberEntries.length >= 1)
+  assert.ok(memberEntries.every(e => e.thread === billing), 'replies land in the thread that triggered them')
+})
+
+test('threads: hydration assigns legacy thread ids — lull splits, follow-ups stay together', () => {
+  const gc = load(() => '(pass)')
+  assert.match(pluginSource, /function assignLegacyThreads\(log\)/)
+
+  const fn = new Function(
+    `${pluginSource.slice(pluginSource.indexOf('const GROUP_THREAD_GAP_MS'), pluginSource.indexOf('/** Merged room view'))}; return assignLegacyThreads`
+  )()
+  const M = 60000
+  const u = (text, at) => ({ from: { kind: 'user', name: 'You' }, text, at })
+  const m = (name, text, at) => ({ from: { kind: 'member', name }, text, at })
+
+  const log = fn([
+    u('task one', 0),
+    m('a', 'r1', 1 * M),
+    u('quick follow-up', 3 * M), // inside the 15-min window: SAME thread
+    m('a', 'r2', 4 * M),
+    u('new topic much later', 60 * M), // after the lull: new thread
+    m('a', 'r3', 61 * M)
+  ])
+  assert.equal(log[0].thread, log[2].thread, 'follow-up stays in the same thread')
+  assert.equal(log[2].thread, log[3].thread)
+  assert.notEqual(log[0].thread, log[4].thread, 'post-lull message starts a new thread')
+  assert.equal(log[4].thread, log[5].thread)
+  void gc
+})
+
+test('source contract: thread UI — folded rows, per-thread reply box, new-thread composer', () => {
+  assert.match(pluginSource, /Open this thread/)
+  assert.match(pluginSource, /Collapse thread/)
+  assert.match(pluginSource, /Reply in thread…/)
+  assert.match(pluginSource, /children: 'New Thread'/)
+  assert.match(pluginSource, /const markKey = `\$\{thread\}::\$\{memberKey\}`/)
+})
