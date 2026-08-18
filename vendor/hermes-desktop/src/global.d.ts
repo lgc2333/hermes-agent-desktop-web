@@ -158,23 +158,7 @@ declare global {
       sshResolveHost: (host: string) => Promise<DesktopSshResolveResult>
       probeConnectionConfig: (remoteUrl: string) => Promise<DesktopConnectionProbeResult>
       oauthLoginConnectionConfig: (remoteUrl: string) => Promise<DesktopOauthLoginResult>
-      // ADR-0017: remote deployments can't reach the proxy's loopback redirect —
-      // the user pastes the address-bar callback URL (or bare ?code=..&state=..)
-      // and the proxy completes the same code exchange.
-      oauthPasteConnectionConfig: (
-        remoteUrl: string,
-        pasted: string
-      ) => Promise<DesktopOauthLoginResult>
       oauthLogoutConnectionConfig: (remoteUrl?: string) => Promise<DesktopOauthLogoutResult>
-      // M5: username/password ("dashboard login") gateways — the app sends the
-      // credentials once; the proxy holds the gateway session cookie in memory
-      // (same lifecycle as OAuth tokens: lost on proxy restart, never on disk).
-      passwordLoginConnectionConfig: (
-        remoteUrl: string,
-        provider: string,
-        username: string,
-        password: string
-      ) => Promise<DesktopPasswordLoginResult>
       // Hermes Cloud: one portal login powers discovery + silent per-agent
       // sign-in (cloud-auto-discovery Phase 3).
       cloud: {
@@ -194,12 +178,6 @@ declare global {
       api: <T>(request: HermesApiRequest) => Promise<T>
       notify: (payload: HermesNotification) => Promise<boolean>
       requestMicrophoneAccess: () => Promise<boolean>
-      /**
-       * ADR-0022: 返回可 Range/seek 的媒体播放入口 URL（audio/video）；null =
-       * 无法流式（调用方走 data-url 兜底）。桥优先级能力——Electron 桌面端不实现
-       * （回退 renderer 的 hermes-media:// 协议），Web 桥面返回同源代理流 URL。
-       */
-      streamMediaUrl?: (path: string) => Promise<null | string>
       /** read_window_below tool: metadata for the OS window directly underneath this one (never pixels). */
       readWindowBelow?: () => Promise<{
         frontmost: { app: string; title: string } | null
@@ -237,11 +215,6 @@ declare global {
       }>
       saveImageFromUrl: (url: string) => Promise<boolean>
       saveImageBuffer: (data: ArrayBuffer | Uint8Array, ext: string) => Promise<string>
-      // ADR-0020: Web 端附件字节存储二分（File 引用 / OPFS）。桌面端不实现
-      // （桌面走 readFileDataUrlForIpc 整读转 b64）；仅 Web 桥面提供。
-      saveImageFile?: (blob: Blob, name: string) => Promise<string>
-      /** ADR-0020: 释放 web-blob:// 虚拟附件（File 引用 / OPFS 文件）。Web 专有。 */
-      releaseBlobFile?: (filePath: string) => Promise<void>
       saveClipboardImage: () => Promise<string>
       getPathForFile: (file: File) => string
       normalizePreviewTarget: (target: string, baseDir?: string) => Promise<HermesPreviewTarget | null>
@@ -906,12 +879,6 @@ export interface DesktopOauthLoginResult {
 
 export interface DesktopOauthLogoutResult {
   ok: boolean
-  connected: boolean
-}
-
-export interface DesktopPasswordLoginResult {
-  ok: boolean
-  baseUrl: string
   connected: boolean
 }
 

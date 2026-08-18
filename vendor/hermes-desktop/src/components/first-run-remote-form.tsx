@@ -3,7 +3,6 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { BrandMark } from '@/components/brand-mark'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Textarea } from '@/components/ui/textarea'
 import type { DesktopConnectionProbeResult } from '@/global'
 import { useI18n } from '@/i18n'
 import { deriveRemoteAuthProviderShape } from '@/lib/desktop-remote-auth'
@@ -26,12 +25,6 @@ export function FirstRunRemoteForm({ onBack }: FirstRunRemoteFormProps) {
   const copy = t.install
   const [remoteUrl, setRemoteUrl] = useState('')
   const [remoteToken, setRemoteToken] = useState('')
-  // M5: password ("dashboard login") gateways — username/password form state.
-  const [authUsername, setAuthUsername] = useState('')
-  const [authPassword, setAuthPassword] = useState('')
-  // ADR-0017: remote deployments paste the address-bar callback URL back.
-  const [pastedUrl, setPastedUrl] = useState('')
-  const [pasteSubmitting, setPasteSubmitting] = useState(false)
   const [probeStatus, setProbeStatus] = useState<ProbeStatus>('idle')
   const [probe, setProbe] = useState<DesktopConnectionProbeResult | null>(null)
   const [oauthConnected, setOauthConnected] = useState(false)
@@ -143,76 +136,6 @@ export function FirstRunRemoteForm({ onBack }: FirstRunRemoteFormProps) {
       const result = await window.hermesDesktop.oauthLoginConnectionConfig(trimmedUrl)
       invalidateTest()
       setOauthConnected(Boolean(result.connected))
-
-      if (!result.connected) {
-        setError(copy.signInIncomplete)
-      }
-    } catch (err) {
-      setError(errorMessage(err))
-    } finally {
-      setSigningIn(false)
-    }
-  }
-
-  // ADR-0017: remote deployments — after signing in, the browser lands on a
-  // failed 127.0.0.1 page (the proxy's loopback redirect is unreachable). The
-  // user copies the address-bar URL and pastes it here; the proxy completes
-  // the same code exchange as the popup callback.
-  const pasteSignIn = async () => {
-    if (!trimmedUrl || !pastedUrl.trim()) {
-      return
-    }
-
-    setPasteSubmitting(true)
-    setError(null)
-
-    try {
-      const result = await window.hermesDesktop.oauthPasteConnectionConfig(
-        trimmedUrl,
-        pastedUrl,
-      )
-      invalidateTest()
-      setOauthConnected(Boolean(result.connected))
-    } catch (err) {
-      setError(errorMessage(err))
-    } finally {
-      setPasteSubmitting(false)
-    }
-  }
-
-  // M5: a username/password gateway signs in through a credential form
-  // (POST /auth/password-login on the gateway) — the proxy holds the session
-  // cookie; nothing is persisted in the browser.
-  const passwordSignIn = async () => {
-    if (!trimmedUrl) {
-      setError(copy.enterUrlFirst)
-
-      return
-    }
-
-    const providers = probe?.providers ?? []
-    const provider =
-      providers.find(p => p.supportsPassword)?.name ?? providers[0]?.name ?? ''
-
-    if (!provider) {
-      setError(copy.enterUrlFirst)
-
-      return
-    }
-
-    setSigningIn(true)
-    setError(null)
-
-    try {
-      const result = await window.hermesDesktop.passwordLoginConnectionConfig(
-        trimmedUrl,
-        provider,
-        authUsername.trim(),
-        authPassword
-      )
-      invalidateTest()
-      setOauthConnected(Boolean(result.connected))
-      setAuthPassword('')
 
       if (!result.connected) {
         setError(copy.signInIncomplete)
@@ -340,7 +263,7 @@ export function FirstRunRemoteForm({ onBack }: FirstRunRemoteFormProps) {
             </div>
           ) : null}
 
-          {authResolved && authMode === 'oauth' && (!isPasswordProvider || oauthConnected) ? (
+          {authResolved && authMode === 'oauth' ? (
             <div className="rounded-md border border-(--ui-stroke-tertiary) p-3">
               <div className="flex items-center justify-between gap-3">
                 <div>
@@ -357,81 +280,10 @@ export function FirstRunRemoteForm({ onBack }: FirstRunRemoteFormProps) {
                 ) : (
                   <Button disabled={signingIn || applying} onClick={() => void signIn()} size="sm">
                     {signingIn ? <Loader2 className="size-4 animate-spin" /> : <LogIn className="size-4" />}
-                    {copy.signInWith(providerLabel)}
+                    {isPasswordProvider ? copy.signIn : copy.signInWith(providerLabel)}
                   </Button>
                 )}
               </div>
-            </div>
-          ) : null}
-
-          {/* ADR-0017: tunnel-free fallback — after signing in, a remote browser
-              lands on a failed 127.0.0.1 page (expected). Paste the address-bar
-              URL here; the proxy completes the same code exchange. */}
-          {authResolved && authMode === 'oauth' && !isPasswordProvider && !oauthConnected ? (
-            <div className="grid gap-2 rounded-md border border-(--ui-stroke-tertiary) p-3">
-              <p className="text-xs text-muted-foreground">{copy.authPasteHint}</p>
-              <Textarea
-                className="min-h-16 resize-y"
-                disabled={signingIn || applying}
-                onChange={event => {
-                  invalidateTest()
-                  setPastedUrl(event.target.value)
-                }}
-                placeholder={copy.authPastePlaceholder}
-                value={pastedUrl}
-              />
-              <Button
-                disabled={signingIn || applying || !trimmedUrl || !pastedUrl.trim()}
-                onClick={() => void pasteSignIn()}
-                size="sm"
-                variant="outline"
-              >
-                {pasteSubmitting ? <Loader2 className="size-3 animate-spin" /> : null}
-                {copy.authPasteSubmit}
-              </Button>
-            </div>
-          ) : null}
-
-          {/* M5: password ("dashboard login") gateways get a username/password
-              form instead of the OAuth popup — the proxy holds the session. */}
-          {authResolved && authMode === 'oauth' && isPasswordProvider && !oauthConnected ? (
-            <div className="grid gap-2 rounded-md border border-(--ui-stroke-tertiary) p-3">
-              <div className="text-sm font-medium">{copy.authTitle}</div>
-              <Input
-                autoComplete="username"
-                disabled={signingIn || applying}
-                onChange={event => {
-                  invalidateTest()
-                  setAuthUsername(event.target.value)
-                }}
-                placeholder={copy.authUsername}
-                value={authUsername}
-              />
-              <Input
-                autoComplete="current-password"
-                disabled={signingIn || applying}
-                onChange={event => {
-                  invalidateTest()
-                  setAuthPassword(event.target.value)
-                }}
-                onKeyDown={event => {
-                  if (event.key === 'Enter' && authUsername.trim() && authPassword) {
-                    void passwordSignIn()
-                  }
-                }}
-                placeholder={copy.authPassword}
-                type="password"
-                value={authPassword}
-              />
-              <Button
-                disabled={signingIn || applying || !authUsername.trim() || !authPassword}
-                onClick={() => void passwordSignIn()}
-                size="sm"
-              >
-                {signingIn ? <Loader2 className="size-4 animate-spin" /> : <LogIn className="size-4" />}
-                {copy.signIn}
-              </Button>
-              <p className="text-xs leading-5 text-muted-foreground">{copy.authNeedsPassword}</p>
             </div>
           ) : null}
 

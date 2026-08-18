@@ -516,19 +516,9 @@ export function useComposerActions({
       }
 
       try {
-        // ADR-0020: Web 桥面 saveImageFile 保留 File 引用（拖入图片原样保留，
-        // 零常驻字节）或把粘贴 Blob 落 OPFS；桌面端无该表面，回落旧的
-        // bytes → saveImageBuffer 路径（行为不变）。
-        const savedPath = await (window.hermesDesktop?.saveImageFile
-          ? window.hermesDesktop.saveImageFile(
-              blob,
-              blob instanceof File && blob.name ? blob.name : 'image' + blobExtension(blob),
-            )
-          : (async () => {
-              const buffer = await blob.arrayBuffer()
-              const data = new Uint8Array(buffer)
-              return (await window.hermesDesktop?.saveImageBuffer(data, blobExtension(blob))) ?? ''
-            })())
+        const buffer = await blob.arrayBuffer()
+        const data = new Uint8Array(buffer)
+        const savedPath = await window.hermesDesktop?.saveImageBuffer(data, blobExtension(blob))
 
         if (!savedPath) {
           notify({ kind: 'error', title: copy.imageAttach, message: copy.imageWriteFailed })
@@ -620,26 +610,6 @@ export function useComposerActions({
     [attachToMain, currentCwd]
   )
 
-  // ADR-0020: Web 端浏览器 File 没有 gateway 侧路径（getPathForFile 返回空），
-  // 走桥面 saveImageFile 保留引用（文件字节零常驻，读时才瞬态 b64）后按虚拟
-  // 路径附加；桌面端无该表面时返回 false，回落原生路径分支。
-  const attachFileBlob = useCallback(
-    async (file: File): Promise<boolean> => {
-      try {
-        const savedPath = await window.hermesDesktop?.saveImageFile?.(file, file.name || 'file')
-
-        if (!savedPath) {
-          return false
-        }
-
-        return attachContextFilePath(savedPath)
-      } catch {
-        return false
-      }
-    },
-    [attachContextFilePath]
-  )
-
   const attachDroppedItems = useCallback(
     async (candidates: DroppedFile[]) => {
       if (candidates.length === 0) {
@@ -720,14 +690,6 @@ export function useComposerActions({
           continue
         }
 
-        // Web: 浏览器 File 无 gateway 路径（getPathForFile 空）→ 桥面保留引用
-        // 后按虚拟路径附加（ADR-0020）。
-        if (!filePath && (await attachFileBlob(file))) {
-          attached = true
-
-          continue
-        }
-
         lastFailure = `Could not attach ${file.name || 'file'}`
       }
 
@@ -737,19 +699,12 @@ export function useComposerActions({
 
       return attached
     },
-    [attachContextFilePath, attachContextFolderPath, attachFileBlob, attachImageBlob, attachImagePath, copy.dropFiles]
+    [attachContextFilePath, attachContextFolderPath, attachImageBlob, attachImagePath, copy.dropFiles]
   )
 
   const removeAttachment = useCallback(
     async (id: string) => {
       const removed = scope.remove(id)
-
-      // ADR-0020: web-blob:// 虚拟附件（浏览器 File 引用 / OPFS 落盘）随
-      // chip 移除显式释放本地字节；gateway 已落盘的路径（非 web-blob://）
-      // 不在此列。
-      if (removed?.path?.startsWith('web-blob://')) {
-        await window.hermesDesktop?.releaseBlobFile?.(removed.path).catch(() => undefined)
-      }
 
       if (
         removed?.kind === 'image' &&

@@ -258,21 +258,13 @@ export function useKeybinds(deps: KeybindRuntimeDeps): void {
     // the Win/Linux path where ⌘W reaches the renderer directly.
     'view.closeTab': () => void closeActiveTab(id => navigate(sessionRoute(id))),
     'view.reopenTab': reopenLastClosedTile,
-    // Web 移植（ADR-0019）：find 桥面布尔门 denied（ADR-0010/0011），Web 构建下
-    // 不注册此 handler——组合键命中走下方 "无 handler → return"（不
-    // preventDefault、不开 find-bar），浏览器原生查找（Ctrl/Cmd+F）自然接管。
-    // 桌面构建不读 VITE_WEB_BUILD，原行为不变；重绑/多绑定语义自动正确
-    // （任何 combo 命中 view.findInPage 都无效；mod+f 改绑其他动作照常执行）。
-    // 上游 0.17→v2026.8.16 给桌面 handler 加了 overlay 路由抑制（isOverlayView），
-    // Web 构建分支下不携带（Web 不注册，无 overlay 冲突问题）。
-    ...(import.meta.env.VITE_WEB_BUILD === '1' ? {} : { 'view.findInPage': () => {
+    'view.findInPage': () => {
       // Suppress on overlay routes so it doesn't collide with overlay-specific
       // search surfaces (e.g. Settings search bar).
       if (!isOverlayView(appViewForPath(location.pathname))) {
         openFindBar()
       }
-    } }),
-
+    },
     // ⌘G / ⌘⇧G are handled by the find bar's own capture-phase listener while
     // it is open (so they don't collide with `view.toggleReview`). These
     // registry handlers cover a user-assigned dedicated chord: stepping is a
