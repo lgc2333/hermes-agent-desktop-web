@@ -129,48 +129,32 @@ m3/main 实测：上游 main 相对上一基准只改了 11 个补丁文件里�
 非 vendor 但依赖 vendor/上游结构、subtree pull 后需核对的 Web 侧文件：
 
 - apps/web/index.html
-  - Web 构建入口（M4 生产构建修复）。原为指向 vendor/hermes-desktop/index.html
-    的符号链接：dev 模式（vite serve）正常，但 rolldown 生产构建（vite build）对
-    symlink 解析出的跨目录路径报错（"fileName must be neither absolute nor
-    relative paths"），导致 Dockerfile 的构建阶段从未真正跑通。这里改为真文件，
-    内容照抄 vendor 版（含 pre-paint 主题背景脚本）；原注释块已移入本文档，
-    文件现与 vendor 版逐字节一致。
-    同步注意：subtree pull 后若上游改 vendor/hermes-desktop/index.html，
+  - Web 构建入口。原为符号链接，实测后发现构建报错。
+  - 同步注意：subtree pull 后若上游改 vendor/hermes-desktop/index.html，
     直接照抄 vendor 版即可（Web 侧无差异需保留）。
 
 - apps/web/src/main.tsx
-  - Web 入口：先 installWebBridge()（ESM import 顺序保证桥在渲染层模块图
-    求值前就位，boot 侧 store 在模块作用域读 window.hermesDesktop），再
-    import vendor 渲染树（../../../vendor/hermes-desktop/src/main）与 web.css。
-    同步注意：上游若重构 src/main.tsx 入口（改名/换路径/改 boot 序列），
+  - Web 入口：装桥（installWebBridge）→ import vendor 渲染树 + web.css，
+    顺序即桥先于渲染层就位。
+  - 同步注意：上游若重构 src/main.tsx 入口（改名/换路径/改 boot 序列），
     此 import 与装桥顺序须按新结构核对。
 
 - apps/web/src/web.css
-  - Web 覆盖层（非 vendor，M4）：选择器按 vendor DOM 结构锚定
-    （data-slot='statusbar'、mode 卡片 .grid.auto-rows-fr.grid-cols-1、
-    boot-failure 按钮行等），web.css 头注标注每条规则的"全库唯一"锚点。
-    同步注意：上游若改这些 class/data-slot/按钮结构，覆盖会静默失效——
+  - Web 覆盖层（非 vendor）：隐藏桌面专属 UI、适配移动端视口等 Web 差异。
+  - 同步注意：上游若改这些 class/data-slot/按钮结构，覆盖会静默失效——
     subtree pull 后按头注锚点核对（e2e：cdp-mobile3 / cdp-hide-modes /
     cdp-repair-logs 等回归）。
 
 - apps/web/vite.config.ts（+ tsconfig.json / vitest.config.ts）
-  - 别名与 include 指向 vendor 源码：'@' → vendor/hermes-desktop/src、
-    '@hermes/shared' → vendor/hermes-shared/src、'@hermes/plugin-sdk'、
-    '@/debug/dev-only'（serve 真模块 / build noop 双态）；publicDir 直接复用
-    vendor public/（不复制）。vite.config.ts 头注已说明：subtree pull 除
-    路径常量外无需对账。
-    同步注意：上游若移动目录或改入口模块名（如 src/debug/dev-only.ts），
+  - 别名与 include 指向 vendor 源码；publicDir 直接复用 vendor public/
+    （不复制）。vite.config.ts 头注已说明：subtree pull 除路径常量外无需对账。
+  - 同步注意：上游若移动目录或改入口模块名（如 src/debug/dev-only.ts），
     更新三处配置的路径常量与别名即可。
-
-- apps/web/scripts/build-version.mjs
-  - 构建版本计算（ADR-0014）：读 vendor/hermes-desktop/package.json 的版本
-    拼 WEB_VERSION（<上游桌面版本>+web.<项目标识>），subtree 同步后自动跟随，
-    无需手工改；无 git 检出（Docker 构建）时退回 apps/web 版本号。
 
 - apps/web/src/bridge/
   - WebCapabilityAdapter 实现 window.hermesDesktop 表面，签名以
     vendor/hermes-desktop/src/global.d.ts（本身是 §4 登记的 vendor 改动）为准。
-    同步注意：上游若增改 hermesDesktop 表面，桥层（adapter.ts +
+  - 同步注意：上游若增改 hermesDesktop 表面，桥层（adapter.ts +
     browser/gateway/denied）须同步适配，typecheck 兜底。
 
 ## 6. 同步后必做
