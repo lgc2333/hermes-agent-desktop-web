@@ -9,7 +9,7 @@
 社区里能搜到的 Hermes WebUI 主要是两个项目：
 
 - [hermes-webui](https://github.com/nesquena/hermes-webui)：Bug 太多，无法忍受；
-- [hermes-studio](https://github.com/EKKOLearnAI/hermes-studio)：太重、功能太多，不适合。
+- [hermes-studio](https://github.com/EKKOLearnAI/hermes-studio)：太重、功能太多，Hermes 本体的聊天数据还是只读的，不适合。
 
 而 Hermes 官方桌面端本身是一个 Electron 应用。于是想到：能不能把它原样搬到浏览器里，而不是从零再写一个 UI？这个项目就是答案 —— 界面与交互和桌面端完全一致，并且跟随官方版本持续更新。
 
@@ -52,24 +52,28 @@
 
 ### 从源码运行
 
-适合开发者。需要 Node.js ≥ 22.22、pnpm 11 与 Deno（SPA 恒经代理，dev 也会起代理，ADR-0016）：
+适合开发者。需要 Node.js ≥ 22.22、pnpm 11 与 Deno（SPA 恒经代理，dev 也会起代理）：
 
 ```bash
 pnpm install
-pnpm dev  # 本地体验（自带模拟 gateway）
-pnpm --filter @hermes-web/web dev:remote  # 连接你自己的 gateway
+pnpm dev  # 本地体验（自带模拟 gateway），或
+pnpm dev:remote  # 连接你自己的 gateway
 ```
 
 ## 常见问题
+
+**移动端体验怎么样？**
+
+只能说**凑合能用**。Hermes Desktop 的界面布局本就不适合移动端。但是比起 hermes-webui 那种糟糕的连基本对话功能都不顺畅的体验好多了。
 
 **为什么无法完成 OAuth 登录？**
 
 Hermes 官方的 OAuth 登录要求回调地址只能是本机回环地址（`127.0.0.1`）：
 
 - **浏览器与服务器同机**（开发环境）：弹窗自动完成，无需任何操作。
-- **远程访问**（手机 / 公网域名）：登录后浏览器会跳到本机的 `127.0.0.1` 并显示"连接失败"——这是**预期**的。复制地址栏里的完整 URL，粘贴到登录框下方的"粘贴回调 URL"输入框即可完成登录，**无需 SSH 隧道或 VPN**。
+- **远程访问**（手机 / 公网域名）：登录后浏览器会跳到本机的 `127.0.0.1` 并显示"连接失败"——这是**预期**的。复制地址栏里的完整 URL，粘贴到登录框下方的"粘贴回调 URL"输入框即可完成登录，无需 SSH 隧道或 VPN。
 
-这是官方的安全边界（回调只能落在回环地址，防开放重定向盗 code），本方案不绕过它，只是把 code 由你亲手搬回代理（ADR-0017）：PKCE、state 校验、单次使用、短 TTL 等安全属性与桌面端完全一致。
+这是官方的安全边界，本方案不绕过它，只是把 code 由你亲手搬回代理，各安全属性与桌面端完全一致。
 
 **为什么服务器重启后要重新登录？**
 
