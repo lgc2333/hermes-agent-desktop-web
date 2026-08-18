@@ -209,8 +209,29 @@ clean 零冲突**，Web 专有表面（passwordLogin/oauthPaste/streamMediaUrl/
 saveImageFile、@source 两行、passwordSignIn/pasteSignIn）逐一核对保留。
 其余 6 个补丁文件上游未变，直接保留 HEAD 版。hermes-shared 未动。
 
+**本轮教训（2026-08-18 修复记录）**：
+
+1. **shared 也可能变**：这轮上游同时改了 `apps/shared`（新增
+   translucency.ts + index.ts 导出）。手工三路**必须同时检查 shared 树**
+   （`git rev-parse <base>:apps/shared` vs `<new>:apps/shared`），不能默认
+   "shared 不动"。漏同步 → typecheck 连锁失败。
+2. **上游加了新子路径模块但 package exports 没更新**：上游
+   apps/shared/package.json 无 `./translucency` 导出（桌面端靠 tsconfig
+   paths），我们 tsconfig/vite 也没有对应别名 → TS2307。需在
+   apps/web/tsconfig.json + vite.config.ts 手动补 `@hermes/shared/translucency`
+   映射（billing 同款写法）。
+3. **3-way 文本无冲突 ≠ 语义无冲突**：上游删除 gateway-settings 的
+   `scope` 概念（useState 定义删了），但我们的补丁里 `getConnectionConfig(scope)`
+   等引用因"区域不重叠"被 merge-file 无冲突保留 → 悬空引用 TS2304/TS7006。
+   需人工核对上游删除的领域概念，适配为 `getConnectionConfig(null)`、删
+   `profile: scope` 字段。
+4. **桥面契约同步**：上游 global.d.ts 签名变化（setTranslucency
+   `{intensity}` → `TranslucencyState`）→ Web 桥面 denied.ts 参数类型
+   必须同步（布尔门契约，ADR-0010 语义）。
+
 流程脚本：`/tmp/vendor-merge2.sh`（build 构建树+commit 不落盘 / apply
-reset --hard 落地；CHANGED 文件 3-way、SAME 文件保留 HEAD、其余取新树）。
+reset --hard 落地；CHANGED 文件 3-way、SAME 文件保留 HEAD、其余取新树；
+**shared 需单独核对**）。
 
 ### git-subtree 失效根因（2026-08-18 查证）
 
