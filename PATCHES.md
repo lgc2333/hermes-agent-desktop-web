@@ -193,66 +193,26 @@ m3/main 实测：上游 main 相对上一基准只改了 11 个补丁文件里�
 2. `pnpm --filter @hermes-web/web typecheck` + 关键 vitest/e2e
 3. 更新 §1 基准 SHA 与本文档
 
-## 7. 同步备注
+## 7. 同步坑(Checklist)
 
-### 同步记录索引
+每次同步(追 main / 追 tag)按此清单核对;执行脚本
+`scripts/vendor-merge-manual.sh`,流程见 §3。
 
-完整同步记录在 `docs/sync/YYYY-MM-DD-N.md`:
-- `docs/sync/2026-08-18-1.md` — e624e9f 同步(136 文件、shared 变化、4 条修复)
-- `docs/sync/2026-08-17-1.md` — 9ed4a7c 同步(21 文件、补丁全保留)
-- `docs/sync/2026-08-16-1.md` — v2026.8.16 跟进(tsconfig exclude + find 桥层)
-
-同步执行与坑清单见 `## 8. 同步坑(Checklist)`。
-
-### git-subtree 失效根因（2026-08-18 查证）
-
-`git subtree merge`/`split` 现在 fatal `could not rev-parse split hash
-8674f2c… from commit 4c67cd9`。根因链：
-
-1. vendor 引入用**过滤提交法**（本地 `commit-tree` 造的提交，树 = 上游
-   apps/desktop），squash 提交 `4c67cd9` 的 message 记着
-   `git-subtree-split: 8674f2c…`（指向本地过滤提交）。
-2. 过滤提交**不是上游历史对象、也不挂在任何 ref 上**，只被该 message 引用。
-3. 早前 `git gc --prune=now` 把它们当不可达对象回收（`cat-file` 已确认
-   `8674f2c`/`800e98c`/`caf535b`/`8b09caa` 全部丢失，reflog 无痕迹）。
-4. git-subtree 的 `find_latest_squash` 从 message 读 split hash 后
-   `rev-parse` 失败 → 所有 subtree 命令（merge/split）都挂。
-
-**修复选项**：(a) 重写 `4c67cd9` message 去坏引用（filter-repo，后续所有
-SHA 变、需强推，收益低）；(b) 继续手工三路（已脚本化、两次全绿，推荐）。
-**决策：持续用手工三路，不修 subtree。** 注意：`git gc` 别再 `--prune=now`
-（普通 `git gc` 也会回收不可达对象，仅 prune=now 是即时强制）。后续同步
-用 `scripts/vendor-merge-manual.sh`，勿再跑 `git subtree`。
-
-### v2026.8.16
-
-同步细节见 `docs/sync/2026-08-16-1.md`(tsconfig exclude + find 桥层同步)。
-
-坑: **上游桌面测试会 import 仓库根 `tests/fixtures/*`(子树外)** —— 同步后
-新增此类引用会破坏本仓库 typecheck。已用 apps/web/tsconfig.json 的
-`exclude: vendor/**/*.test.*` 隔离(vendor 测试非本仓库校验范围,apps/web
-自身测试仍受检)。上游若重构测试 fixture 引用方式,核对该 exclude 是否仍足。
-
-## 8. 同步坑(Checklist)
-
-每次同步(追 main / 追 tag)按此清单核对;详细流程与教训见
-`scripts/vendor-merge-manual.sh`、§3 与 `docs/sync/`。
-
-### 执行
-
-- git-subtree 不可用(根因见 §7)→ 用 `bash scripts/vendor-merge-manual.sh build|apply`。
-- 浅取必须 `--depth=1`、sync 后清理 shallow 边界与本地 tag 引用(§3)。
-- `git gc` 别加 `--prune=now`(会回收 subtree split 对象,§3/§7)。
-
-### 内容核对
-
-- **shared 也可能变**: 先对比 `git rev-parse <base>:apps/shared` vs
-  `<new>:apps/shared`,变了就同步 vendor/hermes-shared(别默认"shared 不动")。
+- git-subtree 不可用(旧 split 对象被 `gc --prune=now` 回收,根因见
+  `docs/sync/2026-08-18-1.md`)→ 手工三路脚本。
+- 浅取必须 `--depth=1`,sync 后清 shallow 边界与本地 tag 引用(§3)。
+- `git gc` 别加 `--prune=now`。
+- **shared 也可能变**: 对比 `<base>:apps/shared` vs `<new>:apps/shared`,
+  变了就同步 vendor/hermes-shared。
 - **上游新增子路径模块但 package exports 没更新** → tsconfig/vite 缺别名
-  会 TS2307。按 billing 同款补 `@hermes/shared/<mod>` 映射。
-- **3-way 文本无冲突 ≠ 语义无冲突**: 上游删除领域概念(如 scope)时,补丁
-  残留引用会悬空(TS2304/TS7006)。人工核对上游删除的概念并适配。
+  TS2307。按 billing 同款补 `@hermes/shared/<mod>` 映射。
+- **3-way 文本无冲突 ≠ 语义无冲突**: 上游删领域概念(如 scope)时,补丁
+  残留引用悬空(TS2304/TS7006)。人工核对并适配。
 - **桥面契约同步**: 上游 global.d.ts 签名变化时,apps/web/src/bridge/
   (denied.ts/adapter.ts)须同步类型。
-- **vendor 测试 import 子树外 fixtures** 会破坏 typecheck(v2026.8.16 坑,
-  见 §7)。
+- **vendor 测试 import 子树外 fixtures** 会破坏 typecheck(已用 tsconfig
+  `exclude: vendor/**/*.test.*` 隔离)。
+
+## 8. 同步记录
+
+见 `docs/sync/`(`YYYY-MM-DD-N.md`)。
