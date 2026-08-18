@@ -6,7 +6,7 @@
 ## 1. Subtree 基准（Baseline）
 
 - 上游仓库：https://github.com/NousResearch/hermes-agent.git
-- 基准提交：`e624e9fde561e1add9388384012b295fde669ade`(上游 **main** HEAD，2026-08-18)
+- 基准提交：`daca38696738524ffdb901c18dbdbef64c1a97a9`(上游 **main** HEAD，2026-08-18)
 - vendor/hermes-desktop：上游 `apps/desktop`（含 src/ 渲染层、scripts/、vite.config.ts 等）
 - vendor/hermes-shared：上游 `apps/shared`（`@hermes/shared` 源码）
 - 引入方式：`git subtree add --squash`（对过滤提交执行，见 §2）
@@ -175,6 +175,9 @@ m3/main 实测：上游 main 相对上一基准只改了 11 个补丁文件里�
 - **subtree merge 能跑 ≠ 补丁保留**:锚点 squash 树必须纯上游(无补丁),带补丁
   会 base==ours 静默覆盖全部补丁(§3 修复记录)。merge 后抽查 §4 关键补丁。
 - 浅取必须 `--depth=1`,sync 后清 shallow 边界与本地 tag 引用(§3)。
+- **fetch 报 `Could not read <sha>`** = 陈旧 `refs/remotes/upstream/*` tracking
+  ref 链上对象缺失(浅取累积)。sync-upstream.sh 已自动清理;手动跑 fetch 前先
+  `git update-ref -d refs/remotes/upstream/main`(详见 docs/sync/2026-08-18-2.md)。
 - **shared 也可能变**: 对比 `<base>:apps/shared` vs `<new>:apps/shared`,
   变了就同步 vendor/hermes-shared。
 - **上游新增子路径模块但 package exports 没更新** → tsconfig/vite 缺别名
