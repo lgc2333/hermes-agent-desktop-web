@@ -44,6 +44,12 @@ do
   FILTERED="$(git commit-tree "$TREE" -m "$PREFIX subtree source: upstream $SUBPATH @ $FETCH_HEAD")"
   echo "    filtered commit: $FILTERED"
 
+  # 挂 ref 保护：过滤提交不挂任何 ref、只被 squash message 引用，git gc（含普通 gc，
+  # 2 周 grace 后）会回收它，subtree merge 将 fatal（PATCHES.md §3）。ref 名取子树名。
+  ANCHOR_REF="refs/subtree-anchors/${PREFIX##*/}"
+  git update-ref "$ANCHOR_REF" "$FILTERED"
+  echo "    anchored: $ANCHOR_REF"
+
   # subtree merge --squash
   git subtree merge --prefix="$PREFIX" "$FILTERED" --squash
   echo "    merged OK"
@@ -56,4 +62,6 @@ echo "    2) pnpm install && pnpm --filter @hermes-web/web typecheck"
 echo "    3) 检查冲突并按 PATCHES.md §4 登记原位改动"
 echo "    4) 清理：浅取给本地留了 shallow 边界与上游 tag 引用（squash 后不需要，"
 echo "       留着会使仓库保持 shallow 且体积膨胀）。完事后："
-echo "          git update-ref -d refs/tags/$REF; rm -f .git/shallow; git gc --prune=now"
+echo "          git update-ref -d refs/tags/$REF; rm -f .git/shallow; git gc"
+echo "       注意：过滤提交已由 refs/subtree-anchors/ 保护，任何 gc 都不会回收；"
+echo "       若将来 ref 丢失，gc 会回收 split 对象导致 subtree merge fatal（PATCHES.md §3）。"

@@ -36,43 +36,29 @@ git subtree add --prefix=vendor/hermes-shared  $FILTERED_SHARED --squash
 
 ### 3. 同步流程（subtree pull）
 
-因过滤提交不在上游历史中，同步用 `git subtree merge --squash` 对**新过滤提交**执行
-（见 scripts/sync-upstream.sh，工作流与 §2 相同）。
+因过滤提交不在上游历史中，同步用 `git subtree merge --squash` 对**新过滤提交**执行。
+完整流程见 `scripts/sync-upstream.sh`（fetch --depth=1 → commit-tree 过滤提交 →
+subtree merge，desktop/shared 循环处理；已处理浅取 tag 的 `^{commit}` peel 与
+squash 后清理）。
 
-**fetch 必须 --depth=1（浅取）**：上游 hermes 是 monorepo 且 commit 极多，全量拉取
-会把整个仓库对象灌进本地；叠加断连中断的 tmp_pack 残留会让 .git 膨胀到 GB 级（实测追
-一次 tag 后 .git 冲到 1GB，其中 ~958MB 是中断打包的 tmp_pack_*。git gc 不自动删这类
-垃圾，需手动清 `git gc` 后再删 `.git/objects/pack/tmp_pack_*`）。本地 vendor 是 squash
-的，只要目标提交 apps/desktop|shared 两棵完整子树，不需要上游历史。浅取对 tag 时
-FETCH_HEAD 是 tag 对象，先 `^{commit}` peel 再取树。sync 落盘后应清理 shallow 边界与
-本地 tag 引用，恢复非 shallow 小体积仓库：
+**git-subtree 依赖历史 split 对象（过滤提交）**：`git subtree merge` 会从历史
+squash 提交的 message 里 `rev-parse` 旧过滤提交作为 merge 基准。过滤提交是本地造的、
+**不挂任何 ref、只被 message 引用**——是"不可达对象"，任何 `git gc`（默认 2 周
+grace 期后；`--prune=now` 只是立即触发）都会把它回收，随后 merge fatal `could not
+rev-parse split hash`（2026-08-18 实测）。**防再犯：过滤提交必须挂 ref 保护**
+（`git update-ref refs/subtree-anchors/<dir> <filtered-sha>`，见 sync-upstream.sh）。
+split 命令遍历全部历史、无法靠堆新提交恢复（merge 可以，见下）。
 
-```bash
-git fetch upstream --depth=1 <tag-or-main>
-NEW_DESKTOP_TREE=$(git rev-parse FETCH_HEAD^{commit}:apps/desktop)
-NEW_FILTERED=$(git commit-tree $NEW_DESKTOP_TREE -m "hermes-desktop @ <sha>")
-git subtree merge --prefix=vendor/hermes-desktop $NEW_FILTERED --squash
-# 同法处理 hermes-shared；同步后把新基准 SHA 记入 §1 清单
-```
-
-**git-subtree 依赖历史 split 对象，别把它们 prune 掉**：`git subtree merge` 会从
-历史 squash 提交的 "from A..B" 里 `rev-parse` 旧过滤提交（A/B）作为 merge 基准；上一轮
-`git gc --prune=now` 清过这些中间对象后，subtree 直接 fatal `could not rev-parse split
-hash`（git 2.55 实测）。此时改**手工三路**（等价于 subtree 内部，保留全部补丁）：
-
-```bash
-# index 清空旧 vendor，挂载上游目标树
-git read-tree HEAD^{tree}
-git ls-files vendor/hermes-desktop | git update-index --force-remove --stdin
-git read-tree --prefix=vendor/hermes-desktop/ $NEW_FILTERED^{tree}
-# 复位上游未改动的补丁文件为 HEAD 版：git update-index --cacheinfo 100644 <HEAD:...blob> <path>
-# 上游也改动了的补丁文件做 3-way（base=上一版上游原版）：git merge-file -L main -L base -L ours out base ours
-# shared 同理：git read-tree --prefix=vendor/hermes-shared/ <main^tools>:apps/shared
-# 然后 git checkout-index -a -f 同步工作树、write-tree、add、commit
-```
+**若 split 对象已丢（2026-08-18 修复记录）**：merge 可恢复——在 HEAD 上堆
+**两个纯 message squash 提交**（desktop/shared 各一，树 = 上一基准的上游纯树
+**不含补丁**），`git-subtree-split` 指向新造的过滤提交（commit-tree 树 = 该
+上游纯树），并**挂 ref 保护新过滤提交**。HEAD 树保持不变（含补丁），它相对锚点的
+delta = 恰好是 §4 补丁，三方合并即自动保留补丁。**锚点树必须纯上游**——若锚点树
+带补丁，base==ours，merge 会静默覆盖全部补丁（2026-08-18 实测踩坑）。
+`git subtree split`/`push` 遍历全部历史仍不可用，本项目只做下游 merge 不受影响。
 
 m3/main 实测：上游 main 相对上一基准只改了 11 个补丁文件里的 4 个
-（global.d.ts、i18n/en|zh|types），`git merge-file` 3-way 全部无冲突自动合入；桥层
+（global.d.ts、i18n/en|zh|types），三方合并全部无冲突自动合入；桥层
 补 main 新增 `getProfileRoutes` 表面（空实现）。
 
 ## 4. 当前 vendor 原位改动清单
@@ -195,13 +181,16 @@ m3/main 实测：上游 main 相对上一基准只改了 11 个补丁文件里�
 
 ## 7. 同步坑(Checklist)
 
-每次同步(追 main / 追 tag)按此清单核对;执行脚本
-`scripts/vendor-merge-manual.sh`,流程见 §3。
+每次同步(追 main / 追 tag)按此清单核对;主流程
+`scripts/sync-upstream.sh`(git subtree merge,自动保留 §4 补丁),fallback
+`scripts/vendor-merge-manual.sh`(手工三路,split 对象损坏时用)。
 
-- git-subtree 不可用(旧 split 对象被 `gc --prune=now` 回收,根因见
-  `docs/sync/2026-08-18-1.md`)→ 手工三路脚本。
+- **过滤提交（subtree split 对象）必须挂 ref 保护** —— 它们不挂任何 ref、只被
+  squash message 引用,`git gc`(含普通 gc,2 周 grace 后)会回收,merge 即坏。
+  挂 `git update-ref refs/subtree-anchors/<dir> <sha>`;已损坏恢复法见 §3。
+- **subtree merge 能跑 ≠ 补丁保留**:锚点 squash 树必须纯上游(无补丁),带补丁
+  会 base==ours 静默覆盖全部补丁(§3 修复记录)。merge 后抽查 §4 关键补丁。
 - 浅取必须 `--depth=1`,sync 后清 shallow 边界与本地 tag 引用(§3)。
-- `git gc` 别加 `--prune=now`。
 - **shared 也可能变**: 对比 `<base>:apps/shared` vs `<new>:apps/shared`,
   变了就同步 vendor/hermes-shared。
 - **上游新增子路径模块但 package exports 没更新** → tsconfig/vite 缺别名
