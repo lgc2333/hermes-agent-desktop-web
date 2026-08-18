@@ -20,10 +20,9 @@ REF="${1:-main}"
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
 
-echo "==> 清理上游 tracking refs（浅取边界防坑）"
-# 多次浅取后 refs/remotes/upstream/* 会停留在旧提交，其历史链深处对象可能已缺失
-# （fetch 报 'Could not read <sha>'）。本脚本只用 FETCH_HEAD，tracking ref 无用，
-# 每次先删掉，从干净状态开始，避免累积缺失对象链（PATCHES.md §8 / docs/sync/2026-08-18-2.md）。
+echo "==> 清理上游 tracking refs（浅取边界防坑，见 PATCHES.md §8）"
+# 陈旧 upstream/* tracking ref 链上对象可能已缺失，fetch 会报 'Could not read'；
+# 本脚本只用 FETCH_HEAD，每次先删掉避免累积缺失对象链。
 git for-each-ref refs/remotes/upstream/ --format='%(refname)' | while read r; do
   git update-ref -d "$r"
 done
