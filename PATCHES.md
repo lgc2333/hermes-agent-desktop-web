@@ -195,43 +195,26 @@ m3/main 实测：上游 main 相对上一基准只改了 11 个补丁文件里�
 
 ## 7. 同步备注
 
-### 2026-08-18（→ main e624e9f）
+### 同步记录索引
 
-追上游 **main** `e624e9f…`（相对上一基准 9ed4a7c）。仍走**手工三路**
-（git-subtree 不可用，见下方「git-subtree 失效根因」）。本轮上游改动较大：
-desktop 净变更 136 文件（+13078/−1981，translucency 玻璃效果、kanban
-completion-notify、settings-scope、gateway 生命周期等）。
+完整同步记录在 `docs/sync/YYYY-MM-DD-N.md`:
+- `docs/sync/2026-08-18-1.md` — e624e9f 同步(136 文件、shared 变化、4 条修复)
+- `docs/sync/2026-08-17-1.md` — 9ed4a7c 同步(21 文件、补丁全保留)
 
-**12 个 §4 补丁文件中 6 个上游也改了**（styles.css、global.d.ts、
-gateway-settings.tsx、i18n/en|zh|types），用 `git merge-file` 3-way
-（base=9ed4a7c 原版 / ours=HEAD 补丁版 / main=e624e9f 新上游）——**全部
-clean 零冲突**，Web 专有表面（passwordLogin/oauthPaste/streamMediaUrl/
-saveImageFile、@source 两行、passwordSignIn/pasteSignIn）逐一核对保留。
-其余 6 个补丁文件上游未变，直接保留 HEAD 版。hermes-shared 未动。
+### 同步坑(每次必查,第一时间读)
 
-**本轮教训（2026-08-18 修复记录）**：
-
-1. **shared 也可能变**：这轮上游同时改了 `apps/shared`（新增
-   translucency.ts + index.ts 导出）。手工三路**必须同时检查 shared 树**
-   （`git rev-parse <base>:apps/shared` vs `<new>:apps/shared`），不能默认
-   "shared 不动"。漏同步 → typecheck 连锁失败。
-2. **上游加了新子路径模块但 package exports 没更新**：上游
-   apps/shared/package.json 无 `./translucency` 导出（桌面端靠 tsconfig
-   paths），我们 tsconfig/vite 也没有对应别名 → TS2307。需在
-   apps/web/tsconfig.json + vite.config.ts 手动补 `@hermes/shared/translucency`
-   映射（billing 同款写法）。
-3. **3-way 文本无冲突 ≠ 语义无冲突**：上游删除 gateway-settings 的
-   `scope` 概念（useState 定义删了），但我们的补丁里 `getConnectionConfig(scope)`
-   等引用因"区域不重叠"被 merge-file 无冲突保留 → 悬空引用 TS2304/TS7006。
-   需人工核对上游删除的领域概念，适配为 `getConnectionConfig(null)`、删
-   `profile: scope` 字段。
-4. **桥面契约同步**：上游 global.d.ts 签名变化（setTranslucency
-   `{intensity}` → `TranslucencyState`）→ Web 桥面 denied.ts 参数类型
-   必须同步（布尔门契约，ADR-0010 语义）。
-
-流程脚本：`/tmp/vendor-merge2.sh`（build 构建树+commit 不落盘 / apply
-reset --hard 落地；CHANGED 文件 3-way、SAME 文件保留 HEAD、其余取新树；
-**shared 需单独核对**）。
+1. **git-subtree 不可用** → 必须手工三路(见下方「git-subtree 失效根因」)。
+   跑 `bash scripts/vendor-merge-manual.sh build|apply`(已 track 进仓库)。
+2. **shared 也可能变** — 每次同步先对比 shared 树
+   (`git rev-parse <base>:apps/shared` vs `<new>:apps/shared`),变了就要
+   同步 vendor/hermes-shared,别默认"shared 不动"。
+3. **上游新增子路径模块但 package exports 没更新** → tsconfig/vite 缺
+   别名会 TS2307。按 billing 同款补 `@hermes/shared/<mod>` 映射。
+4. **3-way 文本无冲突 ≠ 语义无冲突** → 上游删除领域概念(如 scope)时,
+   补丁里残留引用会悬空。人工核对上游删除的概念并适配。
+5. **桥面契约同步** → 上游 global.d.ts 签名变化时,apps/web/src/bridge/
+   对应实现(denied.ts/adapter.ts)必须同步类型。
+6. **`git gc` 别加 `--prune=now`** — 会回收 subtree split 对象(见下方根因)。
 
 ### git-subtree 失效根因（2026-08-18 查证）
 
@@ -251,22 +234,7 @@ reset --hard 落地；CHANGED 文件 3-way、SAME 文件保留 HEAD、其余取�
 SHA 变、需强推，收益低）；(b) 继续手工三路（已脚本化、两次全绿，推荐）。
 **决策：持续用手工三路，不修 subtree。** 注意：`git gc` 别再 `--prune=now`
 （普通 `git gc` 也会回收不可达对象，仅 prune=now 是即时强制）。后续同步
-直接参考上方 2026-08-18 流程，勿再跑 `git subtree`。
-
-### 2026-08-17（→ main 9ed4a7c）
-
-追上游 **main** `9ed4a7c…`（相对上一基准 cf64ca20）。用**手工三路**而非
-`git subtree merge`：早前 `git gc --prune=now` 清掉了 git-subtree 依赖的历史
-split 对象，subtree 直接 fatal `could not rev-parse split hash`（PATCHES §3）。
-流程：新 desktop 过滤提交（`128cbb93…`，树 = 上游 apps/desktop@9ed4a7c）read-tree
-挂到 vendor/hermes-desktop/，12 个 §4 补丁文件在上游 base→new 间**全部未变**，
-直接保留为 HEAD 版（无冲突、无 3-way）。hermes-shared base 与 new 树 SHA 相同
-（未变），未动。本轮 desktop 净变更 21 文件（+1865/−139，主要为 hermes-bots
-插件、budgeted-loop、image-generation-placeholder、connection-registry 等上游新增）。
-
-清理（浅取副作用）：已 `git update-ref -d refs/tags/main`（若存在）、
-`rm -f .git/shallow`、`git gc` 可恢复非 shallow 小体积仓库（未 prune 过滤提交，
-本轮不再 prune，避免再次破坏 subtree split——后续同步继续用手工三路）。
+用 `scripts/vendor-merge-manual.sh`，勿再跑 `git subtree`。
 
 ### v2026.8.16
 
