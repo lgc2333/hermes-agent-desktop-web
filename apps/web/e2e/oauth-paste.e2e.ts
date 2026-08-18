@@ -64,6 +64,23 @@ describe('oauth-paste: paste-back login completes an oauth session', () => {
     })
     expect(start.ok).toBe(true)
     const { authorizeUrl } = (await start.json()) as { authorizeUrl: string }
+    // ADR-0023：start 下发 pending cookie（进行中登录在 cookie，不在代理
+    // 内存）。本测试的 start 是 Node 侧 fetch——把 pending cookie 注入
+    // 浏览器 context，页面后续 paste 请求才能通过 CSRF 校验。
+    const pendingSetCookie = start.headers.get('set-cookie') ?? ''
+    const pendingMatch = pendingSetCookie.match(/hermes_oauth_pending=([^;]+)/)
+    expect(pendingMatch).toBeTruthy()
+    const proxyUrl = new URL(PROXY_URL)
+    await page.context().addCookies([
+      {
+        name: 'hermes_oauth_pending',
+        value: pendingMatch![1] ?? '',
+        domain: proxyUrl.hostname,
+        path: '/',
+        httpOnly: true,
+        sameSite: 'Lax',
+      },
+    ])
     const hop = await fetch(authorizeUrl, { redirect: 'manual' })
     expect(hop.status).toBe(302)
     callbackUrl = hop.headers.get('location') ?? ''

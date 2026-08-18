@@ -150,8 +150,18 @@ export function upstreamWsUrl(target: string, proxyUrl: URL): URL {
 export interface RelayRestOptions {
   bearer?: string | null
   cookie?: string | null
-  /** 上游响应携带 Set-Cookie 时回调（cookie 轮换合并，session.ts）。 */
-  onSetCookie?: (setCookies: string[]) => void
+  /**
+   * 直接写回浏览器的代理域 Set-Cookie 头值列表（如 OAuth refresh 后编码的
+   * 新会话 cookie；ADR-0023）。上游 gateway 域的 Set-Cookie **不透传**
+   * （对浏览器无用且与代理域 cookie 模型冲突）——只经 onSetCookie 合并。
+   */
+  extraSetCookies?: string[]
+  /**
+   * 上游响应携带 Set-Cookie 时回调（cookie 轮换合并，session.ts）。
+   * 返回要写回浏览器的代理域 Set-Cookie 头值列表（ADR-0023：合并后
+   * 重新编码成代理域 cookie）；空数组 = 不写回。
+   */
+  onSetCookie?: (setCookies: string[]) => string[]
 }
 
 /** 读取响应的全部 Set-Cookie 原始值（Deno 2 原生 getSetCookie）。 */
@@ -213,17 +223,26 @@ export async function relayRest(
     )
   }
 
+  // ADR-0023：上游 Set-Cookie 不透传——只进合并回调，输出面统一为代理域
+  // cookie（extraSetCookies + onSetCookie 返回值）。
   const setCookies = collectSetCookies(upstream.headers)
+  const writeBacks = [...(opts.extraSetCookies ?? [])]
   if (setCookies.length && opts.onSetCookie) {
-    opts.onSetCookie(setCookies)
+    writeBacks.push(...opts.onSetCookie(setCookies))
   }
 
   const outHeaders = new Headers()
   upstream.headers.forEach((value, key) => {
-    if (!STRIP_HEADERS.has(key.toLowerCase())) {
+    if (
+      !STRIP_HEADERS.has(key.toLowerCase()) &&
+      key.toLowerCase() !== 'set-cookie'
+    ) {
       outHeaders.set(key, value)
     }
   })
+  for (const setCookie of writeBacks) {
+    outHeaders.append('Set-Cookie', setCookie)
+  }
 
   return new Response(upstream.body, {
     status: upstream.status,

@@ -175,14 +175,26 @@ describe('reconnect C2: submit while statusbar shows connecting', () => {
     stopByPort(MOCK_TOKEN_PORT)
 
     // wait until the UI has registered the disconnect (connecting state)
-    await waitFor(
-      page,
-      () =>
-        (document.querySelector('[data-slot="statusbar"]')?.innerText || '').includes(
-          'connecting',
-        ),
-      { timeout: 20000, label: 'statusbar connecting' },
-    )
+    try {
+      await waitFor(
+        page,
+        () =>
+          (document.querySelector('[data-slot="statusbar"]')?.innerText || '').includes(
+            'connecting',
+          ),
+        { timeout: 20000, label: 'statusbar connecting' },
+      )
+    } catch (error) {
+      // 诊断：dump statusbar 实际文本（connecting 未出现时定位显示的是什么）
+      const sbText = await page.evaluate(
+        () => document.querySelector('[data-slot="statusbar"]')?.innerText ?? '(no statusbar)',
+      )
+      const bodyTail = await page.evaluate(() => document.body.innerText.slice(-400))
+      throw new Error(
+        `${error instanceof Error ? error.message : String(error)}\n` +
+          `statusbar=[${sbText}]\nbodyTail=[${bodyTail}]`,
+      )
+    }
     await page.waitForTimeout(1000)
 
     await sendChat(page, 'SEND-WHILE-OFFLINE')
@@ -219,11 +231,11 @@ describe('reconnect C2: submit while statusbar shows connecting', () => {
   })
 })
 
-// From cdp-reconnect-b.mjs — OAuth session is held in the proxy's in-memory
-// token set (ADR-0002), so restarting the proxy drops the session and the
-// settings page falls back to "Sign in".
+// From cdp-reconnect-b.mjs — OAuth session is held in the browser's httpOnly
+// cookie (ADR-0023), so restarting the proxy keeps the session: the new proxy
+// instance decodes the cookie and the connection recovers without re-login.
 
-describe('reconnect B: OAuth session lost on proxy restart', () => {
+describe('reconnect B: OAuth session survives proxy restart (ADR-0023)', () => {
   let browser: Browser
   let page: Page
 
@@ -307,7 +319,7 @@ describe('reconnect B: OAuth session lost on proxy restart', () => {
     })
   })
 
-  it('loses the oauth session once the proxy is restarted', async () => {
+  it('keeps the oauth session once the proxy is restarted', async () => {
     stopByPort(PROXY_PORT)
     await page.waitForTimeout(4000)
 
@@ -315,28 +327,20 @@ describe('reconnect B: OAuth session lost on proxy restart', () => {
     await waitForHttp(`${PROXY_URL}/api/proxy/meta`)
     await page.waitForTimeout(3000)
 
-    // In-memory oauth token set is gone: bridge reports disconnected.
+    // ADR-0023：凭证在浏览器 cookie，新代理实例解码恢复——会话保持连接。
     expect(
-      await poll(() => getConfig(page).then((c) => c.remoteOauthConnected === false), {
+      await poll(() => getConfig(page).then((c) => c.remoteOauthConnected === true), {
         timeout: 20000,
-        label: 'oauth session lost',
+        label: 'oauth session survives restart',
       }),
     ).toBe(true)
 
-    // Settings page falls back to "Sign in".
-    await gotoHash(page, '#/settings?tab=gateway')
-    const signInBack = await waitFor(
-      page,
-      () => {
-        const b = [...document.querySelectorAll('button')].find(
-          (x) =>
-            /sign in with/i.test(x.textContent ?? '') ||
-            /^sign in$/i.test((x.textContent ?? '').trim()),
-        )
-        return b ? (b.textContent?.trim() ?? null) : null
-      },
-      { timeout: 30000, label: 'sign in returns after restart' },
-    )
-    expect(signInBack).toBeTruthy()
+    // 聊天继续可用（WS 经 cookie 恢复的会话拨号）。
+    await gotoHash(page, '#/')
+    await sendChat(page, 'after proxy restart')
+    await waitForBodyText(page, 'Hello from the mock gateway', {
+      timeout: 30000,
+      label: 'post-restart reply',
+    })
   })
 })

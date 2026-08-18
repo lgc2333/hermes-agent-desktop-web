@@ -8,9 +8,12 @@
  *   5) 其余全部转发：REST 透传（X-Hermes-Target 头）或 WS 中继
  *      （/api/ws?target=<encoded gateway url>）。
  *
- * M3 OAuth 集成：OAuth 会话存在时（httpOnly cookie hermes_oauth_session），
- * REST 转发注入 Authorization: Bearer，WS 拨号先 mint 单次 ticket。
- * 凭证只透传不落盘（token set 仅代理内存）；目标 gateway 由浏览器每次请求携带。
+ * M3 OAuth 集成：OAuth 会话存在时（per-target httpOnly cookie
+ * `hermes_oauth_<hash>`，ADR-0023），REST 转发注入 Authorization: Bearer，
+ * WS 拨号先 mint 单次 ticket。
+ * 凭证模型（ADR-0023）：OAuth token set / 密码 jar 编码进浏览器 httpOnly
+ * cookie（per-target，Max-Age=30d），代理进程零凭证内存态、零落盘、
+ * 重启无感恢复；网关域 Set-Cookie 不透传，轮换经代理域 cookie 写回。
  *
  * Usage:  deno run --allow-net --allow-read --allow-env src/main.ts
  * Env:    PORT           代理端口（默认 6722，用户手改；dev.mjs 同步）
@@ -23,9 +26,10 @@
  */
 import {
   createOauthEndpoints,
+  oauthSessionCookieName,
   OAuthStore,
   parseCookies,
-  SESSION_COOKIE_NAME,
+  sessionCookieValue,
 } from './oauth.ts'
 import {
   dialUpstreamWs,
@@ -38,7 +42,8 @@ import {
 } from './relay.ts'
 import {
   createSessionEndpoints,
-  PASSWORD_SESSION_COOKIE,
+  passwordSessionCookieName,
+  passwordSessionCookieValue,
   SessionStore,
   type RawPostResult,
 } from './session.ts'
@@ -128,6 +133,26 @@ function withCors(response: Response, request: Request): Response {
 
 function isWsUpgrade(request: Request): boolean {
   return (request.headers.get('upgrade') ?? '').toLowerCase() === 'websocket'
+}
+
+/** 请求是否为 HTTPS（Secure cookie 标志；X-Forwarded-Proto 反代场景兜底）。 */
+function isHttpsRequest(request: Request): boolean {
+  const fwd = request.headers.get('x-forwarded-proto')
+  if (fwd === 'https') {
+    return true
+  }
+
+  return new URL(request.url).protocol === 'https:'
+}
+
+/** 从请求 Cookie 读 per-target OAuth 会话值（ADR-0023）。 */
+function readOauthCookie(request: Request, target: string): string | null {
+  return parseCookies(request.headers.get('cookie'))[oauthSessionCookieName(target)] ?? null
+}
+
+/** 从请求 Cookie 读 per-target 密码 jar 值（ADR-0023）。 */
+function readPasswordCookie(request: Request, target: string): string | null {
+  return parseCookies(request.headers.get('cookie'))[passwordSessionCookieName(target)] ?? null
 }
 
 /** 静态分支：文件存在 → 返回；不存在 → null（调用方决定 fallback）。 */
@@ -312,14 +337,18 @@ async function handleWs(
     return jsonResponse(403, { detail: 'target not allowed' }, request)
   }
 
-  // OAuth 会话 / 密码会话：为本次拨号 mint 单次 ws-ticket（gated gateway
-  // 拒绝 ?token=）。两种会话互斥存在，先 OAuth 后密码。
-  const cookies = parseCookies(request.headers.get('cookie'))
-  const oauthKey = cookies[SESSION_COOKIE_NAME] ?? null
-  const sessionKey = cookies[PASSWORD_SESSION_COOKIE] ?? null
-  const ticket =
-    (await oauthStore.wsTicketFor(oauthKey, target)) ??
-    (await sessionStore.wsTicketFor(sessionKey, target))
+  // OAuth 会话 / 密码会话（ADR-0023：per-target cookie 解码）：为本次拨号
+  // mint 单次 ws-ticket（gated gateway 拒绝 ?token=）。两种会话互斥存在，
+  // 先 OAuth 后密码；refresh 产生的新凭证经 101 升级响应 Set-Cookie 写回。
+  const oauthCookie = readOauthCookie(request, target)
+  const passwordCookie = readPasswordCookie(request, target)
+  // upgrade 后 request.headers 不可再读——Secure 标志必须在升级前算好。
+  const secure = isHttpsRequest(request)
+  const oauth = await oauthStore.wsTicketFor(oauthCookie, target)
+  const password = oauth.ticket
+    ? null
+    : await sessionStore.wsTicketFor(passwordCookie, target)
+  const ticket = oauth.ticket ?? password?.ticket ?? null
   // 无会话且无静态 token：gated gateway 拨号必败。必须在 upgrade 前拒绝
   // （401），否则浏览器先拿 101、随后立刻断开——渲染层误判已连接 → 跳
   // 模型选择 → 鉴权 401 → 跳回 setup → 重拨循环（OAuth 取消后实测的闪断
@@ -352,6 +381,24 @@ async function handleWs(
 
   try {
     const upgraded = Deno.upgradeWebSocket(request)
+    // ADR-0023 决策 5：拨号期间 refresh 产生的新凭证经 101 升级响应
+    // Set-Cookie 写回（Portal RT 旋转 + reuse-detection 要求立即写回）。
+    if (oauth.setCookie) {
+      upgraded.response.headers.append(
+        'Set-Cookie',
+        sessionCookieValue(oauthSessionCookieName(target), oauth.setCookie, { secure }),
+      )
+    }
+    if (password?.setCookie) {
+      upgraded.response.headers.append(
+        'Set-Cookie',
+        passwordSessionCookieValue(
+          passwordSessionCookieName(target),
+          password.setCookie,
+          { secure },
+        ),
+      )
+    }
     relayWs(upgraded.socket, upstream)
 
     return upgraded.response
@@ -362,13 +409,22 @@ async function handleWs(
       // ignore
     }
 
-    return jsonResponse(
-      502,
-      {
-        detail: `proxy ws upgrade failed: ${error instanceof Error ? error.message : String(error)}`,
-      },
-      request,
-    )
+    console.error('[ws] upgrade failed:', error instanceof Error ? error.stack ?? error.message : String(error))
+    try {
+      return jsonResponse(
+        502,
+        {
+          detail: `proxy ws upgrade failed: ${error instanceof Error ? error.message : String(error)}`,
+        },
+        request,
+      )
+    } catch (headersError) {
+      // upgrade 请求的 headers 已被消费/关闭时不能再读（回退无 CORS 的 502）。
+      return new Response(
+        JSON.stringify({ detail: 'proxy ws upgrade failed' }),
+        { status: 502, headers: { 'Content-Type': 'application/json' } },
+      )
+    }
   }
 }
 
@@ -406,11 +462,20 @@ async function handleMediaStream(
   const profile = url.searchParams.get('profile')?.trim() || undefined
   const token = url.searchParams.get('token') || null
 
-  const cookies = parseCookies(request.headers.get('cookie'))
-  const oauthKey = cookies[SESSION_COOKIE_NAME] ?? null
-  const sessionKey = cookies[PASSWORD_SESSION_COOKIE] ?? null
-  const bearer = await oauthStore.bearerFor(oauthKey, target)
-  const cookie = sessionStore.cookieFor(sessionKey, target)
+  const oauthCookie = readOauthCookie(request, target)
+  const passwordCookie = readPasswordCookie(request, target)
+  const { bearer, setCookie: oauthRotated } = await oauthStore.bearerFor(
+    oauthCookie,
+    target,
+  )
+  const cookie = sessionStore.cookieFor(passwordCookie, target)
+  const secure = isHttpsRequest(request)
+  const extraSetCookies: string[] = []
+  if (oauthRotated) {
+    extraSetCookies.push(
+      sessionCookieValue(oauthSessionCookieName(target), oauthRotated, { secure }),
+    )
+  }
 
   const upstream = mediaStreamUpstreamRequest(
     target,
@@ -423,7 +488,28 @@ async function handleMediaStream(
     upstream.headers.set('x-hermes-session-token', token)
   }
 
-  return withCors(await relayRest(upstream, target, { bearer, cookie }), request)
+  return withCors(
+    await relayRest(upstream, target, {
+      bearer,
+      cookie,
+      extraSetCookies,
+      onSetCookie: (setCookies) => {
+        const rotated = sessionStore.applySetCookie(passwordCookie, target, setCookies)
+        if (!rotated) {
+          return []
+        }
+
+        return [
+          passwordSessionCookieValue(
+            passwordSessionCookieName(target),
+            rotated,
+            { secure },
+          ),
+        ]
+      },
+    }),
+    request,
+  )
 }
 
 /** 构造单 handler（测试可注入配置；生产从 env 读取）。 */
@@ -480,24 +566,18 @@ export function createProxyHandler(
   const oauthStore = new OAuthStore({ postJson: proxyPostJson })
   const oauth = createOauthEndpoints(
     oauthStore,
-    {
-      readSessionKey: (request) =>
-        parseCookies(request.headers.get('cookie'))[SESSION_COOKIE_NAME] ?? null,
-    },
+    { isHttps: isHttpsRequest },
     {
       loopbackPort: options.oauthLoopbackPort,
       redirectUriOverride: () => options.oauthRedirectUri ?? '',
       allowTarget,
     },
   )
-  // M5：密码 "dashboard login" 会话（cookie jar 仅内存；重启失效）。
+  // M5：密码 "dashboard login" 会话（jar 编码进浏览器 cookie，ADR-0023）。
   const sessionStore = new SessionStore({ postRaw: proxyPostRaw })
   const session = createSessionEndpoints(
     sessionStore,
-    {
-      readSessionKey: (request) =>
-        parseCookies(request.headers.get('cookie'))[PASSWORD_SESSION_COOKIE] ?? null,
-    },
+    { isHttps: isHttpsRequest },
     { allowTarget },
   )
 
@@ -592,20 +672,41 @@ export function createProxyHandler(
       return jsonResponse(403, { detail: 'target not allowed' }, request)
     }
 
-    // M3：OAuth 会话存在且 target 匹配 → 注入 Bearer（浏览器不持静态 token）。
-    // M5：密码会话存在且 target 匹配 → 注入 Cookie jar；上游响应里的
-    // Set-Cookie（AT/RT 轮换）合并回 jar。
-    const cookies = parseCookies(request.headers.get('cookie'))
-    const oauthKey = cookies[SESSION_COOKIE_NAME] ?? null
-    const sessionKey = cookies[PASSWORD_SESSION_COOKIE] ?? null
-    const bearer = await oauthStore.bearerFor(oauthKey, target)
-    const cookie = sessionStore.cookieFor(sessionKey, target)
+    // M3/M5 + ADR-0023：per-target 会话 cookie 解码注入（OAuth Bearer /
+    // 密码 jar Cookie）；OAuth refresh 或 jar 轮换产生的新凭证编码成新
+    // cookie 值经响应 Set-Cookie 写回浏览器（网关域 Set-Cookie 不透传）。
+    const oauthCookie = readOauthCookie(request, target)
+    const passwordCookie = readPasswordCookie(request, target)
+    const { bearer, setCookie: oauthRotated } = await oauthStore.bearerFor(
+      oauthCookie,
+      target,
+    )
+    const cookie = sessionStore.cookieFor(passwordCookie, target)
+    const secure = isHttpsRequest(request)
+    const extraSetCookies: string[] = []
+    if (oauthRotated) {
+      extraSetCookies.push(
+        sessionCookieValue(oauthSessionCookieName(target), oauthRotated, { secure }),
+      )
+    }
     const response = await relayRest(request, target, {
       bearer,
       cookie,
-      onSetCookie: cookie
-        ? (setCookies) => sessionStore.applySetCookie(sessionKey, target, setCookies)
-        : undefined,
+      extraSetCookies,
+      onSetCookie: (setCookies) => {
+        const rotated = sessionStore.applySetCookie(passwordCookie, target, setCookies)
+        if (!rotated) {
+          return []
+        }
+
+        return [
+          passwordSessionCookieValue(
+            passwordSessionCookieName(target),
+            rotated,
+            { secure },
+          ),
+        ]
+      },
     })
 
     return withCors(response, request)

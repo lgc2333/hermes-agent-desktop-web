@@ -5,7 +5,7 @@ M3 落地 OAuth 认证（apps/proxy/src/oauth.ts + bridge 登录/登出面）。
 只存代理进程内存，浏览器持 httpOnly 会话 cookie；转发面由代理注入
 Bearer / ws-ticket。
 
-**Status**: accepted（start/logout 口令要求 superseded by ADR-0015）
+**Status**: accepted（start/logout 口令要求 superseded by ADR-0015；凭证存储位置 superseded by ADR-0023）
 
 **Context**:
 

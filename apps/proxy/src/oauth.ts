@@ -1,5 +1,5 @@
 /**
- * oauth.ts — M3 native PKCE 中转（RFC 8252 / RFC 7636）。
+ * oauth.ts — M3 native PKCE 中转（RFC 8252 / RFC 7636），ADR-0023 凭证模型。
  *
  * 浏览器侧完成 OAuth 登录（gateway 的 `/auth/native/*` 面，Hermes
  * Cloud/Privy 由 gateway 的 auth_flows 自动适配），代理负责：
@@ -9,20 +9,24 @@
  *      默认是代理自身的 loopback 字面量（ADR-0017，gateway 只收 loopback）；
  *   2. `/auth/native/callback` —— gateway 完成授权后 302 回代理（dev 拓扑
  *      弹窗自动关闭）；代理校验 state（CSRF），用 code + verifier 换
- *      token set，存进程内存，并 Set-Cookie httpOnly 会话；
+ *      token set，编码进 httpOnly 会话 cookie（ADR-0023）；
  *   3. `/auth/native/paste`    —— 远端部署的粘贴回跳（ADR-0017）：浏览器
  *      跳到本机 127.0.0.1 失败（预期），用户把地址栏完整 URL 粘贴回来，
  *      代理校验 state + target 后走与 callback 完全相同的 code 交换路径；
  *   4. `/auth/native/session`  —— 浏览器带 cookie 查询连接状态（不暴露
  *      token 本体，只回显 provider/userId/过期时间/前 4 位预览）；
- *   5. `/auth/native/logout`   —— 清内存 token set + 清 cookie。
+ *   5. `/auth/native/logout`   —— 清浏览器会话 cookie（尽力转发登出）。
  *
- * 凭证生命周期：token set 只存在于代理进程内存（重启即失效，PLAN §6 无
- * 持久化），浏览器只持有一个 httpOnly session cookie（值 = 内存键）。
- * 转发面（relay.ts / main.ts）在 REST 前注入 `Authorization: Bearer`、在
- * WS 拨号前经 `POST /api/auth/ws-ticket` 换单次 ticket（gated gateway 拒绝
- * `?token=`，见 dashboard_auth/ws_tickets.py）。token 过期前自动经
- * `/auth/native/refresh` 轮换；refresh 失败（401 session_expired）清除会话。
+ * 凭证生命周期（ADR-0023）：token set **编码进浏览器 httpOnly cookie**
+ * （`hermes_oauth_<targetHash>`，per-target，Max-Age=30d），代理进程零凭证
+ * 内存态——重启后浏览器 cookie 仍在，会话无感恢复。进行中的登录（PKCE
+ * pending）同样进 cookie（`hermes_oauth_pending`，Max-Age=600，对齐上游
+ * `hermes_session_pkce`）。转发面（relay.ts / main.ts）从请求 cookie 解码
+ * token set 注入 Bearer；WS 拨号前经 `POST /api/auth/ws-ticket` 换单次
+ * ticket（gated gateway 拒绝 `?token=`）。token 过期前自动经
+ * `/auth/native/refresh` 轮换，新 token set 编码成新 cookie 值随响应写回
+ * （REST Set-Cookie / WS 101 升级响应，Portal RT 旋转 + reuse-detection
+ * 要求每次 refresh 后立即写回）。
  *
  * 本模块零依赖纯逻辑（除注入的 fetch），全部可单测（oauth_test.ts）。
  *
@@ -58,27 +62,21 @@ export interface NativeTokenSet {
   userId: string
 }
 
-/** 一次进行中的登录（start 到 callback 之间）。 */
+/** 一次进行中的登录（start 到 callback 之间；编码进 pending cookie）。 */
 export interface PendingLogin {
+  /** CSRF state（callback 校验用）。 */
+  state: string
   target: string
   verifier: string
   redirectUri: string
-  sessionKey: string
-  createdAt: number
-}
-
-/** 一个已完成的 OAuth 会话（cookie sessionKey → 此条目）。 */
-export interface OAuthSession {
-  target: string
-  tokenSet: NativeTokenSet
   createdAt: number
 }
 
 export interface OAuthStartResult {
   /** gateway authorize URL（浏览器新窗口导航）。 */
   authorizeUrl: string
-  /** 会话键，后续查询用（浏览器不直接持有；调试用）。 */
-  sessionKey: string
+  /** pending cookie 值（编码后的进行中登录；调用方 Set-Cookie 下发）。 */
+  pendingValue: string
 }
 
 export interface OAuthSessionInfo {
@@ -111,6 +109,19 @@ const WS_TICKET_TIMEOUT_MS = 10_000
 /** ADR-0017：loopback redirect_uri 默认端口（与 main.ts PORT 默认 6722 对齐）。 */
 const DEFAULT_LOOPBACK_PORT = 6722
 
+// ── ADR-0023 cookie 常量 ───────────────────────────────────────────────────
+
+/** 会话 cookie 名前缀：`hermes_oauth_<targetHash>`（per-target，多连接共存）。 */
+export const SESSION_COOKIE_PREFIX = 'hermes_oauth_'
+/** 进行中登录（PKCE pending）cookie 名（单值：同时只有一个进行中的登录）。 */
+export const PENDING_COOKIE_NAME = 'hermes_oauth_pending'
+/** 会话 cookie Max-Age（30 天，对齐上游 RT cookie TTL）。 */
+export const SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60
+/** pending cookie Max-Age（10 分钟，对齐 gateway _PENDING_TTL_SECONDS）。 */
+export const PENDING_MAX_AGE_SECONDS = 10 * 60
+/** 单 cookie 值上限（RFC 6265 建议 4096 bytes；留名字/属性余量）。 */
+const MAX_COOKIE_VALUE_CHARS = 3500
+
 // ── PKCE / 随机数（Web Crypto，Deno 原生）──────────────────────────────────
 
 function b64urlEncode(bytes: Uint8Array): string {
@@ -119,6 +130,17 @@ function b64urlEncode(bytes: Uint8Array): string {
     binary += String.fromCharCode(bytes[i])
   }
   return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+}
+
+function b64urlDecode(input: string): Uint8Array {
+  const b64 = input.replace(/-/g, '+').replace(/_/g, '/')
+  const pad = b64.length % 4 === 0 ? '' : '='.repeat(4 - (b64.length % 4))
+  const binary = atob(b64 + pad)
+  const out = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) {
+    out[i] = binary.charCodeAt(i)
+  }
+  return out
 }
 
 function randomBytes(n: number): Uint8Array {
@@ -147,9 +169,168 @@ export function generateState(): string {
   return b64urlEncode(randomBytes(24))
 }
 
-/** 高熵会话键（32 随机字节 b64url）。 */
-export function generateSessionKey(): string {
-  return b64urlEncode(randomBytes(32))
+// ── target hash / cookie 名（ADR-0023 per-target）──────────────────────────
+
+/**
+ * target → 稳定短 hash（FNV-1a 64-bit hex）。用于 per-target cookie 名
+ * （`hermes_oauth_<hash>` / `hermes_session_<hash>`）与 target 内嵌校验，
+ * 多连接各自独立 cookie 共存（ADR-0023 决策 2）。
+ */
+export function targetHash(target: string): string {
+  let h = 0xcbf29ce484222325n
+  const prime = 0x100000001b3n
+  for (const byte of new TextEncoder().encode(target)) {
+    h ^= BigInt(byte)
+    h = (h * prime) & 0xffffffffffffffffn
+  }
+
+  return h.toString(16).padStart(16, '0')
+}
+
+/** OAuth 会话 cookie 名：`hermes_oauth_<targetHash>`。 */
+export function oauthSessionCookieName(target: string): string {
+  return `${SESSION_COOKIE_PREFIX}${targetHash(target)}`
+}
+
+// ── 会话 cookie 编解码（ADR-0023）──────────────────────────────────────────
+
+interface SessionCookiePayload {
+  v: 1
+  t: string // target
+  a: string // accessToken
+  r: string // refreshToken
+  e: number // expiresAt
+  p: string // provider
+  u: string // userId
+}
+
+/** 编码 token set → cookie 值（base64url(JSON)，target 内嵌防串连）。 */
+export function encodeSessionCookie(target: string, ts: NativeTokenSet): string {
+  const payload: SessionCookiePayload = {
+    v: 1,
+    t: target,
+    a: ts.accessToken,
+    r: ts.refreshToken,
+    e: ts.expiresAt,
+    p: ts.provider,
+    u: ts.userId,
+  }
+  const value = b64urlEncode(new TextEncoder().encode(JSON.stringify(payload)))
+  if (value.length > MAX_COOKIE_VALUE_CHARS) {
+    throw new Error(
+      `Session cookie too large (${value.length} chars > ${MAX_COOKIE_VALUE_CHARS}): ` +
+        'provider issued an unusually long token set',
+    )
+  }
+
+  return value
+}
+
+/** 解码 cookie 值 → { target, tokenSet }；非法/版本不符 → null。 */
+export function decodeSessionCookie(value: string): {
+  target: string
+  tokenSet: NativeTokenSet
+} | null {
+  try {
+    const payload = JSON.parse(
+      new TextDecoder().decode(b64urlDecode(value)),
+    ) as Partial<SessionCookiePayload>
+    if (payload.v !== 1 || typeof payload.t !== 'string' || !payload.a) {
+      return null
+    }
+
+    return {
+      target: payload.t,
+      tokenSet: {
+        accessToken: payload.a,
+        refreshToken: payload.r ?? '',
+        expiresAt: Number(payload.e) || 0,
+        provider: payload.p ?? '',
+        userId: payload.u ?? '',
+      },
+    }
+  } catch {
+    return null
+  }
+}
+
+// ── pending cookie 编解码（ADR-0023 决策 4，对齐上游 hermes_session_pkce）──
+
+/** 编码进行中登录 → pending cookie 值。 */
+export function encodePendingCookie(pending: PendingLogin): string {
+  return b64urlEncode(new TextEncoder().encode(JSON.stringify(pending)))
+}
+
+/** 解码 pending cookie 值；非法 → null。 */
+export function decodePendingCookie(value: string): PendingLogin | null {
+  try {
+    const p = JSON.parse(new TextDecoder().decode(b64urlDecode(value))) as PendingLogin
+    if (typeof p.state !== 'string' || typeof p.target !== 'string' || !p.verifier) {
+      return null
+    }
+
+    return {
+      state: p.state,
+      target: p.target,
+      verifier: p.verifier,
+      redirectUri: p.redirectUri ?? '',
+      createdAt: Number(p.createdAt) || 0,
+    }
+  } catch {
+    return null
+  }
+}
+
+// ── Cookie 头值构造（Secure 生产自动加，ADR-0023）──────────────────────────
+
+/**
+ * 会话 cookie 的 Set-Cookie 值。HttpOnly + SameSite=Lax（跨端口/同源携带；
+ * 跨站不发送）；`secure` 为 true 时加 `Secure`（生产 HTTPS 自动启用）。
+ */
+export function sessionCookieValue(
+  name: string,
+  value: string,
+  opts: { maxAgeSeconds?: number; secure?: boolean } = {},
+): string {
+  const parts = [
+    `${name}=${encodeURIComponent(value)}`,
+    'Path=/',
+    'HttpOnly',
+    'SameSite=Lax',
+    `Max-Age=${opts.maxAgeSeconds ?? SESSION_MAX_AGE_SECONDS}`,
+  ]
+  if (opts.secure) {
+    parts.push('Secure')
+  }
+
+  return parts.join('; ')
+}
+
+/** 清除会话 cookie（登出）。 */
+export function clearSessionCookieValue(
+  name: string,
+  opts: { secure?: boolean } = {},
+): string {
+  return sessionCookieValue(name, '', { maxAgeSeconds: 0, secure: opts.secure })
+}
+
+/** pending cookie 的 Set-Cookie 值（短 TTL，对齐 gateway）。 */
+export function pendingCookieValue(
+  pendingValue: string,
+  opts: { secure?: boolean } = {},
+): string {
+  return sessionCookieValue(PENDING_COOKIE_NAME, pendingValue, {
+    maxAgeSeconds: PENDING_MAX_AGE_SECONDS,
+    secure: opts.secure,
+  })
+}
+
+/** 清除 pending cookie。 */
+export function clearPendingCookieValue(opts: { secure?: boolean } = {}): string {
+  return sessionCookieValue(PENDING_COOKIE_NAME, '', {
+    maxAgeSeconds: 0,
+    secure: opts.secure,
+  })
 }
 
 // ── URL 构建（与上游 native-oauth.ts 同形）─────────────────────────────────
@@ -239,7 +420,7 @@ export function parseCallbackQuery(
 /**
  * 解析用户粘贴的回跳内容（完整 URL 或裸 query，容忍前后空白）。
  * 返回 code + state；不在此校验 state——paste 端点按 state 查 pending
- * 时完成 CSRF 校验（与 callback 同一条验证链）。
+ * cookie 时完成 CSRF 校验（与 callback 同一条验证链）。
  */
 export function parsePastedCallback(raw: string): { code: string; state: string } {
   const trimmed = raw.trim()
@@ -300,9 +481,7 @@ export function tokenNeedsRefresh(
   return nowSeconds >= expiresAt - skewSeconds
 }
 
-// ── Cookie 工具 ────────────────────────────────────────────────────────────
-
-export const SESSION_COOKIE_NAME = 'hermes_oauth_session'
+// ── Cookie 解析工具 ────────────────────────────────────────────────────────
 
 /** 解析 Cookie 头（名字 → 值）。 */
 export function parseCookies(header: string | null): Record<string, string> {
@@ -327,56 +506,20 @@ export function parseCookies(header: string | null): Record<string, string> {
   return out
 }
 
-/**
- * 会话 cookie 的 Set-Cookie 值。HttpOnly（浏览器 JS 不可读）+ SameSite=Lax
- * （同站 127.0.0.1 跨端口 / 生产同源都携带；跨站不发送）。
- */
-export function sessionCookieValue(sessionKey: string, maxAgeSeconds?: number): string {
-  const parts = [
-    `${SESSION_COOKIE_NAME}=${encodeURIComponent(sessionKey)}`,
-    'Path=/',
-    'HttpOnly',
-    'SameSite=Lax',
-  ]
-  if (maxAgeSeconds !== undefined) {
-    parts.push(`Max-Age=${maxAgeSeconds}`)
-  } else {
-    parts.push('Max-Age=86400')
-  }
-
-  return parts.join('; ')
-}
-
-/** 清除会话 cookie（登出）。 */
-export function clearSessionCookieValue(): string {
-  return sessionCookieValue('', 0)
-}
-
-// ── 内存状态存储 ───────────────────────────────────────────────────────────
+// ── 无状态 OAuth 中转（凭证在浏览器 cookie，ADR-0023）──────────────────────
 
 /**
- * OAuth 中转状态：pending（进行中登录）与 sessions（已完成会话）。
- * 进程内存、无持久化（PLAN §6：代理不落盘任何凭证）。
+ * OAuth 中转逻辑：零凭证内存态。token set / pending 全部在浏览器 cookie
+ * （编码值经参数进出），`refreshing` 并发去重是唯一的瞬态内存（非凭证，
+ * 重启丢失无害——只是少一层并发保护）。
  */
 export class OAuthStore {
-  /** state → PendingLogin（callback 校验 CSRF 用）。 */
-  private readonly pending = new Map<string, PendingLogin>()
-  /** sessionKey → OAuthSession（httpOnly cookie 指向这里）。 */
-  private readonly sessions = new Map<string, OAuthSession>()
-  /** sessionKey → 进行中的 refresh promise（并发去重）。 */
+  /** target → 进行中的 refresh promise（并发去重；瞬态，非凭证）。 */
   private readonly refreshing = new Map<string, Promise<NativeTokenSet | null>>()
 
   constructor(readonly deps: OAuthDeps) {}
 
-  get pendingCount(): number {
-    return this.pending.size
-  }
-
-  get sessionCount(): number {
-    return this.sessions.size
-  }
-
-  /** start：生成 PKCE/state，登记 pending，返回 authorize URL + sessionKey。 */
+  /** start：生成 PKCE/state，编码 pending cookie，返回 authorize URL。 */
   async begin(
     target: string,
     redirectUri: string,
@@ -384,14 +527,13 @@ export class OAuthStore {
   ): Promise<OAuthStartResult> {
     const { verifier, challenge } = await generatePkcePair()
     const state = generateState()
-    const sessionKey = generateSessionKey()
-    this.pending.set(state, {
+    const pending: PendingLogin = {
+      state,
       target,
       verifier,
       redirectUri,
-      sessionKey,
       createdAt: Date.now(),
-    })
+    }
     const authorizeUrl = nativeAuthorizeUrl(target, {
       challenge,
       redirectUri,
@@ -399,88 +541,69 @@ export class OAuthStore {
       provider,
     })
 
-    return { authorizeUrl, sessionKey }
+    return { authorizeUrl, pendingValue: encodePendingCookie(pending) }
   }
-
-  /** 取出 pending（不消费；callback 完成或失败后由调用方删除）。 */
-  getPending(state: string): PendingLogin | undefined {
-    const entry = this.pending.get(state)
-    if (entry && Date.now() - entry.createdAt > DEFAULT_PENDING_TTL_MS) {
-      this.pending.delete(state)
-
-      return undefined
-    }
-
-    return entry
-  }
-
-  removePending(state: string): void {
-    this.pending.delete(state)
-  }
-
-  /** callback 换到 token 后落库。 */
-  storeSession(sessionKey: string, target: string, tokenSet: NativeTokenSet): void {
-    this.sessions.set(sessionKey, { target, tokenSet, createdAt: Date.now() })
-  }
-
-  /** 按 cookie sessionKey 查询会话（target 必须匹配，防串连）。 */
-  getSession(sessionKey: string | null, target?: string): OAuthSession | undefined {
-    if (!sessionKey) {
-      return undefined
-    }
-
-    const session = this.sessions.get(sessionKey)
-
-    if (!session) {
-      return undefined
-    }
-
-    if (target !== undefined && session.target !== target) {
-      return undefined
-    }
-
-    return session
-  }
-
-  logout(sessionKey: string): boolean {
-    return this.sessions.delete(sessionKey)
-  }
-
-  // ── 转发面辅助 ───────────────────────────────────────────────────────────
 
   /**
-   * REST 转发注入：cookie sessionKey + 目标 target → access token（需要时
-   * 先刷新）。无会话 / target 不匹配 / 刷新失败 → null（调用方不注入）。
+   * 解析 pending cookie 并校验 state（CSRF）。TTL 过期 / 值非法 /
+   * state 不匹配 → null（端点按未登录处理）。
    */
-  async bearerFor(sessionKey: string | null, target: string): Promise<string | null> {
-    if (!sessionKey) {
+  resolvePending(pendingValue: string | null, state: string): PendingLogin | null {
+    if (!pendingValue) {
+      return null
+    }
+    const pending = decodePendingCookie(pendingValue)
+    if (!pending) {
+      return null
+    }
+    if (pending.state !== state) {
+      return null
+    }
+    if (Date.now() - pending.createdAt > DEFAULT_PENDING_TTL_MS) {
       return null
     }
 
-    const session = this.getSession(sessionKey, target)
+    return pending
+  }
 
+  /**
+   * 从会话 cookie 解码 token set 注入 REST（需要时先刷新）。返回
+   * `setCookie` = 刷新后的新 cookie 值（调用方 Set-Cookie 写回浏览器；
+   * Portal RT 旋转 + reuse-detection 要求每次 refresh 后立即写回）。
+   * 无会话 / target 不匹配 / 刷新失败 → { bearer: null, setCookie: null }。
+   */
+  async bearerFor(
+    cookieValue: string | null,
+    target: string,
+  ): Promise<{ bearer: string | null; setCookie: string | null }> {
+    const session = this.sessionFromCookie(cookieValue, target)
     if (!session) {
-      return null
+      return { bearer: null, setCookie: null }
     }
 
     const now = this.deps.now ? this.deps.now() : Math.floor(Date.now() / 1000)
     const skew = this.deps.refreshSkewSeconds ?? DEFAULT_REFRESH_SKEW_SECONDS
 
     if (!tokenNeedsRefresh(session.tokenSet.expiresAt, now, skew)) {
-      return session.tokenSet.accessToken
+      return { bearer: session.tokenSet.accessToken, setCookie: null }
     }
 
-    const fresh = await this.refresh(sessionKey, session)
+    const fresh = await this.refresh(target, session.tokenSet)
+    if (!fresh) {
+      return { bearer: null, setCookie: null }
+    }
 
-    return fresh ? fresh.accessToken : null
+    return { bearer: fresh.accessToken, setCookie: encodeSessionCookie(target, fresh) }
   }
 
-  /** WS 拨号：cookie sessionKey + target → 单次 ws-ticket（mint 失败 → null）。 */
-  async wsTicketFor(sessionKey: string | null, target: string): Promise<string | null> {
-    const accessToken = await this.bearerFor(sessionKey, target)
-
-    if (!accessToken) {
-      return null
+  /** WS 拨号：从会话 cookie 解码 → mint 单次 ws-ticket（失败 → null）。 */
+  async wsTicketFor(
+    cookieValue: string | null,
+    target: string,
+  ): Promise<{ ticket: string | null; setCookie: string | null }> {
+    const { bearer, setCookie } = await this.bearerFor(cookieValue, target)
+    if (!bearer) {
+      return { ticket: null, setCookie: null }
     }
 
     try {
@@ -489,20 +612,23 @@ export class OAuthStore {
         {},
         {
           timeoutMs: WS_TICKET_TIMEOUT_MS,
-          headers: { authorization: `Bearer ${accessToken}` },
+          headers: { authorization: `Bearer ${bearer}` },
         },
       )) as { ticket?: unknown }
       const ticket = String(body?.ticket ?? '')
 
-      return ticket || null
+      return { ticket: ticket || null, setCookie }
     } catch {
-      return null
+      return { ticket: null, setCookie: null }
     }
   }
 
-  /** 会话状态查询（session 端点回显；永不下发 token 本体）。 */
-  sessionInfo(sessionKey: string | null, target: string): OAuthSessionInfo {
-    const session = this.getSession(sessionKey, target)
+  /** 会话状态查询（回显；永不下发 token 本体）。 */
+  sessionInfo(
+    cookieValue: string | null,
+    target: string,
+  ): OAuthSessionInfo {
+    const session = this.sessionFromCookie(cookieValue, target)
 
     if (!session) {
       return {
@@ -523,12 +649,28 @@ export class OAuthStore {
     }
   }
 
-  /** 刷新（并发去重）：成功更新内存并返回新 token set；失败清会话。 */
+  /** 从 cookie 值解码会话（target 内嵌校验，防串连）。 */
+  private sessionFromCookie(
+    cookieValue: string | null,
+    target: string,
+  ): { target: string; tokenSet: NativeTokenSet } | null {
+    if (!cookieValue) {
+      return null
+    }
+    const session = decodeSessionCookie(cookieValue)
+    if (!session || session.target !== target) {
+      return null
+    }
+
+    return session
+  }
+
+  /** 刷新（并发去重）：成功返回新 token set；失败（session_expired）→ null。 */
   private refresh(
-    sessionKey: string,
-    session: OAuthSession,
+    target: string,
+    tokenSet: NativeTokenSet,
   ): Promise<NativeTokenSet | null> {
-    const inflight = this.refreshing.get(sessionKey)
+    const inflight = this.refreshing.get(target)
     if (inflight) {
       return inflight
     }
@@ -536,40 +678,30 @@ export class OAuthStore {
     const run = async (): Promise<NativeTokenSet | null> => {
       try {
         const body = (await this.deps.postJson(
-          nativeRefreshUrl(session.target),
+          nativeRefreshUrl(target),
           {
-            refresh_token: session.tokenSet.refreshToken,
-            provider: session.tokenSet.provider,
+            refresh_token: tokenSet.refreshToken,
+            provider: tokenSet.provider,
           },
           { timeoutMs: TOKEN_EXCHANGE_TIMEOUT_MS },
         )) as Record<string, unknown>
 
         if (body && typeof body === 'object' && body.error === 'session_expired') {
-          // gateway 判定 refresh 失效（401）→ 会话作废，浏览器下次查询看到未连接。
-          this.sessions.delete(sessionKey)
-
+          // gateway 判定 refresh 失效（401）→ 会话作废（不清 cookie：
+          // 下次查询自然未连接）。
           return null
         }
 
-        const fresh = parseTokenResponse(body)
-        this.sessions.set(sessionKey, {
-          target: session.target,
-          tokenSet: fresh,
-          createdAt: session.createdAt,
-        })
-
-        return fresh
+        return parseTokenResponse(body)
       } catch {
-        this.sessions.delete(sessionKey)
-
         return null
       } finally {
-        this.refreshing.delete(sessionKey)
+        this.refreshing.delete(target)
       }
     }
 
     const promise = run()
-    this.refreshing.set(sessionKey, promise)
+    this.refreshing.set(target, promise)
 
     return promise
   }
@@ -578,20 +710,20 @@ export class OAuthStore {
 // ── 端点处理器（main.ts 集成；cookie 读写由调用方传入）──────────────────────
 
 export interface OauthHandlerContext {
-  /** 从请求读取会话 cookie 值；null 表示无。 */
-  readSessionKey: (request: Request) => string | null
+  /** 请求是否为 HTTPS（生产自动加 Secure cookie 标志，ADR-0023）。 */
+  isHttps: (request: Request) => boolean
 }
 
 export interface OauthEndpoints {
-  /** POST /auth/native/start —— 浏览器 fetch；返回 { authorizeUrl }。 */
+  /** POST /auth/native/start —— 浏览器 fetch；返回 { authorizeUrl } + pending cookie。 */
   handleStart: (request: Request) => Promise<Response>
-  /** GET /auth/native/callback —— gateway 回跳；Set-Cookie + 完成页。 */
+  /** GET /auth/native/callback —— gateway 回跳；Set-Cookie 会话 + 清 pending。 */
   handleCallback: (request: Request) => Promise<Response>
-  /** POST /auth/native/paste —— 远端粘贴回跳（ADR-0017）；Set-Cookie + JSON。 */
+  /** POST /auth/native/paste —— 远端粘贴回跳（ADR-0017）；Set-Cookie 会话 + 清 pending。 */
   handlePaste: (request: Request) => Promise<Response>
   /** GET /auth/native/session —— 状态查询（cookie + ?target=）。 */
   handleSession: (request: Request) => Promise<Response>
-  /** POST /auth/native/logout —— 清会话 + 清 cookie。 */
+  /** POST /auth/native/logout —— 清会话 cookie。 */
   handleLogout: (request: Request) => Promise<Response>
 }
 
@@ -611,41 +743,52 @@ const FAILED_HTML =
 function json(
   status: number,
   body: unknown,
-  extraHeaders?: Record<string, string>,
+  extraHeaders?: Record<string, string> | Headers,
 ): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { 'Content-Type': 'application/json', ...extraHeaders },
-  })
+  const headers = new Headers({ 'Content-Type': 'application/json' })
+  if (extraHeaders instanceof Headers) {
+    // Headers 可能带多值头（多个 Set-Cookie）——set 会覆盖，须逐值追加。
+    for (const [key, values] of extraHeaders.entries()) {
+      if (key.toLowerCase() === 'set-cookie') {
+        const setCookies = extraHeaders.getSetCookie?.() ?? []
+        for (const v of setCookies) {
+          headers.append('Set-Cookie', v)
+        }
+      } else {
+        headers.set(key, values)
+      }
+    }
+  } else if (extraHeaders) {
+    for (const [key, value] of Object.entries(extraHeaders)) {
+      headers.set(key, value)
+    }
+  }
+
+  return new Response(JSON.stringify(body), { status, headers })
 }
 
 /**
- * 用 code + 已登记的 state 完成交换（callback 与 paste 共享，ADR-0017）。
- * 取 pending（CSRF：只有代理自己生成过的 state 才可交换）→ POST
- * /auth/native/token（code + verifier）→ 落内存会话。失败清 pending
- * （code 单次使用，重试无意义）。
+ * 用 code + pending cookie 完成交换（callback 与 paste 共享，ADR-0017）。
+ * CSRF：只有代理签发过（cookie 里 state 匹配）的登录才可交换。失败不消费
+ * pending（保留重试机会）；code 单次使用由 gateway 保证。
  */
 async function exchangeCode(
   store: OAuthStore,
-  state: string,
+  pending: PendingLogin,
   code: string,
 ): Promise<NativeTokenSet> {
-  const pending = store.getPending(state)
-
-  if (!pending) {
-    throw new Error('Unknown or expired login state')
-  }
-
   const body = await store.deps.postJson(
     nativeTokenUrl(pending.target),
     { code, code_verifier: pending.verifier },
     { timeoutMs: TOKEN_EXCHANGE_TIMEOUT_MS },
   )
-  const tokenSet = parseTokenResponse(body)
-  store.storeSession(pending.sessionKey, pending.target, tokenSet)
-  store.removePending(state)
 
-  return tokenSet
+  return parseTokenResponse(body)
+}
+
+/** 读取请求中的 pending cookie 值。 */
+function readPendingCookie(request: Request): string | null {
+  return parseCookies(request.headers.get('cookie'))[PENDING_COOKIE_NAME] ?? null
 }
 
 /**
@@ -703,9 +846,16 @@ export function createOauthEndpoints(
       }
 
       try {
-        const { authorizeUrl } = await store.begin(normalized, redirectUriFor())
+        const { authorizeUrl, pendingValue } = await store.begin(
+          normalized,
+          redirectUriFor(),
+        )
+        const secure = ctx.isHttps(request)
 
-        return json(200, { authorizeUrl })
+        return json(200, { authorizeUrl }, {
+          'Cache-Control': 'no-store',
+          'Set-Cookie': pendingCookieValue(pendingValue, { secure }),
+        })
       } catch (error) {
         return json(500, {
           detail: error instanceof Error ? error.message : String(error),
@@ -716,7 +866,7 @@ export function createOauthEndpoints(
     async handleCallback(request: Request): Promise<Response> {
       const url = new URL(request.url)
       const state = url.searchParams.get('state') ?? ''
-      const pending = store.getPending(state)
+      const pending = store.resolvePending(readPendingCookie(request), state)
 
       if (!pending) {
         return new Response(FAILED_HTML, {
@@ -725,23 +875,26 @@ export function createOauthEndpoints(
         })
       }
 
+      const secure = ctx.isHttps(request)
+
       try {
         const { code } = parseCallback(url.pathname + url.search, state)
         // code 有 TTL（gateway 侧 120s），callback 到交换之间的窗口足够；
-        // 交换失败清掉 pending（code 单次使用，重试无意义）。
-        await exchangeCode(store, state, code)
-
-        return new Response(DONE_HTML, {
-          status: 200,
-          headers: {
-            'Content-Type': 'text/html; charset=utf-8',
-            'Cache-Control': 'no-store',
-            'Set-Cookie': sessionCookieValue(pending.sessionKey),
-          },
+        // 交换失败不消费 pending（浏览器可重试粘贴/回跳）。
+        const tokenSet = await exchangeCode(store, pending, code)
+        const headers = new Headers({
+          'Content-Type': 'text/html; charset=utf-8',
+          'Cache-Control': 'no-store',
         })
-      } catch (error) {
-        store.removePending(state)
+        // 会话 cookie（编码 token set）+ 清 pending cookie（两个 Set-Cookie 头）。
+        headers.append(
+          'Set-Cookie',
+          sessionCookieValue(oauthSessionCookieName(pending.target), encodeSessionCookie(pending.target, tokenSet), { secure }),
+        )
+        headers.append('Set-Cookie', clearPendingCookieValue({ secure }))
 
+        return new Response(DONE_HTML, { status: 200, headers })
+      } catch (error) {
         return new Response(
           FAILED_HTML +
             `<p style="color:#b00">${escapeHtml(error instanceof Error ? error.message : String(error))}</p>`,
@@ -756,7 +909,7 @@ export function createOauthEndpoints(
     /**
      * POST /auth/native/paste —— 远端部署的粘贴回跳（ADR-0017）。
      * body { target, url }：url = 用户从地址栏复制的完整回调 URL（或裸
-     * query）；按 state 查 pending（CSRF 与 callback 同一条验证链），
+     * query）；按 state 查 pending cookie（CSRF 与 callback 同一条验证链），
      * target 必须匹配，随后走与 callback 完全相同的 code 交换。
      */
     async handlePaste(request: Request): Promise<Response> {
@@ -778,12 +931,11 @@ export function createOauthEndpoints(
         return json(400, { detail: 'url required' })
       }
 
-      let state = ''
+      const secure = ctx.isHttps(request)
 
       try {
         const parsed = parsePastedCallback(pasted)
-        state = parsed.state
-        const pending = store.getPending(state)
+        const pending = store.resolvePending(readPendingCookie(request), parsed.state)
 
         if (!pending) {
           return json(400, { detail: 'Unknown or expired login state' })
@@ -802,21 +954,19 @@ export function createOauthEndpoints(
           }
         }
 
-        await exchangeCode(store, state, parsed.code)
-
-        return json(
-          200,
-          { ok: true },
-          {
-            'Cache-Control': 'no-store',
-            'Set-Cookie': sessionCookieValue(pending.sessionKey),
-          },
+        const tokenSet = await exchangeCode(store, pending, parsed.code)
+        const headers = new Headers({
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-store',
+        })
+        headers.append(
+          'Set-Cookie',
+          sessionCookieValue(oauthSessionCookieName(pending.target), encodeSessionCookie(pending.target, tokenSet), { secure }),
         )
-      } catch (error) {
-        if (state) {
-          store.removePending(state)
-        }
+        headers.append('Set-Cookie', clearPendingCookieValue({ secure }))
 
+        return json(200, { ok: true }, headers)
+      } catch (error) {
         return json(400, {
           detail: error instanceof Error ? error.message : String(error),
         })
@@ -826,21 +976,26 @@ export function createOauthEndpoints(
     handleSession(request: Request): Promise<Response> {
       const url = new URL(request.url)
       const target = url.searchParams.get('target') ?? ''
-      const info = store.sessionInfo(ctx.readSessionKey(request), target)
+      const cookieValue =
+        parseCookies(request.headers.get('cookie'))[oauthSessionCookieName(target)] ?? null
+      const info = store.sessionInfo(cookieValue, target)
 
       return Promise.resolve(json(200, info))
     },
 
     handleLogout(request: Request): Promise<Response> {
-      const sessionKey = ctx.readSessionKey(request)
-
-      if (sessionKey) {
-        store.logout(sessionKey)
+      // per-target cookie：清掉请求里所有 hermes_oauth_* 会话 cookie
+      // （桥层登出不区分 target；多连接共存时一并登出）。
+      const cookies = parseCookies(request.headers.get('cookie'))
+      const secure = ctx.isHttps(request)
+      const headers = new Headers({ 'Content-Type': 'application/json' })
+      for (const name of Object.keys(cookies)) {
+        if (name.startsWith(SESSION_COOKIE_PREFIX)) {
+          headers.append('Set-Cookie', clearSessionCookieValue(name, { secure }))
+        }
       }
 
-      return Promise.resolve(
-        json(200, { ok: true }, { 'Set-Cookie': clearSessionCookieValue() }),
-      )
+      return Promise.resolve(json(200, { ok: true }, headers))
     },
   }
 }

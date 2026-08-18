@@ -4,6 +4,11 @@
  */
 import { assert, assertEquals } from 'jsr:@std/assert'
 import { createProxyHandler, defaultWebDist } from './main.ts'
+import {
+  decodeSessionCookie,
+  encodeSessionCookie,
+  oauthSessionCookieName,
+} from './oauth.ts'
 
 // ── 目标服务（echo HTTP / echo WS）─────────────────────────────────────────
 
@@ -674,6 +679,9 @@ async function oauthLogin(
   })
   assertEquals(start.status, 200)
   const { authorizeUrl } = await start.json()
+  // ADR-0023：start 下发 pending cookie（浏览器持有，callback 时带回）。
+  const pendingCookie = start.headers.get('set-cookie')?.split(';')[0] ?? ''
+  assert(pendingCookie.startsWith('hermes_oauth_pending='), pendingCookie)
 
   // 2) 模拟浏览器：跟随 authorize 302（gateway → redirect_uri = 代理 loopback）。
   const hop = await fetch(authorizeUrl, { redirect: 'manual' })
@@ -685,15 +693,20 @@ async function oauthLogin(
   assert(/^http:\/\/127\.0\.0\.1:\d+\/auth\/native\/callback\?/.test(location))
   const cbUrl = location.replace(/^http:\/\/127\.0\.0\.1:\d+/, proxyUrl)
 
-  // 3) 浏览器到达代理 callback（同窗口导航，无自定义头）。
-  const cb = await fetch(cbUrl)
+  // 3) 浏览器到达代理 callback（同窗口导航，带 pending cookie）。
+  const cb = await fetch(cbUrl, { headers: { cookie: pendingCookie } })
   assertEquals(cb.status, 200)
-  const setCookie = cb.headers.get('set-cookie') ?? ''
-  assertEquals(setCookie.includes('hermes_oauth_session='), true)
-  assertEquals(setCookie.includes('HttpOnly'), true)
-  const cookie = setCookie.split(';')[0]
+  const setCookies = cb.headers.getSetCookie()
+  // ADR-0023：会话 cookie 名 = per-target（hermes_oauth_<hash>），值 = 编码凭证。
+  const sessionSet = setCookies.find((c) => c.startsWith('hermes_oauth_'))
+  assert(sessionSet !== undefined, `expected hermes_oauth_* cookie, got: ${setCookies.join(' | ')}`)
+  assertEquals(sessionSet.includes('HttpOnly'), true)
+  // 同时清掉 pending cookie（短 TTL 指针）。
+  const pendingCleared = setCookies.find((c) => c.startsWith('hermes_oauth_pending=;'))
+  assertEquals(pendingCleared?.includes('Max-Age=0'), true)
+  const cookie = sessionSet.split(';')[0]
 
-  return { cookie, setCookie }
+  return { cookie, setCookie: sessionSet }
 }
 
 Deno.test(
@@ -728,7 +741,8 @@ Deno.test(
       })
       assertEquals((await echo2.json()).auth, null)
 
-      // 登出：清会话 + 清 cookie。
+      // 登出：清浏览器 cookie（ADR-0023 无状态语义——凭证本体仍可解码，
+      // 登出 = 清 cookie；浏览器不再持有旧值即断开）。
       const logout = await fetch(`${proxy.url}/auth/native/logout`, {
         method: 'POST',
         headers: { cookie },
@@ -736,9 +750,9 @@ Deno.test(
       assertEquals(logout.status, 200)
       assertEquals((logout.headers.get('set-cookie') ?? '').includes('Max-Age=0'), true)
 
+      // 浏览器 cookie 被清后：不带旧 cookie 查询 → 未连接。
       const session2 = await fetch(
         `${proxy.url}/auth/native/session?target=${encodeURIComponent(target.url)}`,
-        { headers: { cookie } },
       )
       assertEquals((await session2.json()).connected, false)
     } finally {
@@ -782,6 +796,64 @@ Deno.test('proxy: OAuth WS dial mints a ticket and replaces token', async () => 
     await target.close()
   }
 })
+
+Deno.test('proxy: OAuth WS dial refresh writes new cookie via 101 response (ADR-0023)', async () => {
+  const target = startOauthTarget()
+  const proxy = await startProxy()
+  try {
+    // 构造已过期会话：AT 过期 → WS 拨号前 refresh（access-oauth-1 → access-oauth-2），
+    // 新 token set 必须经 101 升级响应 Set-Cookie 写回（Portal RT 旋转 + reuse-detection）。
+    const expired = {
+      accessToken: 'access-oauth-1',
+      refreshToken: 'refresh-oauth-1',
+      expiresAt: Math.floor(Date.now() / 1000) - 60,
+      provider: 'nous',
+      userId: 'u-oauth',
+    }
+    const cookieName = oauthSessionCookieName(target.url)
+    const cookie = `${cookieName}=${encodeSessionCookie(target.url, expired)}`
+    const proxyUrl = new URL(proxy.url)
+
+    // 底层 TCP 发 WS upgrade（标准 WebSocket 客户端不暴露 101 响应头）。
+    const conn = await Deno.connect({ hostname: '127.0.0.1', port: Number(proxyUrl.port) })
+    const key = 'dGhlIHNhbXBsZSBub25jZQ=='
+    const req =
+      `GET /api/ws?target=${encodeURIComponent(target.url)} HTTP/1.1\r\n` +
+      `Host: ${proxyUrl.host}\r\n` +
+      'Upgrade: websocket\r\n' +
+      'Connection: Upgrade\r\n' +
+      `Sec-WebSocket-Key: ${key}\r\n` +
+      'Sec-WebSocket-Version: 13\r\n' +
+      `Cookie: ${cookie}\r\n\r\n`
+    await conn.write(new TextEncoder().encode(req))
+
+    // 读 101 响应头（到空行截止）。
+    const reader = conn.readable.getReader()
+    const decoder = new TextDecoder()
+    let headerText = ''
+    while (!headerText.includes('\r\n\r\n')) {
+      const { value, done } = await reader.read()
+      if (done) break
+      headerText += decoder.decode(value, { stream: true })
+    }
+    conn.close()
+
+    assert(headerText.startsWith('HTTP/1.1 101'), headerText)
+    // 101 响应必须带写回的会话 cookie（refresh 后的新 token set）。
+    const setCookieMatch = headerText.match(/set-cookie: ([^\r\n]+)/i)
+    assert(setCookieMatch !== null, headerText)
+    const written = setCookieMatch[1].split(';')[0]
+    const writtenName = written.split('=')[0]
+    const writtenValue = written.slice(writtenName.length + 1)
+    assertEquals(writtenName, cookieName)
+    const decoded = decodeSessionCookie(writtenValue)
+    assertEquals(decoded?.tokenSet.accessToken, 'access-oauth-2')
+    assertEquals(decoded?.tokenSet.refreshToken, 'refresh-oauth-2')
+  } finally {
+    await proxy.close()
+    await target.close()
+  }
+})
 Deno.test(
   'proxy: OAuth paste-back login completes through /auth/native/paste (ADR-0017)',
   async () => {
@@ -797,6 +869,7 @@ Deno.test(
       })
       assertEquals(start.status, 200)
       const { authorizeUrl } = await start.json()
+      const pendingCookie = start.headers.get('set-cookie')?.split(';')[0] ?? ''
 
       // 跟随 authorize 302（gateway → redirect_uri = loopback 字面量）。
       const hop = await fetch(authorizeUrl, { redirect: 'manual' })
@@ -805,18 +878,21 @@ Deno.test(
       assert(location.startsWith('http://127.0.0.1:'), location)
       assert(location.includes('/auth/native/callback?code='), location)
 
-      // 用户粘贴完整回调 URL（含 code + state）。
+      // 用户粘贴完整回调 URL（含 code + state）；paste 带 pending cookie
+      // （ADR-0023：进行中登录在 cookie，不在代理内存）。
       const paste = await fetch(`${proxy.url}/auth/native/paste`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json', cookie: pendingCookie },
         body: JSON.stringify({ target: target.url, url: location }),
       })
       assertEquals(paste.status, 200)
       assertEquals((await paste.json()).ok, true)
-      const setCookie = paste.headers.get('set-cookie') ?? ''
-      assertEquals(setCookie.includes('hermes_oauth_session='), true)
-      assertEquals(setCookie.includes('HttpOnly'), true)
-      const cookie = setCookie.split(';')[0]
+      const setCookies = paste.headers.getSetCookie()
+      // ADR-0023：per-target 会话 cookie（hermes_oauth_<hash>），值 = 编码凭证。
+      const sessionSet = setCookies.find((c) => c.startsWith('hermes_oauth_'))
+      assert(sessionSet !== undefined, `expected hermes_oauth_* cookie, got: ${setCookies.join(' | ')}`)
+      assertEquals(sessionSet.includes('HttpOnly'), true)
+      const cookie = sessionSet.split(';')[0]
 
       // 会话可用（免检查询）。
       const session = await fetch(
@@ -1059,7 +1135,9 @@ async function passwordLogin(
   })
   assertEquals(login.status, 200)
   const setCookie = login.headers.get('set-cookie') ?? ''
-  assertEquals(setCookie.startsWith('hermes_session='), true)
+  // ADR-0023：per-target 会话 cookie（hermes_session_<hash>），值 = 编码 jar。
+  assert(setCookie.startsWith('hermes_session_'), setCookie)
+  assert(!setCookie.startsWith('hermes_session='), setCookie)
 
   return { cookie: setCookie.split(';')[0] }
 }
@@ -1094,7 +1172,8 @@ Deno.test(
       const echoBody = (await echo.json()) as { cookie: string }
       assertEquals(echoBody.cookie.includes('hermes_session_at=at-1'), true)
 
-      // 登出：清 jar + 清 cookie，后续请求不再注入（目标 401）。
+      // 登出：尽力转发 gateway logout + 清浏览器 cookie（ADR-0023 无状态
+      // 语义——登出 = 清 cookie；浏览器不再持有旧值即断开）。
       const logout = await fetch(`${proxy.url}/api/proxy/session/logout`, {
         method: 'POST',
         headers: { cookie },
@@ -1103,10 +1182,10 @@ Deno.test(
       assertEquals((logout.headers.get('set-cookie') ?? '').includes('Max-Age=0'), true)
       assertEquals(target.logoutSeen, 1)
 
+      // 浏览器 cookie 被清后：不带旧 cookie 请求 → 代理不注入 → 目标 401。
       const after = await fetch(`${proxy.url}/api/echo`, {
         headers: {
           'X-Hermes-Target': target.url,
-          cookie,
         },
       })
       assertEquals(after.status, 401)
@@ -1143,14 +1222,16 @@ Deno.test('proxy: password login failure passes through 401 detail', async () =>
 })
 
 Deno.test(
-  'proxy: password session rotates cookies from relayed Set-Cookie',
+  'proxy: password session rotates cookies from relayed Set-Cookie (write-back)',
   async () => {
     const target = startPasswordTarget()
     const proxy = await startProxy()
     try {
       const { cookie } = await passwordLogin(proxy.url, target.url, 'right')
+      const cookieName = cookie.split('=')[0]
 
-      // 第一次请求触发目标轮换（at-1 → at-2），代理把响应 Set-Cookie 合并回 jar。
+      // 第一次请求触发目标轮换（at-1 → at-2）。ADR-0023：代理把上游
+      // Set-Cookie 剥离，合并后编码成代理域 cookie 写回响应头。
       const first = await fetch(`${proxy.url}/api/echo`, {
         headers: {
           'X-Hermes-Target': target.url,
@@ -1158,19 +1239,78 @@ Deno.test(
         },
       })
       assertEquals(first.status, 200)
+      const writeBack = first.headers.getSetCookie().find((c) =>
+        c.startsWith(`${cookieName}=`)
+      )
+      // 上游 Set-Cookie 不透传（gateway 域 cookie 对浏览器无用）
+      assert(writeBack !== undefined, 'expected proxy-domain cookie write-back')
+      const firstSet = first.headers.getSetCookie().join(' | ')
+      assert(!firstSet.includes('hermes_session_at=at-2'), firstSet)
+      assert(!firstSet.includes('Max-Age=900'), firstSet)
 
+      // 第二次请求带写回后的新 cookie → 目标看到轮换后的 at-2。
+      const rotatedCookie = writeBack.split(';')[0]
       const second = await fetch(`${proxy.url}/api/echo`, {
         headers: {
           'X-Hermes-Target': target.url,
-          cookie,
+          cookie: rotatedCookie,
         },
       })
       assertEquals(second.status, 200)
-      // 第二次请求的目标侧 cookie 已是轮换后的 at-2。
       assertEquals(target.cookieSeen[1].includes('hermes_session_at=at-2'), true)
     } finally {
       await proxy.close()
       await target.close()
+    }
+  },
+)
+
+Deno.test(
+  'proxy: OAuth + password sessions survive proxy restart (cookie holds credentials)',
+  async () => {
+    const target = startOauthTarget()
+    const passwordTarget = startPasswordTarget()
+    const proxy = await startProxy()
+    let oauthCookie = ''
+    let passwordCookie = ''
+    try {
+      // 建立两种会话。
+      const oauth = await oauthLogin(proxy.url, target.url)
+      oauthCookie = oauth.cookie
+      passwordCookie = (await passwordLogin(proxy.url, passwordTarget.url, 'right')).cookie
+    } finally {
+      // 模拟代理重启：完全关闭，起一个全新实例（零共享状态）。
+      await proxy.close()
+    }
+
+    const proxy2 = await startProxy()
+    try {
+      // ADR-0023：凭证在浏览器 cookie，新代理实例直接解码恢复，无需重登。
+      const session = await fetch(
+        `${proxy2.url}/auth/native/session?target=${encodeURIComponent(target.url)}`,
+        { headers: { cookie: oauthCookie } },
+      )
+      assertEquals((await session.json()).connected, true)
+
+      const echo = await fetch(`${proxy2.url}/api/echo`, {
+        headers: { 'x-hermes-target': target.url, cookie: oauthCookie },
+      })
+      assertEquals((await echo.json()).auth, 'Bearer access-oauth-1')
+
+      const pwStatus = await fetch(
+        `${proxy2.url}/api/proxy/session/status?target=${encodeURIComponent(passwordTarget.url)}`,
+        { headers: { cookie: passwordCookie } },
+      )
+      assertEquals((await pwStatus.json()).connected, true)
+
+      const pwEcho = await fetch(`${proxy2.url}/api/echo`, {
+        headers: { 'x-hermes-target': passwordTarget.url, cookie: passwordCookie },
+      })
+      assertEquals(pwEcho.status, 200)
+    } finally {
+      await proxy2.close()
+      await target.close()
+      await passwordTarget.close()
     }
   },
 )
