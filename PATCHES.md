@@ -200,21 +200,9 @@ m3/main 实测：上游 main 相对上一基准只改了 11 个补丁文件里�
 完整同步记录在 `docs/sync/YYYY-MM-DD-N.md`:
 - `docs/sync/2026-08-18-1.md` — e624e9f 同步(136 文件、shared 变化、4 条修复)
 - `docs/sync/2026-08-17-1.md` — 9ed4a7c 同步(21 文件、补丁全保留)
+- `docs/sync/2026-08-16-1.md` — v2026.8.16 跟进(tsconfig exclude + find 桥层)
 
-### 同步坑(每次必查,第一时间读)
-
-1. **git-subtree 不可用** → 必须手工三路(见下方「git-subtree 失效根因」)。
-   跑 `bash scripts/vendor-merge-manual.sh build|apply`(已 track 进仓库)。
-2. **shared 也可能变** — 每次同步先对比 shared 树
-   (`git rev-parse <base>:apps/shared` vs `<new>:apps/shared`),变了就要
-   同步 vendor/hermes-shared,别默认"shared 不动"。
-3. **上游新增子路径模块但 package exports 没更新** → tsconfig/vite 缺
-   别名会 TS2307。按 billing 同款补 `@hermes/shared/<mod>` 映射。
-4. **3-way 文本无冲突 ≠ 语义无冲突** → 上游删除领域概念(如 scope)时,
-   补丁里残留引用会悬空。人工核对上游删除的概念并适配。
-5. **桥面契约同步** → 上游 global.d.ts 签名变化时,apps/web/src/bridge/
-   对应实现(denied.ts/adapter.ts)必须同步类型。
-6. **`git gc` 别加 `--prune=now`** — 会回收 subtree split 对象(见下方根因)。
+同步执行与坑清单见 `## 8. 同步坑(Checklist)`。
 
 ### git-subtree 失效根因（2026-08-18 查证）
 
@@ -238,12 +226,33 @@ SHA 变、需强推，收益低）；(b) 继续手工三路（已脚本化、两
 
 ### v2026.8.16
 
-apps/web/tsconfig.json 增加 `exclude`，把 `vendor/**/*.test.*`
-移出 web typecheck 程序。上游桌面测试会 import 其仓库根 `tests/fixtures/*`（子树外），
-同步后新增此类引用会破坏本仓库 typecheck；vendor 测试并非本仓库运行/校验范围，
-apps/web 自身测试（src/bridge/*.test.ts）仍受检。
+同步细节见 `docs/sync/2026-08-16-1.md`(tsconfig exclude + find 桥层同步)。
 
-桥层同步：上游新增 `hermesDesktop.onOpenFindBarRequested` 表面（find overlay 接口），
-Web find 桥面延续布尔门 denied（ADR-0010/0011/0019），已在
-apps/web/src/bridge/denied.ts 加 `onOpenFindBarRequested = noopUnsub` 并在
-adapter.ts 透传；use-keybinds.ts 桌面分支并入上游 overlay 路由抑制（见 §4）。
+坑: **上游桌面测试会 import 仓库根 `tests/fixtures/*`(子树外)** —— 同步后
+新增此类引用会破坏本仓库 typecheck。已用 apps/web/tsconfig.json 的
+`exclude: vendor/**/*.test.*` 隔离(vendor 测试非本仓库校验范围,apps/web
+自身测试仍受检)。上游若重构测试 fixture 引用方式,核对该 exclude 是否仍足。
+
+## 8. 同步坑(Checklist)
+
+每次同步(追 main / 追 tag)按此清单核对;详细流程与教训见
+`scripts/vendor-merge-manual.sh`、§3 与 `docs/sync/`。
+
+### 执行
+
+- git-subtree 不可用(根因见 §7)→ 用 `bash scripts/vendor-merge-manual.sh build|apply`。
+- 浅取必须 `--depth=1`、sync 后清理 shallow 边界与本地 tag 引用(§3)。
+- `git gc` 别加 `--prune=now`(会回收 subtree split 对象,§3/§7)。
+
+### 内容核对
+
+- **shared 也可能变**: 先对比 `git rev-parse <base>:apps/shared` vs
+  `<new>:apps/shared`,变了就同步 vendor/hermes-shared(别默认"shared 不动")。
+- **上游新增子路径模块但 package exports 没更新** → tsconfig/vite 缺别名
+  会 TS2307。按 billing 同款补 `@hermes/shared/<mod>` 映射。
+- **3-way 文本无冲突 ≠ 语义无冲突**: 上游删除领域概念(如 scope)时,补丁
+  残留引用会悬空(TS2304/TS7006)。人工核对上游删除的概念并适配。
+- **桥面契约同步**: 上游 global.d.ts 签名变化时,apps/web/src/bridge/
+  (denied.ts/adapter.ts)须同步类型。
+- **vendor 测试 import 子树外 fixtures** 会破坏 typecheck(v2026.8.16 坑,
+  见 §7)。
