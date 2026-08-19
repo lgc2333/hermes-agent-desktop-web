@@ -7,7 +7,7 @@ ADR-0012 用"虚拟路径 + 内存 dataURL 缓存"让图片附件在 Web 上走�
 **File 引用保留**（随用随读、读完即弃）+ **OPFS 落盘**（仅内存字节），
 并把非图片文件附件接入同一通道。
 
-**Status**: accepted
+**Status**: accepted（虚拟路径格式决策被 0024 取代，其余仍有效）
 
 **Context**:
 
@@ -39,10 +39,8 @@ ADR-0012 用"虚拟路径 + 内存 dataURL 缓存"让图片附件在 Web 上走�
     读时 arrayBuffer() 瞬态 b64 读完即弃。
   - Blob（粘贴图片、HTML 预览等内存字节）→ OPFS `web-blobs/` 目录
     流式写盘；读时 getFile() 瞬态 b64。
-  - 虚拟路径统一 `web-blob://attach/<id>/<name>`：`<id>` 是 **Blob id**（Web
-    内部附件身份，保证本地存储键唯一、不对外）；`<name>` 是上传文件名。末段
-    即干净 basename——渲染层的 pathLabel / imageFilenameFromPath 取它作
-    file.attach 的 name / image.attach_bytes 的 filename（与桌面端一致）。
+  - 虚拟路径统一 `web-blob://attach/<id>-<name>`（嵌真实文件名，
+    file.attach 的 name 参数取自 pathLabel(path)）。
 - **桥面表面**（都经 adapter.ts 组合层）：
   - saveImageFile(blob, name)（新）：File → 引用；Blob → OPFS 落盘。
   - saveImageBuffer(bytes, ext)（保留签名）：bytes → Blob → OPFS 写，
@@ -64,10 +62,8 @@ ADR-0012 用"虚拟路径 + 内存 dataURL 缓存"让图片附件在 Web 上走�
 
 **Consequences**:
 
-- 非图片文件附件（拖拽/「＋」菜单）在 Web 上恢复可用：drop → 引用 → chip →
+- 非图片文件附件（拖拽）在 Web 上恢复可用：drop → 引用 → chip →
   file.attach data_url 上传，复用既有提交链路零改动。
-- 上传到 gateway 的附件文件名与桌面端一致：干净 basename（Blob id 不出 Web）；
-  同名文件由 gateway `_unique_attachment_path` 追加 `-N` 后缀防覆盖（不覆盖）。
 - 大文件不再常驻内存：File 引用零拷贝，b64 只在传输前瞬态出现一次。
 - 刷新即清：File 引用 Map 随页面消亡；OPFS web-blobs/ 载入清空；
   与草稿同生命周期（提交前刷新丢失，可接受）。
