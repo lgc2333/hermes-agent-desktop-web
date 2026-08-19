@@ -85,7 +85,7 @@ hermes-agent-desktop-web/
 
 ## 规则
 
-- 用户决策在写代码前应及时进 ADR。写 ADR 前必须先查看 `domain-modeling` Skill。如在实现时遇到当前情况与 ADR 预想中不符，应及时更新当前 ADR。非本次对话中创建的 ADR 按惯例不应该修改其内容，只能修改 status，除非用户特别说明。
+- 用户决策在写代码前应及时进 ADR。写 ADR 前必须先查看 `domain-modeling` Skill。如在实现时遇到当前情况与 ADR 预想中不符，应及时更新当前 ADR。**重要**：非本次对话中创建的 ADR 按惯例不应该修改其内容，只能修改 status，除非用户特别说明。
 
 - **版本 bump**：只看本项目（Web patch / 代理 / bridge / 本地代码）改动大小，不看上游 vendor 更新规模。本项目无大改 → 一律 **patch**（x.y.z → x.y.(z+1)）；本项目功能性大改 → minor；破坏性变更 → major。上游同步内容再大也不算 bump 理由。
 
