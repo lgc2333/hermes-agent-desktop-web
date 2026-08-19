@@ -68,7 +68,8 @@ Deno.test('password session cookie values: set + clear + Secure + 30d', () => {
 function entry(overrides: Partial<PasswordSessionEntry> = {}): PasswordSessionEntry {
   return {
     target: 'http://gw:9119',
-    cookieHeader: 'hermes_session_at=at1; hermes_session_rt=rt1; hermes_session_provider=basic',
+    cookieHeader:
+      'hermes_session_at=at1; hermes_session_rt=rt1; hermes_session_provider=basic',
     provider: 'basic',
     username: 'admin',
     createdAt: 1000,
@@ -94,10 +95,7 @@ Deno.test('decodeJarCookie: garbage → null', () => {
 
 Deno.test('passwordSessionCookieName: per-target names, stable', () => {
   const t = 'http://gw:9119'
-  assertEquals(
-    passwordSessionCookieName(t),
-    `hermes_session_${targetHash(t)}`,
-  )
+  assertEquals(passwordSessionCookieName(t), `hermes_session_${targetHash(t)}`)
   assertEquals(
     passwordSessionCookieName(t) === passwordSessionCookieName('http://other:1'),
     false,
@@ -111,11 +109,7 @@ function makeDeps(overrides: Partial<SessionDeps> = {}): SessionDeps & {
 } {
   const calls: { url: string; body: unknown; headers?: Record<string, string> }[] = []
   return {
-    postRaw: async (
-      url: string,
-      body: unknown,
-      headers?: Record<string, string>,
-    ) => {
+    postRaw: async (url: string, body: unknown, headers?: Record<string, string>) => {
       calls.push({ url, body, headers })
       if (url.endsWith('/auth/password-login')) {
         return {
@@ -172,7 +166,9 @@ Deno.test(
     // 无内存：第二个 store 实例用同一 cookie 值也能恢复会话（重启恢复）
     const store2 = new SessionStore(deps)
     assertEquals(
-      store2.cookieFor(ok.jarValue!, 'http://gw:9119')?.includes('hermes_session_at=at1'),
+      store2
+        .cookieFor(ok.jarValue!, 'http://gw:9119')
+        ?.includes('hermes_session_at=at1'),
       true,
     )
 
@@ -240,45 +236,54 @@ Deno.test('store: applySetCookie rotates jar, returns new encoded value', async 
   assertEquals(store.applySetCookie(null, 'http://gw:9119', []), null)
 })
 
-Deno.test('store: wsTicketFor mints via gateway with Cookie, no write-back when no rotation', async () => {
-  const deps = makeDeps()
-  const store = new SessionStore(deps)
-  const jarValue = await loginAndGetCookie(store)
+Deno.test(
+  'store: wsTicketFor mints via gateway with Cookie, no write-back when no rotation',
+  async () => {
+    const deps = makeDeps()
+    const store = new SessionStore(deps)
+    const jarValue = await loginAndGetCookie(store)
 
-  const { ticket, setCookie } = await store.wsTicketFor(jarValue, 'http://gw:9119')
-  assertEquals(ticket, 'ticket-1')
-  assertEquals(setCookie, null)
-  const wsCall = deps.calls.find((c) => c.url.endsWith('/api/auth/ws-ticket'))
-  assertEquals(wsCall?.headers?.cookie.includes('hermes_session_at=at1'), true)
-  // 无会话 → null
-  assertEquals((await store.wsTicketFor(null, 'http://gw:9119')).ticket, null)
-})
+    const { ticket, setCookie } = await store.wsTicketFor(jarValue, 'http://gw:9119')
+    assertEquals(ticket, 'ticket-1')
+    assertEquals(setCookie, null)
+    const wsCall = deps.calls.find((c) => c.url.endsWith('/api/auth/ws-ticket'))
+    assertEquals(wsCall?.headers?.cookie.includes('hermes_session_at=at1'), true)
+    // 无会话 → null
+    assertEquals((await store.wsTicketFor(null, 'http://gw:9119')).ticket, null)
+  },
+)
 
-Deno.test('store: wsTicketFor merges rotation cookies into write-back value', async () => {
-  const base = makeDeps()
-  const store = new SessionStore({
-    ...base,
-    postRaw: async (url: string, body: unknown, headers?: Record<string, string>) => {
-      // 保留 login 分支，只覆盖 ws-ticket 分支（返回轮换 Set-Cookie）。
-      if (url.endsWith('/auth/password-login')) {
-        return base.postRaw(url, body, headers)
-      }
-      if (url.endsWith('/api/auth/ws-ticket')) {
-        return {
-          status: 200,
-          ok: true,
-          setCookies: ['hermes_session_at=at3; Path=/; HttpOnly; Max-Age=900'],
-          body: { ticket: 'ticket-2', ttl_seconds: 30 },
+Deno.test(
+  'store: wsTicketFor merges rotation cookies into write-back value',
+  async () => {
+    const base = makeDeps()
+    const store = new SessionStore({
+      ...base,
+      postRaw: async (url: string, body: unknown, headers?: Record<string, string>) => {
+        // 保留 login 分支，只覆盖 ws-ticket 分支（返回轮换 Set-Cookie）。
+        if (url.endsWith('/auth/password-login')) {
+          return base.postRaw(url, body, headers)
         }
-      }
-      throw new Error(`unexpected: ${url}`)
-    },
-  })
-  const jarValue = await loginAndGetCookie(store)
-  const { ticket, setCookie } = await store.wsTicketFor(jarValue, 'http://gw:9119')
-  assertEquals(ticket, 'ticket-2')
-  assertEquals(decodeJarCookie(setCookie!)?.entry.cookieHeader.includes('hermes_session_at=at3'), true)
-})
+        if (url.endsWith('/api/auth/ws-ticket')) {
+          return {
+            status: 200,
+            ok: true,
+            setCookies: ['hermes_session_at=at3; Path=/; HttpOnly; Max-Age=900'],
+            body: { ticket: 'ticket-2', ttl_seconds: 30 },
+          }
+        }
+        throw new Error(`unexpected: ${url}`)
+      },
+    })
+    const jarValue = await loginAndGetCookie(store)
+    const { ticket, setCookie } = await store.wsTicketFor(jarValue, 'http://gw:9119')
+    assertEquals(ticket, 'ticket-2')
+    assertEquals(
+      decodeJarCookie(setCookie!)?.entry.cookieHeader.includes('hermes_session_at=at3'),
+      true,
+    )
+  },
+)
 
 Deno.test('store: sessionInfo decodes from cookie, never exposes jar', async () => {
   const store = new SessionStore(makeDeps())
@@ -293,83 +298,103 @@ Deno.test('store: sessionInfo decodes from cookie, never exposes jar', async () 
   assertEquals(store.sessionInfo(null, 'http://gw:9119').connected, false)
 })
 
-Deno.test('store: logout forwards /auth/logout with jar cookie (best-effort)', async () => {
-  const deps = makeDeps()
-  const store = new SessionStore(deps)
-  const jarValue = await loginAndGetCookie(store)
+Deno.test(
+  'store: logout forwards /auth/logout with jar cookie (best-effort)',
+  async () => {
+    const deps = makeDeps()
+    const store = new SessionStore(deps)
+    const jarValue = await loginAndGetCookie(store)
 
-  const forwarded = await store.logout(jarValue, 'http://gw:9119')
-  assertEquals(forwarded, true)
-  const logoutCall = deps.calls.find((c) => c.url.endsWith('/auth/logout'))
-  assertEquals(logoutCall?.headers?.cookie.includes('hermes_session_at=at1'), true)
-  // 无会话 → 不转发
-  assertEquals(await store.logout(null, 'http://gw:9119'), false)
-})
+    const forwarded = await store.logout(jarValue, 'http://gw:9119')
+    assertEquals(forwarded, true)
+    const logoutCall = deps.calls.find((c) => c.url.endsWith('/auth/logout'))
+    assertEquals(logoutCall?.headers?.cookie.includes('hermes_session_at=at1'), true)
+    // 无会话 → 不转发
+    assertEquals(await store.logout(null, 'http://gw:9119'), false)
+  },
+)
 
 // ── 端点处理器（HTTP 面）───────────────────────────────────────────────────
 
 function makeEndpoints(store: SessionStore) {
-  return createSessionEndpoints(store, {
-    isHttps: () => false,
-  }, {
-    allowTarget: () => true,
-  })
+  return createSessionEndpoints(
+    store,
+    {
+      isHttps: () => false,
+    },
+    {
+      allowTarget: () => true,
+    },
+  )
 }
 
-Deno.test('handleLogin: success → Set-Cookie encoded jar; 401 surfaces detail', async () => {
-  const store = new SessionStore(makeDeps())
-  const endpoints = makeEndpoints(store)
+Deno.test(
+  'handleLogin: success → Set-Cookie encoded jar; 401 surfaces detail',
+  async () => {
+    const store = new SessionStore(makeDeps())
+    const endpoints = makeEndpoints(store)
 
-  const ok = await endpoints.handleLogin(
-    new Request('http://127.0.0.1:6722/api/proxy/session/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        target: 'http://gw:9119',
-        provider: 'basic',
-        username: 'admin',
-        password: 'pw',
+    const ok = await endpoints.handleLogin(
+      new Request('http://127.0.0.1:6722/api/proxy/session/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          target: 'http://gw:9119',
+          provider: 'basic',
+          username: 'admin',
+          password: 'pw',
+        }),
       }),
-    }),
-  )
-  assertEquals(ok.status, 200)
-  const setCookie = ok.headers.get('set-cookie') ?? ''
-  assertEquals(setCookie.startsWith(`hermes_session_${targetHash('http://gw:9119')}=`), true)
-  assertEquals(setCookie.includes('HttpOnly'), true)
-  assertEquals(setCookie.includes('Max-Age=2592000'), true)
+    )
+    assertEquals(ok.status, 200)
+    const setCookie = ok.headers.get('set-cookie') ?? ''
+    assertEquals(
+      setCookie.startsWith(`hermes_session_${targetHash('http://gw:9119')}=`),
+      true,
+    )
+    assertEquals(setCookie.includes('HttpOnly'), true)
+    assertEquals(setCookie.includes('Max-Age=2592000'), true)
 
-  // 401 原样透传（带 detail）
-  const badStore = new SessionStore(
-    makeDeps({
-      postRaw: async () => ({
-        status: 401,
-        ok: false,
-        setCookies: [],
-        body: { detail: 'Invalid credentials' },
+    // 401 原样透传（带 detail）
+    const badStore = new SessionStore(
+      makeDeps({
+        postRaw: async () => ({
+          status: 401,
+          ok: false,
+          setCookies: [],
+          body: { detail: 'Invalid credentials' },
+        }),
       }),
-    }),
-  )
-  const bad = await makeEndpoints(badStore).handleLogin(
-    new Request('http://127.0.0.1:6722/api/proxy/session/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        target: 'http://gw:9119',
-        provider: 'basic',
-        username: 'admin',
-        password: 'wrong',
+    )
+    const bad = await makeEndpoints(badStore).handleLogin(
+      new Request('http://127.0.0.1:6722/api/proxy/session/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          target: 'http://gw:9119',
+          provider: 'basic',
+          username: 'admin',
+          password: 'wrong',
+        }),
       }),
-    }),
-  )
-  assertEquals(bad.status, 401)
-  assertEquals(((await bad.json()) as { detail: string }).detail, 'Invalid credentials')
-})
+    )
+    assertEquals(bad.status, 401)
+    assertEquals(
+      ((await bad.json()) as { detail: string }).detail,
+      'Invalid credentials',
+    )
+  },
+)
 
 Deno.test('handleLogin: target not allowed → 403', async () => {
   const store = new SessionStore(makeDeps())
-  const endpoints = createSessionEndpoints(store, { isHttps: () => false }, {
-    allowTarget: (t) => t === 'http://gw:9119',
-  })
+  const endpoints = createSessionEndpoints(
+    store,
+    { isHttps: () => false },
+    {
+      allowTarget: (t) => t === 'http://gw:9119',
+    },
+  )
   const res = await endpoints.handleLogin(
     new Request('http://127.0.0.1:6722/api/proxy/session/login', {
       method: 'POST',
@@ -399,7 +424,9 @@ Deno.test('handleLogout: forwards gateway logout, clears cookie', async () => {
     }),
   )
   assertEquals(res.status, 200)
-  const cleared = res.headers.getSetCookie().find((c) => c.startsWith(`${cookieName}=;`))
+  const cleared = res.headers
+    .getSetCookie()
+    .find((c) => c.startsWith(`${cookieName}=;`))
   assertEquals(cleared?.includes('Max-Age=0'), true)
 })
 
@@ -410,14 +437,19 @@ Deno.test('handleStatus: connected with jar cookie, disconnected without', async
   const cookieName = passwordSessionCookieName('http://gw:9119')
 
   const ok = await endpoints.handleStatus(
-    new Request('http://127.0.0.1:6722/api/proxy/session/status?target=http%3A%2F%2Fgw%3A9119', {
-      headers: { cookie: `${cookieName}=${jarValue}` },
-    }),
+    new Request(
+      'http://127.0.0.1:6722/api/proxy/session/status?target=http%3A%2F%2Fgw%3A9119',
+      {
+        headers: { cookie: `${cookieName}=${jarValue}` },
+      },
+    ),
   )
   assertEquals(((await ok.json()) as { connected: boolean }).connected, true)
 
   const empty = await endpoints.handleStatus(
-    new Request('http://127.0.0.1:6722/api/proxy/session/status?target=http%3A%2F%2Fgw%3A9119'),
+    new Request(
+      'http://127.0.0.1:6722/api/proxy/session/status?target=http%3A%2F%2Fgw%3A9119',
+    ),
   )
   assertEquals(((await empty.json()) as { connected: boolean }).connected, false)
 })
@@ -425,8 +457,20 @@ Deno.test('handleStatus: connected with jar cookie, disconnected without', async
 // ── 端点 URL 工具 ───────────────────────────────────────────────────────────
 
 Deno.test('endpoint url builders join prefix paths without double slashes', () => {
-  assertEquals(passwordLoginUrl('http://gw:9119/'), 'http://gw:9119/auth/password-login')
-  assertEquals(passwordLoginUrl('http://gw:9119/hermes'), 'http://gw:9119/hermes/auth/password-login')
-  assertEquals(wsTicketUrl('http://gw:9119/hermes/'), 'http://gw:9119/hermes/api/auth/ws-ticket')
-  assertEquals(authLogoutUrl('http://gw:9119/hermes'), 'http://gw:9119/hermes/auth/logout')
+  assertEquals(
+    passwordLoginUrl('http://gw:9119/'),
+    'http://gw:9119/auth/password-login',
+  )
+  assertEquals(
+    passwordLoginUrl('http://gw:9119/hermes'),
+    'http://gw:9119/hermes/auth/password-login',
+  )
+  assertEquals(
+    wsTicketUrl('http://gw:9119/hermes/'),
+    'http://gw:9119/hermes/api/auth/ws-ticket',
+  )
+  assertEquals(
+    authLogoutUrl('http://gw:9119/hermes'),
+    'http://gw:9119/hermes/auth/logout',
+  )
 })

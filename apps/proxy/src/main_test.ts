@@ -699,7 +699,10 @@ async function oauthLogin(
   const setCookies = cb.headers.getSetCookie()
   // ADR-0023：会话 cookie 名 = per-target（hermes_oauth_<hash>），值 = 编码凭证。
   const sessionSet = setCookies.find((c) => c.startsWith('hermes_oauth_'))
-  assert(sessionSet !== undefined, `expected hermes_oauth_* cookie, got: ${setCookies.join(' | ')}`)
+  assert(
+    sessionSet !== undefined,
+    `expected hermes_oauth_* cookie, got: ${setCookies.join(' | ')}`,
+  )
   assertEquals(sessionSet.includes('HttpOnly'), true)
   // 同时清掉 pending cookie（短 TTL 指针）。
   const pendingCleared = setCookies.find((c) => c.startsWith('hermes_oauth_pending=;'))
@@ -797,63 +800,69 @@ Deno.test('proxy: OAuth WS dial mints a ticket and replaces token', async () => 
   }
 })
 
-Deno.test('proxy: OAuth WS dial refresh writes new cookie via 101 response (ADR-0023)', async () => {
-  const target = startOauthTarget()
-  const proxy = await startProxy()
-  try {
-    // 构造已过期会话：AT 过期 → WS 拨号前 refresh（access-oauth-1 → access-oauth-2），
-    // 新 token set 必须经 101 升级响应 Set-Cookie 写回（Portal RT 旋转 + reuse-detection）。
-    const expired = {
-      accessToken: 'access-oauth-1',
-      refreshToken: 'refresh-oauth-1',
-      expiresAt: Math.floor(Date.now() / 1000) - 60,
-      provider: 'nous',
-      userId: 'u-oauth',
+Deno.test(
+  'proxy: OAuth WS dial refresh writes new cookie via 101 response (ADR-0023)',
+  async () => {
+    const target = startOauthTarget()
+    const proxy = await startProxy()
+    try {
+      // 构造已过期会话：AT 过期 → WS 拨号前 refresh（access-oauth-1 → access-oauth-2），
+      // 新 token set 必须经 101 升级响应 Set-Cookie 写回（Portal RT 旋转 + reuse-detection）。
+      const expired = {
+        accessToken: 'access-oauth-1',
+        refreshToken: 'refresh-oauth-1',
+        expiresAt: Math.floor(Date.now() / 1000) - 60,
+        provider: 'nous',
+        userId: 'u-oauth',
+      }
+      const cookieName = oauthSessionCookieName(target.url)
+      const cookie = `${cookieName}=${encodeSessionCookie(target.url, expired)}`
+      const proxyUrl = new URL(proxy.url)
+
+      // 底层 TCP 发 WS upgrade（标准 WebSocket 客户端不暴露 101 响应头）。
+      const conn = await Deno.connect({
+        hostname: '127.0.0.1',
+        port: Number(proxyUrl.port),
+      })
+      const key = 'dGhlIHNhbXBsZSBub25jZQ=='
+      const req =
+        `GET /api/ws?target=${encodeURIComponent(target.url)} HTTP/1.1\r\n` +
+        `Host: ${proxyUrl.host}\r\n` +
+        'Upgrade: websocket\r\n' +
+        'Connection: Upgrade\r\n' +
+        `Sec-WebSocket-Key: ${key}\r\n` +
+        'Sec-WebSocket-Version: 13\r\n' +
+        `Cookie: ${cookie}\r\n\r\n`
+      await conn.write(new TextEncoder().encode(req))
+
+      // 读 101 响应头（到空行截止）。
+      const reader = conn.readable.getReader()
+      const decoder = new TextDecoder()
+      let headerText = ''
+      while (!headerText.includes('\r\n\r\n')) {
+        const { value, done } = await reader.read()
+        if (done) break
+        headerText += decoder.decode(value, { stream: true })
+      }
+      conn.close()
+
+      assert(headerText.startsWith('HTTP/1.1 101'), headerText)
+      // 101 响应必须带写回的会话 cookie（refresh 后的新 token set）。
+      const setCookieMatch = headerText.match(/set-cookie: ([^\r\n]+)/i)
+      assert(setCookieMatch !== null, headerText)
+      const written = setCookieMatch[1].split(';')[0]
+      const writtenName = written.split('=')[0]
+      const writtenValue = written.slice(writtenName.length + 1)
+      assertEquals(writtenName, cookieName)
+      const decoded = decodeSessionCookie(writtenValue)
+      assertEquals(decoded?.tokenSet.accessToken, 'access-oauth-2')
+      assertEquals(decoded?.tokenSet.refreshToken, 'refresh-oauth-2')
+    } finally {
+      await proxy.close()
+      await target.close()
     }
-    const cookieName = oauthSessionCookieName(target.url)
-    const cookie = `${cookieName}=${encodeSessionCookie(target.url, expired)}`
-    const proxyUrl = new URL(proxy.url)
-
-    // 底层 TCP 发 WS upgrade（标准 WebSocket 客户端不暴露 101 响应头）。
-    const conn = await Deno.connect({ hostname: '127.0.0.1', port: Number(proxyUrl.port) })
-    const key = 'dGhlIHNhbXBsZSBub25jZQ=='
-    const req =
-      `GET /api/ws?target=${encodeURIComponent(target.url)} HTTP/1.1\r\n` +
-      `Host: ${proxyUrl.host}\r\n` +
-      'Upgrade: websocket\r\n' +
-      'Connection: Upgrade\r\n' +
-      `Sec-WebSocket-Key: ${key}\r\n` +
-      'Sec-WebSocket-Version: 13\r\n' +
-      `Cookie: ${cookie}\r\n\r\n`
-    await conn.write(new TextEncoder().encode(req))
-
-    // 读 101 响应头（到空行截止）。
-    const reader = conn.readable.getReader()
-    const decoder = new TextDecoder()
-    let headerText = ''
-    while (!headerText.includes('\r\n\r\n')) {
-      const { value, done } = await reader.read()
-      if (done) break
-      headerText += decoder.decode(value, { stream: true })
-    }
-    conn.close()
-
-    assert(headerText.startsWith('HTTP/1.1 101'), headerText)
-    // 101 响应必须带写回的会话 cookie（refresh 后的新 token set）。
-    const setCookieMatch = headerText.match(/set-cookie: ([^\r\n]+)/i)
-    assert(setCookieMatch !== null, headerText)
-    const written = setCookieMatch[1].split(';')[0]
-    const writtenName = written.split('=')[0]
-    const writtenValue = written.slice(writtenName.length + 1)
-    assertEquals(writtenName, cookieName)
-    const decoded = decodeSessionCookie(writtenValue)
-    assertEquals(decoded?.tokenSet.accessToken, 'access-oauth-2')
-    assertEquals(decoded?.tokenSet.refreshToken, 'refresh-oauth-2')
-  } finally {
-    await proxy.close()
-    await target.close()
-  }
-})
+  },
+)
 Deno.test(
   'proxy: OAuth paste-back login completes through /auth/native/paste (ADR-0017)',
   async () => {
@@ -890,7 +899,10 @@ Deno.test(
       const setCookies = paste.headers.getSetCookie()
       // ADR-0023：per-target 会话 cookie（hermes_oauth_<hash>），值 = 编码凭证。
       const sessionSet = setCookies.find((c) => c.startsWith('hermes_oauth_'))
-      assert(sessionSet !== undefined, `expected hermes_oauth_* cookie, got: ${setCookies.join(' | ')}`)
+      assert(
+        sessionSet !== undefined,
+        `expected hermes_oauth_* cookie, got: ${setCookies.join(' | ')}`,
+      )
       assertEquals(sessionSet.includes('HttpOnly'), true)
       const cookie = sessionSet.split(';')[0]
 
@@ -1239,9 +1251,9 @@ Deno.test(
         },
       })
       assertEquals(first.status, 200)
-      const writeBack = first.headers.getSetCookie().find((c) =>
-        c.startsWith(`${cookieName}=`)
-      )
+      const writeBack = first.headers
+        .getSetCookie()
+        .find((c) => c.startsWith(`${cookieName}=`))
       // 上游 Set-Cookie 不透传（gateway 域 cookie 对浏览器无用）
       assert(writeBack !== undefined, 'expected proxy-domain cookie write-back')
       const firstSet = first.headers.getSetCookie().join(' | ')
@@ -1277,7 +1289,8 @@ Deno.test(
       // 建立两种会话。
       const oauth = await oauthLogin(proxy.url, target.url)
       oauthCookie = oauth.cookie
-      passwordCookie = (await passwordLogin(proxy.url, passwordTarget.url, 'right')).cookie
+      passwordCookie = (await passwordLogin(proxy.url, passwordTarget.url, 'right'))
+        .cookie
     } finally {
       // 模拟代理重启：完全关闭，起一个全新实例（零共享状态）。
       await proxy.close()

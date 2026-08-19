@@ -160,6 +160,51 @@ export class BrowserAdapter {
     window.open(url, '_blank', 'noopener,noreferrer')
   }
 
+  // ── 窗口：用「新 tab」实现桌面「新窗口」语义 ───────────────────────────────
+  // 桌面 `openWindow()`（⌘⇧N）开一个完整对等 BrowserWindow；`openSessionWindow`
+  // 开一个 `?win=secondary#/<id>` 的副会话窗口。两者在浏览器里都是开一个**同源
+  // 新 tab**：同源自动继承 localStorage 连接注册表 + httpOnly 认证 cookie（代理域
+  // per-target），天然是同一 gateway 的 peer 实例，凭证零搬运。副会话 URL 契约与
+  // 桌面 buildSessionWindowUrl 完全同构（query 在 `#` 前，HashRouter 路由在 `#` 后）。
+
+  /** 当前 SPA 基址（含部署子路径），用于开新 tab。 */
+  private windowBaseUrl(): string {
+    const path = window.location.pathname.replace(/\/$/, '')
+    return `${window.location.origin}${path}/`
+  }
+
+  async openSessionWindow(
+    sessionId: string,
+    opts?: { watch?: boolean },
+  ): Promise<{ error?: string; ok: boolean }> {
+    const query = `?win=secondary${opts?.watch ? '&watch=1' : ''}`
+    const route = `#/${encodeURIComponent(sessionId)}`
+    // 同步段开窗（保留用户手势，避免弹窗拦截——见 AGENTS 常见坑）。
+    const win = window.open(`${this.windowBaseUrl()}${query}${route}`, '_blank')
+
+    if (!win) {
+      return {
+        ok: false,
+        error: 'Hermes Web: the new tab was blocked by the browser',
+      }
+    }
+
+    return { ok: true }
+  }
+
+  async openWindow(): Promise<{ error?: string; ok: boolean }> {
+    const win = window.open(this.windowBaseUrl(), '_blank')
+
+    if (!win) {
+      return {
+        ok: false,
+        error: 'Hermes Web: the new tab was blocked by the browser',
+      }
+    }
+
+    return { ok: true }
+  }
+
   async fetchLinkTitle(url: string): Promise<string> {
     try {
       const res = await fetch(url, {

@@ -43,7 +43,6 @@ describe('buildWebBridge / installWebBridge', () => {
     const bridge = buildWebBridge()
 
     expect(await bridge.petOverlay.open({} as never)).toEqual({ ok: false })
-    expect(await bridge.openSessionWindow('s1')).toMatchObject({ ok: false })
     expect(await bridge.quickEntry.getSettings()).toMatchObject({ enabled: false })
     expect(await bridge.updates.check()).toMatchObject({ supported: false })
     expect(await bridge.requestMicrophoneAccess()).toBe(false)
@@ -76,6 +75,87 @@ describe('buildWebBridge / installWebBridge', () => {
     // 无 Battery API 的测试环境：恒 AC。
     expect(await bridge.getOnBattery!()).toBe(false)
     expect(typeof bridge.onBatteryChanged!(() => undefined)).toBe('function')
+  })
+
+  describe('web multi-window = same-origin new tabs (web port of desktop openWindow / openSessionWindow)', () => {
+    it('canOpenSessionWindow / canOpenNewWindow report true (bridge exposes the fns)', () => {
+      const bridge = buildWebBridge()
+      // canOpen* 判定只看桥是否暴露对应函数；web 桥暴露了浏览器实现。
+      expect(typeof bridge.openSessionWindow).toBe('function')
+      expect(typeof bridge.openWindow).toBe('function')
+    })
+
+    it('openSessionWindow opens ?win=secondary#/<id> in a new tab', async () => {
+      const openMock = vi.fn(() => ({ closed: false }))
+      vi.stubGlobal('open', openMock)
+      const bridge = buildWebBridge()
+
+      const result = await bridge.openSessionWindow('s1')
+
+      expect(result).toEqual({ ok: true })
+      expect(openMock).toHaveBeenCalledTimes(1)
+      expect(openMock.mock.calls[0][0]).toBe(
+        `${window.location.origin}/?win=secondary#/s1`,
+      )
+      // target 必须是 _blank（新 tab），保留桌面「副本窗口」的并行语义。
+      expect(openMock.mock.calls[0][1]).toBe('_blank')
+      vi.unstubAllGlobals()
+    })
+
+    it('openSessionWindow passes watch=1 for spectator windows', async () => {
+      const openMock = vi.fn(() => ({ closed: false }))
+      vi.stubGlobal('open', openMock)
+      const bridge = buildWebBridge()
+
+      await bridge.openSessionWindow('s1', { watch: true })
+
+      expect(openMock.mock.calls[0][0]).toBe(
+        `${window.location.origin}/?win=secondary&watch=1#/s1`,
+      )
+      vi.unstubAllGlobals()
+    })
+
+    it('openSessionWindow encodes the session id in the hash route', async () => {
+      const openMock = vi.fn(() => ({ closed: false }))
+      vi.stubGlobal('open', openMock)
+      const bridge = buildWebBridge()
+
+      await bridge.openSessionWindow('a b/c')
+
+      expect(openMock.mock.calls[0][0]).toBe(
+        `${window.location.origin}/?win=secondary#/a%20b%2Fc`,
+      )
+      vi.unstubAllGlobals()
+    })
+
+    it('openSessionWindow returns ok:false when the popup is blocked (window.open null)', async () => {
+      vi.stubGlobal(
+        'open',
+        vi.fn(() => null),
+      )
+      const bridge = buildWebBridge()
+
+      const result = await bridge.openSessionWindow('s1')
+
+      expect(result).toEqual({
+        ok: false,
+        error: expect.stringContaining('blocked'),
+      })
+      vi.unstubAllGlobals()
+    })
+
+    it('openWindow opens a fresh peer tab at the app base URL', async () => {
+      const openMock = vi.fn(() => ({ closed: false }))
+      vi.stubGlobal('open', openMock)
+      const bridge = buildWebBridge()
+
+      const result = await bridge.openWindow()
+
+      expect(result).toEqual({ ok: true })
+      expect(openMock.mock.calls[0][0]).toBe(`${window.location.origin}/`)
+      expect(openMock.mock.calls[0][1]).toBe('_blank')
+      vi.unstubAllGlobals()
+    })
   })
 })
 

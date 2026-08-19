@@ -70,7 +70,10 @@ Deno.test(
       state: 'st',
     })
     const parsed = new URL(url)
-    assertEquals(parsed.origin + parsed.pathname, 'http://gw:9119/hermes/auth/native/authorize')
+    assertEquals(
+      parsed.origin + parsed.pathname,
+      'http://gw:9119/hermes/auth/native/authorize',
+    )
     assertEquals(parsed.searchParams.get('code_challenge'), 'cc')
     assertEquals(parsed.searchParams.get('state'), 'st')
     assertEquals(
@@ -171,10 +174,11 @@ Deno.test('tokenNeedsRefresh: fresh token is fine, near-expiry needs refresh', (
 // ── Cookie 工具 ────────────────────────────────────────────────────────────
 
 Deno.test('parseCookies: parses multi-cookie header', () => {
-  assertEquals(
-    parseCookies('a=1; b=hello%20world; c=3'),
-    { a: '1', b: 'hello%20world', c: '3' },
-  )
+  assertEquals(parseCookies('a=1; b=hello%20world; c=3'), {
+    a: '1',
+    b: 'hello%20world',
+    c: '3',
+  })
   assertEquals(parseCookies(null), {})
 })
 
@@ -189,10 +193,7 @@ Deno.test('targetHash: stable per target, distinct across targets', () => {
 
 Deno.test('oauthSessionCookieName: per-target names, stable', () => {
   const t = 'http://gw:9119'
-  assertEquals(
-    oauthSessionCookieName(t),
-    `hermes_oauth_${targetHash(t)}`,
-  )
+  assertEquals(oauthSessionCookieName(t), `hermes_oauth_${targetHash(t)}`)
   assertEquals(
     oauthSessionCookieName(t) === oauthSessionCookieName('http://other:1'),
     false,
@@ -228,54 +229,71 @@ Deno.test('decodeSessionCookie: garbage / wrong version → null', () => {
   assertEquals(decodeSessionCookie('aGVsbG8='), null) // 合法 b64 但非 JSON
   // 合法 JSON 但 v != 1 → null（版本不符）。
   const v2 = btoa(JSON.stringify({ v: 2, t: 'http://gw:9119', a: 'x' }))
-    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '')
   assertEquals(decodeSessionCookie(v2), null)
 })
 
-Deno.test('sessionCookieValue: name+value + HttpOnly + SameSite=Lax + Path=/ + Max-Age=30d', () => {
-  const value = sessionCookieValue('hermes_oauth_0123456789abcdef', 'encoded-token-set')
-  assertEquals(value.includes('hermes_oauth_0123456789abcdef=encoded-token-set'), true)
-  // 新语义：cookie 名由 target hash 决定，值 = 编码凭证
-  assertEquals(value.includes('HttpOnly'), true)
-  assertEquals(value.includes('SameSite=Lax'), true)
-  assertEquals(value.includes('Path=/'), true)
-  assertEquals(value.includes('Max-Age=2592000'), true) // 30 天
-  // 登出用 Max-Age=0 清除
-  assertEquals(clearSessionCookieValue('hermes_oauth_0123456789abcdef').includes('Max-Age=0'), true)
-  // Secure：生产 HTTPS 自动加
-  assertEquals(
-    sessionCookieValue('hermes_oauth_a', 'x', { secure: true }).includes('Secure'),
-    true,
-  )
-  assertEquals(sessionCookieValue('hermes_oauth_a', 'x').includes('Secure'), false)
-})
+Deno.test(
+  'sessionCookieValue: name+value + HttpOnly + SameSite=Lax + Path=/ + Max-Age=30d',
+  () => {
+    const value = sessionCookieValue(
+      'hermes_oauth_0123456789abcdef',
+      'encoded-token-set',
+    )
+    assertEquals(
+      value.includes('hermes_oauth_0123456789abcdef=encoded-token-set'),
+      true,
+    )
+    // 新语义：cookie 名由 target hash 决定，值 = 编码凭证
+    assertEquals(value.includes('HttpOnly'), true)
+    assertEquals(value.includes('SameSite=Lax'), true)
+    assertEquals(value.includes('Path=/'), true)
+    assertEquals(value.includes('Max-Age=2592000'), true) // 30 天
+    // 登出用 Max-Age=0 清除
+    assertEquals(
+      clearSessionCookieValue('hermes_oauth_0123456789abcdef').includes('Max-Age=0'),
+      true,
+    )
+    // Secure：生产 HTTPS 自动加
+    assertEquals(
+      sessionCookieValue('hermes_oauth_a', 'x', { secure: true }).includes('Secure'),
+      true,
+    )
+    assertEquals(sessionCookieValue('hermes_oauth_a', 'x').includes('Secure'), false)
+  },
+)
 
 // ── pending cookie 编解码（ADR-0023，对齐上游 hermes_session_pkce）─────────
 
-Deno.test('encode/decodePendingCookie: roundtrip + TTL enforced by resolve', async () => {
-  const store = new OAuthStore(makeDeps())
-  const { pendingValue } = await store.begin(
-    'http://gw:9119',
-    'http://127.0.0.1:6722/auth/native/callback',
-  )
-  const pending = decodePendingCookie(pendingValue)
-  if (!pending) {
-    throw new Error('pending cookie did not decode')
-  }
-  assertEquals(pending.target, 'http://gw:9119')
-  assertEquals(pending.verifier.length, 43)
-  assertEquals(typeof pending.state, 'string')
-  assertEquals(pending.state.length > 0, true)
-  // resolve 用 state 校验 + TTL
-  const ok = store.resolvePending(pendingValue, pending!.state)
-  assertEquals(ok?.target, 'http://gw:9119')
-  assertEquals(store.resolvePending(pendingValue, 'wrong-state'), null)
-  assertEquals(store.resolvePending(null, 'x'), null)
-  // 过期：createdAt 超过 10min → null
-  const old = { ...pending!, createdAt: Date.now() - 11 * 60_000 }
-  const oldValue = encodePendingCookie(old)
-  assertEquals(store.resolvePending(oldValue, old.state), null)
-})
+Deno.test(
+  'encode/decodePendingCookie: roundtrip + TTL enforced by resolve',
+  async () => {
+    const store = new OAuthStore(makeDeps())
+    const { pendingValue } = await store.begin(
+      'http://gw:9119',
+      'http://127.0.0.1:6722/auth/native/callback',
+    )
+    const pending = decodePendingCookie(pendingValue)
+    if (!pending) {
+      throw new Error('pending cookie did not decode')
+    }
+    assertEquals(pending.target, 'http://gw:9119')
+    assertEquals(pending.verifier.length, 43)
+    assertEquals(typeof pending.state, 'string')
+    assertEquals(pending.state.length > 0, true)
+    // resolve 用 state 校验 + TTL
+    const ok = store.resolvePending(pendingValue, pending!.state)
+    assertEquals(ok?.target, 'http://gw:9119')
+    assertEquals(store.resolvePending(pendingValue, 'wrong-state'), null)
+    assertEquals(store.resolvePending(null, 'x'), null)
+    // 过期：createdAt 超过 10min → null
+    const old = { ...pending!, createdAt: Date.now() - 11 * 60_000 }
+    const oldValue = encodePendingCookie(old)
+    assertEquals(store.resolvePending(oldValue, old.state), null)
+  },
+)
 
 Deno.test('PENDING_COOKIE_NAME is fixed and short-TTL', () => {
   assertEquals(PENDING_COOKIE_NAME, 'hermes_oauth_pending')
@@ -375,10 +393,7 @@ Deno.test(
     // 无 cookie / 伪造值 / target 不匹配
     assertEquals((await store.bearerFor(null, 'http://gw:9119')).bearer, null)
     assertEquals((await store.bearerFor('garbage', 'http://gw:9119')).bearer, null)
-    assertEquals(
-      (await store.bearerFor(cookieValue, 'http://other:1')).bearer,
-      null,
-    )
+    assertEquals((await store.bearerFor(cookieValue, 'http://other:1')).bearer, null)
   },
 )
 
@@ -412,7 +427,11 @@ Deno.test('store: refresh session_expired → no bearer, no write-back', async (
   const deps = {
     ...base,
     now: () => 4950,
-    postJson: async (url: string, body: unknown, opts?: { headers?: Record<string, string> }) => {
+    postJson: async (
+      url: string,
+      body: unknown,
+      opts?: { headers?: Record<string, string> },
+    ) => {
       // 保留 login 分支（token 交换），只覆盖 refresh 分支。
       if (url.endsWith('/auth/native/token')) {
         return base.postJson(url, body, opts)
@@ -443,10 +462,7 @@ Deno.test(
     assertEquals(setCookie, null)
     // mint 请求必须带 Bearer（/api/auth/ws-ticket 是 auth-required 端点）。
     assertEquals(deps.calls[1].headers?.authorization, 'Bearer access-1')
-    assertEquals(
-      (await store.wsTicketFor(null, 'http://gw:9119')).ticket,
-      null,
-    )
+    assertEquals((await store.wsTicketFor(null, 'http://gw:9119')).ticket, null)
   },
 )
 
@@ -472,40 +488,47 @@ Deno.test('store: sessionInfo never exposes the token body', async () => {
 // ── 端点处理器（HTTP 面；cookie 值 = 编码凭证）─────────────────────────────
 
 function makeEndpoints(store: OAuthStore) {
-  return createOauthEndpoints(store, {
-    isHttps: () => false,
-  }, {
-    loopbackPort: 6722,
-  })
+  return createOauthEndpoints(
+    store,
+    {
+      isHttps: () => false,
+    },
+    {
+      loopbackPort: 6722,
+    },
+  )
 }
 
-Deno.test('handleStart: requires target, returns authorize url + pending cookie', async () => {
-  const store = new OAuthStore(makeDeps())
-  const endpoints = makeEndpoints(store)
+Deno.test(
+  'handleStart: requires target, returns authorize url + pending cookie',
+  async () => {
+    const store = new OAuthStore(makeDeps())
+    const endpoints = makeEndpoints(store)
 
-  const missing = await endpoints.handleStart(
-    new Request('http://127.0.0.1:6722/auth/native/start', {
-      method: 'POST',
-      body: JSON.stringify({}),
-    }),
-  )
-  assertEquals(missing.status, 400)
+    const missing = await endpoints.handleStart(
+      new Request('http://127.0.0.1:6722/auth/native/start', {
+        method: 'POST',
+        body: JSON.stringify({}),
+      }),
+    )
+    assertEquals(missing.status, 400)
 
-  const ok = await endpoints.handleStart(
-    new Request('http://127.0.0.1:6722/auth/native/start', {
-      method: 'POST',
-      body: JSON.stringify({ target: 'http://gw:9119' }),
-    }),
-  )
-  assertEquals(ok.status, 200)
-  const body = (await ok.json()) as { authorizeUrl?: string }
-  assertEquals(typeof body.authorizeUrl, 'string')
-  // 响应带 pending cookie（短 TTL）
-  const setCookie = ok.headers.get('set-cookie') ?? ''
-  assertEquals(setCookie.includes(`${PENDING_COOKIE_NAME}=`), true)
-  assertEquals(setCookie.includes('Max-Age=600'), true)
-  assertEquals(setCookie.includes('HttpOnly'), true)
-})
+    const ok = await endpoints.handleStart(
+      new Request('http://127.0.0.1:6722/auth/native/start', {
+        method: 'POST',
+        body: JSON.stringify({ target: 'http://gw:9119' }),
+      }),
+    )
+    assertEquals(ok.status, 200)
+    const body = (await ok.json()) as { authorizeUrl?: string }
+    assertEquals(typeof body.authorizeUrl, 'string')
+    // 响应带 pending cookie（短 TTL）
+    const setCookie = ok.headers.get('set-cookie') ?? ''
+    assertEquals(setCookie.includes(`${PENDING_COOKIE_NAME}=`), true)
+    assertEquals(setCookie.includes('Max-Age=600'), true)
+    assertEquals(setCookie.includes('HttpOnly'), true)
+  },
+)
 
 Deno.test('handleStart: target not in allowlist → 403', async () => {
   const store = new OAuthStore(makeDeps())
@@ -526,52 +549,54 @@ Deno.test('handleStart: target not in allowlist → 403', async () => {
   assertEquals(res.status, 403)
 })
 
-Deno.test('handleCallback: exchanges code, sets session cookie, clears pending', async () => {
-  const store = new OAuthStore(makeDeps())
-  const endpoints = makeEndpoints(store)
+Deno.test(
+  'handleCallback: exchanges code, sets session cookie, clears pending',
+  async () => {
+    const store = new OAuthStore(makeDeps())
+    const endpoints = makeEndpoints(store)
 
-  // 先 start 拿 pending cookie
-  const start = await endpoints.handleStart(
-    new Request('http://127.0.0.1:6722/auth/native/start', {
-      method: 'POST',
-      body: JSON.stringify({ target: 'http://gw:9119' }),
-    }),
-  )
-  const pendingCookie = start.headers.get('set-cookie')!.split(';')[0]
-  const state = new URL(
-    ((await start.json()) as { authorizeUrl: string }).authorizeUrl,
-  ).searchParams.get('state')!
+    // 先 start 拿 pending cookie
+    const start = await endpoints.handleStart(
+      new Request('http://127.0.0.1:6722/auth/native/start', {
+        method: 'POST',
+        body: JSON.stringify({ target: 'http://gw:9119' }),
+      }),
+    )
+    const pendingCookie = start.headers.get('set-cookie')!.split(';')[0]
+    const state = new URL(
+      ((await start.json()) as { authorizeUrl: string }).authorizeUrl,
+    ).searchParams.get('state')!
 
-  // gateway 回跳（带 pending cookie）
-  const cb = await endpoints.handleCallback(
-    new Request(
-      `http://127.0.0.1:6722/auth/native/callback?code=gw-code&state=${state}`,
-      { headers: { cookie: pendingCookie } },
-    ),
-  )
-  assertEquals(cb.status, 200)
-  const setCookies = cb.headers.getSetCookie()
-  // 会话 cookie（编码凭证）+ 清 pending
-  const sessionSet = setCookies.find((c) => c.startsWith(`hermes_oauth_`))
-  assertEquals(sessionSet !== undefined, true)
-  assertEquals(sessionSet!.includes('Max-Age=2592000'), true)
-  const pendingCleared = setCookies.find((c) =>
-    c.startsWith(`${PENDING_COOKIE_NAME}=;`)
-  )
-  assertEquals(pendingCleared?.includes('Max-Age=0'), true)
-  // 会话 cookie 值可解码出 token set
-  const sessionValue = sessionSet!.split(';')[0].split('=')[1]
-  assertEquals(decodeSessionCookie(sessionValue)?.tokenSet.accessToken, 'access-1')
-})
+    // gateway 回跳（带 pending cookie）
+    const cb = await endpoints.handleCallback(
+      new Request(
+        `http://127.0.0.1:6722/auth/native/callback?code=gw-code&state=${state}`,
+        { headers: { cookie: pendingCookie } },
+      ),
+    )
+    assertEquals(cb.status, 200)
+    const setCookies = cb.headers.getSetCookie()
+    // 会话 cookie（编码凭证）+ 清 pending
+    const sessionSet = setCookies.find((c) => c.startsWith(`hermes_oauth_`))
+    assertEquals(sessionSet !== undefined, true)
+    assertEquals(sessionSet!.includes('Max-Age=2592000'), true)
+    const pendingCleared = setCookies.find((c) =>
+      c.startsWith(`${PENDING_COOKIE_NAME}=;`),
+    )
+    assertEquals(pendingCleared?.includes('Max-Age=0'), true)
+    // 会话 cookie 值可解码出 token set
+    const sessionValue = sessionSet!.split(';')[0].split('=')[1]
+    assertEquals(decodeSessionCookie(sessionValue)?.tokenSet.accessToken, 'access-1')
+  },
+)
 
 Deno.test('handleCallback: rejects unknown/forged state (CSRF)', async () => {
   const store = new OAuthStore(makeDeps())
   const endpoints = makeEndpoints(store)
   const res = await endpoints.handleCallback(
-    new Request(
-      'http://127.0.0.1:6722/auth/native/callback?code=abc&state=forged',
-      { headers: { cookie: `${PENDING_COOKIE_NAME}=whatever` } },
-    ),
+    new Request('http://127.0.0.1:6722/auth/native/callback?code=abc&state=forged', {
+      headers: { cookie: `${PENDING_COOKIE_NAME}=whatever` },
+    }),
   )
   assertEquals(res.status, 400)
 })
@@ -595,26 +620,34 @@ Deno.test('handleCallback: stale pending cookie rejected', async () => {
   assertEquals(res.status, 400)
 })
 
-Deno.test('handleSession: connected with session cookie, disconnected without', async () => {
-  const store = new OAuthStore(makeDeps({ now: () => 1000 }))
-  const endpoints = makeEndpoints(store)
-  const { cookieValue } = await loginAndGetCookie(store)
-  const cookieName = oauthSessionCookieName('http://gw:9119')
+Deno.test(
+  'handleSession: connected with session cookie, disconnected without',
+  async () => {
+    const store = new OAuthStore(makeDeps({ now: () => 1000 }))
+    const endpoints = makeEndpoints(store)
+    const { cookieValue } = await loginAndGetCookie(store)
+    const cookieName = oauthSessionCookieName('http://gw:9119')
 
-  const ok = await endpoints.handleSession(
-    new Request('http://127.0.0.1:6722/auth/native/session?target=http%3A%2F%2Fgw%3A9119', {
-      headers: { cookie: `${cookieName}=${cookieValue}` },
-    }),
-  )
-  const body = (await ok.json()) as { connected: boolean; userId: string }
-  assertEquals(body.connected, true)
-  assertEquals(body.userId, 'u1')
+    const ok = await endpoints.handleSession(
+      new Request(
+        'http://127.0.0.1:6722/auth/native/session?target=http%3A%2F%2Fgw%3A9119',
+        {
+          headers: { cookie: `${cookieName}=${cookieValue}` },
+        },
+      ),
+    )
+    const body = (await ok.json()) as { connected: boolean; userId: string }
+    assertEquals(body.connected, true)
+    assertEquals(body.userId, 'u1')
 
-  const empty = await endpoints.handleSession(
-    new Request('http://127.0.0.1:6722/auth/native/session?target=http%3A%2F%2Fgw%3A9119'),
-  )
-  assertEquals(((await empty.json()) as { connected: boolean }).connected, false)
-})
+    const empty = await endpoints.handleSession(
+      new Request(
+        'http://127.0.0.1:6722/auth/native/session?target=http%3A%2F%2Fgw%3A9119',
+      ),
+    )
+    assertEquals(((await empty.json()) as { connected: boolean }).connected, false)
+  },
+)
 
 Deno.test('handleLogout: clears the per-target session cookie', async () => {
   const store = new OAuthStore(makeDeps({ now: () => 1000 }))
@@ -672,13 +705,16 @@ Deno.test('handlePaste: bare ?code=..&state=.. query completes login', async () 
     new Request('http://127.0.0.1:6722/auth/native/paste', {
       method: 'POST',
       headers: { cookie: pendingCookie, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ target: 'http://gw:9119', url: `?code=gw-code&state=${state}` }),
+      body: JSON.stringify({
+        target: 'http://gw:9119',
+        url: `?code=gw-code&state=${state}`,
+      }),
     }),
   )
   assertEquals(res.status, 200)
-  const sessionSet = res.headers.getSetCookie().find((c) =>
-    c.startsWith(`hermes_oauth_`)
-  )
+  const sessionSet = res.headers
+    .getSetCookie()
+    .find((c) => c.startsWith(`hermes_oauth_`))
   assertEquals(sessionSet !== undefined, true)
 })
 
@@ -708,7 +744,10 @@ Deno.test('handlePaste: target mismatch rejected, pending kept for retry', async
     }),
   )
   assertEquals(res.status, 400)
-  assertStrictEquals((await res.json() as { detail: string }).detail.includes('target mismatch'), true)
+  assertStrictEquals(
+    ((await res.json()) as { detail: string }).detail.includes('target mismatch'),
+    true,
+  )
 })
 
 Deno.test('handlePaste: state mismatch in pasted URL rejected (CSRF)', async () => {
@@ -739,9 +778,12 @@ Deno.test('handlePaste: empty url → 400', async () => {
 
 // ── 大小超限兜底（ADR-0023 决策 6）─────────────────────────────────────────
 
-Deno.test('encodeSessionCookie: oversized token set rejected (>4KB cookie budget)', () => {
-  const huge = 'x'.repeat(5_000)
-  const ts = tokenSet({ accessToken: huge })
-  // 编码后超 4KB → 抛错（调用方登录失败并提示）
-  assertThrows(() => encodeSessionCookie('http://gw:9119', ts), Error, 'too large')
-})
+Deno.test(
+  'encodeSessionCookie: oversized token set rejected (>4KB cookie budget)',
+  () => {
+    const huge = 'x'.repeat(5_000)
+    const ts = tokenSet({ accessToken: huge })
+    // 编码后超 4KB → 抛错（调用方登录失败并提示）
+    assertThrows(() => encodeSessionCookie('http://gw:9119', ts), Error, 'too large')
+  },
+)

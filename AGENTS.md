@@ -1,6 +1,6 @@
 # Hermes-Agent-Desktop-Web — AGENTS.md
 
-**注意：**如本文件同级有 `AGENTS.local.md` 文件且它不在上下文中，请先读取它再继续工作。此文件未被 git track，请注意检查。
+工作区特有的本地约束文件 `AGENTS.local.md` 如果没有被自动加载进上下文，在执行任何操作前**必须！**先检查是否存在此文件，如有请读取并遵守。
 
 编写面向 AI Agent 的入口文档时（如 `AGENTS(.local).md` / `PATCHES.md`），保持简洁与 token 高效，如在代码注释或其他文档中详细解释过的行为只留简短解释与指针。
 

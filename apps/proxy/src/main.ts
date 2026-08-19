@@ -147,12 +147,17 @@ function isHttpsRequest(request: Request): boolean {
 
 /** 从请求 Cookie 读 per-target OAuth 会话值（ADR-0023）。 */
 function readOauthCookie(request: Request, target: string): string | null {
-  return parseCookies(request.headers.get('cookie'))[oauthSessionCookieName(target)] ?? null
+  return (
+    parseCookies(request.headers.get('cookie'))[oauthSessionCookieName(target)] ?? null
+  )
 }
 
 /** 从请求 Cookie 读 per-target 密码 jar 值（ADR-0023）。 */
 function readPasswordCookie(request: Request, target: string): string | null {
-  return parseCookies(request.headers.get('cookie'))[passwordSessionCookieName(target)] ?? null
+  return (
+    parseCookies(request.headers.get('cookie'))[passwordSessionCookieName(target)] ??
+    null
+  )
 }
 
 /** 静态分支：文件存在 → 返回；不存在 → null（调用方决定 fallback）。 */
@@ -409,7 +414,10 @@ async function handleWs(
       // ignore
     }
 
-    console.error('[ws] upgrade failed:', error instanceof Error ? error.stack ?? error.message : String(error))
+    console.error(
+      '[ws] upgrade failed:',
+      error instanceof Error ? (error.stack ?? error.message) : String(error),
+    )
     try {
       return jsonResponse(
         502,
@@ -420,10 +428,10 @@ async function handleWs(
       )
     } catch (headersError) {
       // upgrade 请求的 headers 已被消费/关闭时不能再读（回退无 CORS 的 502）。
-      return new Response(
-        JSON.stringify({ detail: 'proxy ws upgrade failed' }),
-        { status: 502, headers: { 'Content-Type': 'application/json' } },
-      )
+      return new Response(JSON.stringify({ detail: 'proxy ws upgrade failed' }), {
+        status: 502,
+        headers: { 'Content-Type': 'application/json' },
+      })
     }
   }
 }
@@ -500,11 +508,9 @@ async function handleMediaStream(
         }
 
         return [
-          passwordSessionCookieValue(
-            passwordSessionCookieName(target),
-            rotated,
-            { secure },
-          ),
+          passwordSessionCookieValue(passwordSessionCookieName(target), rotated, {
+            secure,
+          }),
         ]
       },
     }),
@@ -700,11 +706,9 @@ export function createProxyHandler(
         }
 
         return [
-          passwordSessionCookieValue(
-            passwordSessionCookieName(target),
-            rotated,
-            { secure },
-          ),
+          passwordSessionCookieValue(passwordSessionCookieName(target), rotated, {
+            secure,
+          }),
         ]
       },
     })

@@ -624,10 +624,7 @@ export class OAuthStore {
   }
 
   /** 会话状态查询（回显；永不下发 token 本体）。 */
-  sessionInfo(
-    cookieValue: string | null,
-    target: string,
-  ): OAuthSessionInfo {
+  sessionInfo(cookieValue: string | null, target: string): OAuthSessionInfo {
     const session = this.sessionFromCookie(cookieValue, target)
 
     if (!session) {
@@ -852,10 +849,14 @@ export function createOauthEndpoints(
         )
         const secure = ctx.isHttps(request)
 
-        return json(200, { authorizeUrl }, {
-          'Cache-Control': 'no-store',
-          'Set-Cookie': pendingCookieValue(pendingValue, { secure }),
-        })
+        return json(
+          200,
+          { authorizeUrl },
+          {
+            'Cache-Control': 'no-store',
+            'Set-Cookie': pendingCookieValue(pendingValue, { secure }),
+          },
+        )
       } catch (error) {
         return json(500, {
           detail: error instanceof Error ? error.message : String(error),
@@ -889,7 +890,11 @@ export function createOauthEndpoints(
         // 会话 cookie（编码 token set）+ 清 pending cookie（两个 Set-Cookie 头）。
         headers.append(
           'Set-Cookie',
-          sessionCookieValue(oauthSessionCookieName(pending.target), encodeSessionCookie(pending.target, tokenSet), { secure }),
+          sessionCookieValue(
+            oauthSessionCookieName(pending.target),
+            encodeSessionCookie(pending.target, tokenSet),
+            { secure },
+          ),
         )
         headers.append('Set-Cookie', clearPendingCookieValue({ secure }))
 
@@ -961,7 +966,11 @@ export function createOauthEndpoints(
         })
         headers.append(
           'Set-Cookie',
-          sessionCookieValue(oauthSessionCookieName(pending.target), encodeSessionCookie(pending.target, tokenSet), { secure }),
+          sessionCookieValue(
+            oauthSessionCookieName(pending.target),
+            encodeSessionCookie(pending.target, tokenSet),
+            { secure },
+          ),
         )
         headers.append('Set-Cookie', clearPendingCookieValue({ secure }))
 
@@ -977,7 +986,8 @@ export function createOauthEndpoints(
       const url = new URL(request.url)
       const target = url.searchParams.get('target') ?? ''
       const cookieValue =
-        parseCookies(request.headers.get('cookie'))[oauthSessionCookieName(target)] ?? null
+        parseCookies(request.headers.get('cookie'))[oauthSessionCookieName(target)] ??
+        null
       const info = store.sessionInfo(cookieValue, target)
 
       return Promise.resolve(json(200, info))

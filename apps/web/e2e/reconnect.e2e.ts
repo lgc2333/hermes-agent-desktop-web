@@ -187,7 +187,9 @@ describe('reconnect C2: submit while statusbar shows connecting', () => {
     } catch (error) {
       // 诊断：dump statusbar 实际文本（connecting 未出现时定位显示的是什么）
       const sbText = await page.evaluate(
-        () => document.querySelector('[data-slot="statusbar"]')?.innerText ?? '(no statusbar)',
+        () =>
+          document.querySelector('[data-slot="statusbar"]')?.innerText ??
+          '(no statusbar)',
       )
       const bodyTail = await page.evaluate(() => document.body.innerText.slice(-400))
       throw new Error(

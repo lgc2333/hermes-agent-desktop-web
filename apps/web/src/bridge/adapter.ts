@@ -134,10 +134,11 @@ export function buildWebBridge(
     git: gateway.git,
 
     // ── 布尔门空实现（类 3）────────────────────────────────────────────────
-    openSessionWindow: (sessionId) => denied.openSessionWindow(sessionId),
+    // openSessionWindow / openWindow 走浏览器新 tab 实现（web 多窗口 = 同源新 tab）。
+    openSessionWindow: (sessionId, opts) => browser.openSessionWindow(sessionId, opts),
     openSessionInTerminal: (sessionId, opts) =>
       denied.openSessionInTerminal(sessionId, opts),
-    openWindow: () => denied.openWindow(),
+    openWindow: () => browser.openWindow(),
     claimAmbientCue: (key) => denied.claimAmbientCue(key),
     wakeIndicator: denied.wakeIndicator,
     petOverlay: denied.petOverlay,

@@ -30,16 +30,16 @@ refresh/轮换后的新凭证经响应 Set-Cookie 写回。代理重启即无感
   HTTPS 时加 Secure）：
   - OAuth：`hermes_oauth_<hash>`（hash = sha256(target) 前 12 hex），值 =
     `base64url(JSON{v:1, t:target, a:accessToken, r:refreshToken, e:expiresAt,
-    p:provider, u:userId})`；
+p:provider, u:userId})`；
   - 密码：`hermes_session_<hash>`，值 = `base64url(JSON{v:1, t:target,
-    c:cookieHeader, p:provider, u:username})`。
+c:cookieHeader, p:provider, u:username})`。
   - **per-target 命名**（决策 2）：多连接各自独立 cookie 共存，切换连接
     无需重新登录；target 内嵌校验防串连（替代原内存 target 匹配）。
   - 单 cookie 4KB 上限：编码后超限 → 登录失败，返回明确错误（不拆
     cookie、不压缩，保持简单）。
 - PKCE 登录中状态（pending）同样进 cookie（决策 4，对齐上游
   `hermes_session_pkce`）：`hermes_oauth_pending`，值 = `base64url(JSON
-  {v:1, s:state, t:target, vf:verifier, ru:redirectUri, c:createdAt})`，
+{v:1, s:state, t:target, vf:verifier, ru:redirectUri, c:createdAt})`，
   Max-Age=600（10min，对齐 gateway `_PENDING_TTL_SECONDS`）；callback /
   paste 时按 state 校验并消费。同一浏览器同时只有一个进行中的登录。
 - 转发面：

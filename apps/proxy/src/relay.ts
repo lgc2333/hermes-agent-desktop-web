@@ -233,10 +233,7 @@ export async function relayRest(
 
   const outHeaders = new Headers()
   upstream.headers.forEach((value, key) => {
-    if (
-      !STRIP_HEADERS.has(key.toLowerCase()) &&
-      key.toLowerCase() !== 'set-cookie'
-    ) {
+    if (!STRIP_HEADERS.has(key.toLowerCase()) && key.toLowerCase() !== 'set-cookie') {
       outHeaders.set(key, value)
     }
   })
