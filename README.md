@@ -8,19 +8,21 @@
 
 社区里能搜到的 Hermes WebUI 主要是两个项目：
 
-- [hermes-webui](https://github.com/nesquena/hermes-webui)：Bug 太多，无法忍受；
-- [hermes-studio](https://github.com/EKKOLearnAI/hermes-studio)：太重、功能太多，Hermes 本体的聊天数据还是只读的，不适合。
+- [hermes-webui](https://github.com/nesquena/hermes-webui)：Bug 太多，无法忍受，聊天记录一长体验简直灾难；
+- [hermes-studio](https://github.com/EKKOLearnAI/hermes-studio)：太重、功能太多，在 Hermes 的基础上轮子造太高，来自 Hermes 本体的聊天数据还是只读的，不适合。
 
-而 Hermes 官方桌面端本身是一个 Electron 应用。于是想到：能不能把它原样搬到浏览器里，而不是从零再写一个 UI？这个项目就是答案 —— 界面与交互和桌面端完全一致，并且跟随官方版本持续更新。
+（还有一个 [hermes-workspace](https://github.com/outsourc-e/hermes-workspace)，但是做这个项目之前没体验过，这里暂且不提）
+
+而 Hermes 官方桌面端本身是一个 Electron 应用，我也非常喜欢它处理连接远程 Hermes 实例的方式，也就是只依赖 Hermes Gateway Dashboard 暴露出来的 API，很适合外围项目与官方容器环境分离部署。于是想到：能不能把它原样搬到浏览器里，而不是从零再写一个 UI？于是——
 
 ## 特性
 
+- **不另起运行时**：Web 服务只提供浏览器界面与无状态代理，不自行运行 Hermes
 - **与桌面端一致的完整体验**：会话管理、流式回复、工具调用、技能等
 - **连接任何远程 Hermes**：填一个地址就能连上你的 gateway（服务器），随时随地用浏览器访问
-- **三种登录方式**：静态 token、OAuth 登录、用户名密码登录，按你的 gateway 配置选择
-- **手机 / 平板 / 电脑都适用**：响应式界面，移动端也能流畅使用
+- **三种登录方式**：静态 token、OAuth 登录、用户名密码登录，与 Dashboard 登录方式一致
 - **部署简单**：一个容器即可跑起来，开箱即用
-- **凭证安全**：登录凭证保存在你自己的浏览器里，服务器不落盘
+- **凭证存储**：登录凭证保存在你自己的浏览器里，服务器不落盘
 
 ## 快速开始
 
@@ -64,7 +66,7 @@ pnpm dev:remote  # 连接你自己的 gateway
 
 **移动端体验怎么样？**
 
-只能说**凑合能用**。Hermes Desktop 的界面布局本就不适合移动端。但是比起 hermes-webui 那种糟糕的连基本对话功能都不顺畅的体验好多了。
+只能说**凑合能用**，用不爽，操作别扭。毕竟 Hermes Desktop 的界面布局和操作逻辑本就不适合触屏移动端。但是在我的视角看来，比起用那些用户体验实在不太行的项目，这种体验足够了。
 
 **为什么无法完成 OAuth 登录？**
 

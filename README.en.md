@@ -8,19 +8,21 @@ Access your Hermes agent from a browser — a web client with the same experienc
 
 There are mainly two Hermes WebUI projects to be found in the community:
 
-- [hermes-webui](https://github.com/nesquena/hermes-webui): too many bugs to put up with;
-- [hermes-studio](https://github.com/EKKOLearnAI/hermes-studio): too heavy and overloaded with features, not a good fit.
+- [hermes-webui](https://github.com/nesquena/hermes-webui): too buggy to tolerate; once chat history gets long, the experience becomes a disaster;
+- [hermes-studio](https://github.com/EKKOLearnAI/hermes-studio): too heavy and overloaded with features, building far too much on top of Hermes; chats originating from Hermes itself remain read-only, so it is not a good fit.
 
-The official Hermes desktop app is itself an Electron application. So the idea came up: why not bring it to the browser as-is, instead of writing yet another UI from scratch? This project is the answer — the interface and interactions are identical to the desktop app, and it keeps up with official releases.
+(There is also [hermes-workspace](https://github.com/outsourc-e/hermes-workspace), but I had not tried it before making this project, so I will leave it aside for now.)
+
+The official Hermes desktop app is itself an Electron application. I also really like how it connects to remote Hermes instances: it relies only on the APIs exposed by the Hermes Gateway Dashboard, which suits deployments where an external project and the official containers run separately. So the question became: could its interface be brought to the browser as-is instead of writing another UI from scratch?
 
 ## Features
 
+- **No second runtime**: the web service provides only the browser interface and a stateless proxy; it does not run Hermes itself
 - **The full desktop experience**: session management, streaming replies, tool calls, skills, and more
 - **Connect to any remote Hermes**: enter an address and you're connected to your gateway (server), accessible from any browser, anywhere
-- **Three ways to sign in**: static token, OAuth login, or username/password — depending on your gateway's configuration
-- **Works on phone / tablet / desktop**: responsive UI that stays smooth on mobile
+- **Three ways to sign in**: static token, OAuth login, or username/password — matching the Gateway Dashboard's login methods
 - **Easy to deploy**: one container and you're up and running
-- **Credential safety**: login credentials stay in your own browser; nothing is written to disk on the server
+- **Credential storage**: login credentials stay in your own browser; nothing is written to disk on the server
 
 ## Quick Start
 
@@ -64,7 +66,7 @@ pnpm dev:remote  # connect to your own gateway
 
 **How's the mobile experience?**
 
-It's only _just about usable_. The Hermes Desktop layout isn't designed for mobile, but it's far better than hermes-webui, which struggles even with basic chat.
+It's only _just about usable_: awkward and not especially pleasant. The Hermes Desktop layout and interaction model were never designed for touch devices. Still, compared with projects whose user experience is not very good, I consider this experience sufficient.
 
 **Why can't I complete OAuth login?**
 
