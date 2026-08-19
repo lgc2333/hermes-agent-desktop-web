@@ -3,7 +3,7 @@
     "ignoreDeprecations": "6.0",
     "target": "ES2022",
     "jsx": "react-jsx",
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "lib": ["ES2022", "ES2023.Array", "DOM", "DOM.Iterable"],
     "useDefineForClassFields": true,
     "baseUrl": ".",
     "module": "ESNext",
