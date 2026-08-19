@@ -59,7 +59,7 @@ ref 保护——HEAD 树不变（含补丁），其相对锚点 delta = 恰好�
   - 同步注意：路径相对 styles.css（位于 vendor/hermes-desktop/src），指向 vendor 自身，subtree pull 后依旧有效；若上游改 styles.css 头部导致 @source 行丢失，按本条恢复
 
 - vendor/hermes-desktop/src/app/chat/index.tsx
-  - 改动：voice 配置 `enabled: false` 恢复为 `enabled: true`（附注释），去掉 Web 布尔门
+  - 改动：voice 配置 `enabled: false` 恢复为 `enabled: true`（附注释），去掉 Web 拒绝面关闭
   - 原因：ADR-0022 语音入 Web 计划——上游 remote 模式原生支持语音，恢复 dictation pill（此前按产品范围关掉；如今流式 TTS + 听写 + 自动朗读已通 proxy 链路，麦克风门在 apps/web 桥层放行）
   - 同步注意：上游若重构 voice 配置，按注释恢复（语义权威 = PATCHES.md §4 / ADR-0022）
 
@@ -90,7 +90,7 @@ ref 保护——HEAD 树不变（含补丁），其相对锚点 delta = 恰好�
 
 - vendor/hermes-desktop/src/app/hooks/use-keybinds.ts
   - 改动：`'view.findInPage': openFindBar` 改为条件展开——`import.meta.env.VITE_WEB_BUILD === '1'`（Web 构建时 vite define 注入，见 apps/web/vite.config.ts）时不注册该 handler
-  - 原因：Web 端 find 桥面布尔门 denied（ADR-0010/0011），命中会 preventDefault + 打开无功能 find-bar、吞掉浏览器原生查找；handler 缺失 → dispatch 走 "无 handler → return"（不 preventDefault），浏览器原生查找（Ctrl/Cmd+F）接管（ADR-0019）。重绑/多绑定语义自动正确：任何 combo 命中 view.findInPage 都无效，mod+f 改绑其他动作照常执行
+  - 原因：Web 端 find 桥面为拒绝类（denied，ADR-0010/0011），命中会 preventDefault + 打开无功能 find-bar、吞掉浏览器原生查找；handler 缺失 → dispatch 走 "无 handler → return"（不 preventDefault），浏览器原生查找（Ctrl/Cmd+F）接管（ADR-0019）。重绑/多绑定语义自动正确：任何 combo 命中 view.findInPage 都无效，mod+f 改绑其他动作照常执行
   - 同步注意：桌面构建不读 VITE_WEB_BUILD，行为不变；上游若重构 handlersRef 或 view.findInPage 接线，按"Web 构建不注册该 handler"语义恢复
   - v2026.8.16 同步：上游给桌面 handler 内加了 overlay 路由抑制（`isOverlayView` + `appViewForPath`），已并入 Web 条件展开的桌面分支（Web 分支不注册，无 overlay 冲突）
 

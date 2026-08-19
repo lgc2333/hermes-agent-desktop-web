@@ -68,17 +68,15 @@ _Avoid_: 薄代理（口语）、网关（错误）、直连（已删除）
 _Avoid_: 上游源码（口语）、node_modules（实现细节）
 
 **Capability bridge**:
-渲染层访问机器/原生能力的窄类型接口（桌面端为 window.hermesDesktop）；Web 端由 WebCapabilityAdapter 提供同签名实现，能力按可用性分三类：**browser**（浏览器原生等价）、**gateway**（经代理 RPC 转发）、**denied**（布尔门空实现）。
+渲染层访问机器/原生能力的窄类型接口（桌面端为 window.hermesDesktop）；Web 端由 WebCapabilityAdapter 提供同签名实现，能力按可用性分三类：**browser**（浏览器原生等价）、**gateway**（经代理 RPC 转发）、**denied**（拒绝类空实现）。
 _Avoid_: 桥（太短）、preload（实现细节）
 
 **Denied capability**:
-桥面三分法中的拒绝类：布尔门空实现，返回"空但合法"形状或显式 reject。判定标准（ADR-0010）：仅当浏览器环境不可实现 **且** remote gateway 不支持（无对应 REST 端点）才可归入；例外需产品范围决策（如语音，ADR-0009）。
+桥面三分法中的拒绝类：空实现，返回"空但合法"形状或显式 reject。判定标准（ADR-0010）：仅当浏览器环境不可实现 **且** remote gateway 不支持（无对应 REST 端点）才可归入；例外需产品范围决策（如语音，ADR-0009）；上游在 remote 模式下原生支持的能力不应归入（ADR-0009 撤销了 artifacts/agents）。
 _Avoid_: 不支持的能力（与"未实现"混淆）
 
-**布尔门（feature gate）**:
-用字面 `if (false)` 关闭功能入口而保留其代码的做法，刻意不做可配置开关系统；被关闭的功能处于 dormant 状态。
-按动机三分：**能力缺失**（桥无法提供，如终端/窗口）、**产品范围**（技术上可行但计划外，如语音）、**上游已处理**（上游在 remote 模式下原生支持——此类不应 gate，ADR-0009 撤销了 artifacts/agents 的 gate）。
-_Avoid_: feature flag（语义不同）
+**Feature gate（已退役）**:
+用字面 `if (false)` 关闭功能入口而保留其代码的机制；gates.ts 已删（ADR-0009），Web 不再做可配置开关系统，入口按能力分类决定（browser/gateway/denied）。
 
 **Blob attachment（Web 虚拟附件）**:
 浏览器 File / 粘贴图片没有 gateway 侧文件路径，渲染层又是桌面式"路径模型"，Web 桥用一条承载真实文件名的虚拟路径（`web-blob://attach/...`）指代附件，字节随用随读（File 保留引用零常驻；仅纯内存字节才落 OPFS）。虚拟路径含两段正交身份：**附件身份（blob id）**——Web 内部存储唯一键，永不随上传离开 Web；**上传文件名**——提交给 gateway 的实际文件名，与桌面端一致。二者正交（不在同一个 basename 里混着）。

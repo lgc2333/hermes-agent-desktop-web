@@ -53,7 +53,7 @@
 }
 
 /* 5. boot-failure recovery：隐藏 "Open logs"（web 端日志在浏览器 console/devtools，
-  无桌面日志文件可打开；revealLogs 桥面为布尔门空实现）。openLogs 恒为
+  无桌面日志文件可打开；revealLogs 桥面为拒绝类空实现）。openLogs 恒为
   按钮行最后一个 + ghost variant（全分支通用）。 */
 .z-\(--z-setup\) .flex.flex-wrap.gap-2 > button:last-child[data-variant='ghost'] {
   display: none;

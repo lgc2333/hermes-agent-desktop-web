@@ -1,5 +1,5 @@
 /**
- * Class 3 — 布尔门空实现（denied bridge）。
+ * Class 3 — 拒绝类空实现（denied bridge）。
  *
  * 覆盖 global.d.ts 桥成员的桌面原生面（voice / 终端 / 窗口 / preview /
  * pet / hud / updates / 主题市场 / 安装 …），保证渲染层任何调用都不拿到
@@ -32,7 +32,7 @@ import type {
 } from '@/global'
 import type { WakeIndicatorState } from '@/lib/wake-indicator'
 // 上游 2026-08-18 起 translucency 走 @hermes/shared/translucency（窗口玻璃
-// 效果）；Web 无桌面窗口面（布尔门），仅同步参数类型以匹配 global.d.ts。
+// 效果）；Web 无桌面窗口面（拒绝），仅同步参数类型以匹配 global.d.ts。
 import type { TranslucencyState } from '@hermes/shared/translucency'
 // global.d.ts 只 import 这些类型而不 re-export —— 直接从源模块取。
 import type {
@@ -302,7 +302,7 @@ export class DeniedAdapter {
   }
 
   setTranslucency(_payload: TranslucencyState): void {
-    // no-op（Web 无桌面窗口玻璃面，布尔门）
+    // no-op（Web 无桌面窗口玻璃面，拒绝）
   }
 
   setKeepAwake(_on: boolean): void {

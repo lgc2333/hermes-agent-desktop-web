@@ -1,6 +1,8 @@
 # Hermes-Agent-Desktop-Web — AGENTS.md
 
-工作区特有的本地约束文件 `AGENTS.local.md` 如果没有被自动加载进上下文，在执行任何操作前**必须！**先检查是否存在此文件，如有请读取并遵守。
+**非常非常非常重要！！！！** 请检查本机项目约束 `AGENTS.local.md` 是否在你的上下文中（标题就是其文件名）！如不存在请立刻读取它！
+**非常非常非常重要！！！！** 请检查本机项目约束 `AGENTS.local.md` 是否在你的上下文中（标题就是其文件名）！如不存在请立刻读取它！
+**非常非常非常重要！！！！** 请检查本机项目约束 `AGENTS.local.md` 是否在你的上下文中（标题就是其文件名）！如不存在请立刻读取它！
 
 编写面向 AI Agent 的入口文档时（如 `AGENTS(.local).md` / `PATCHES.md`），保持简洁与 token 高效，如在代码注释或其他文档中详细解释过的行为只留简短解释与指针。
 
@@ -56,7 +58,7 @@ hermes-agent-desktop-web/
 │   │   │   ├── web.css         # Web 覆盖层（响应式 + 隐藏桌面专属 UI，非 vendor）
 │   │   │   └── bridge/         # WebCapabilityAdapter 三类：browser（浏览器等价）/
 │   │   │                       #   gateway（走代理 RPC：注册表/api 转发/OAuth/探测）/
-│   │   │                       #   denied（布尔门空实现）；registry.ts = 连接注册表
+│   │   │                       #   denied（拒绝类空实现）；registry.ts = 连接注册表
 │   │   ├── dev/                # dev.mjs（恒起代理；--no-mock 形态）+ mock-gateway.mjs（mock 后端）
 │   │   ├── e2e/                # Vitest + Playwright 客户端 e2e（*.e2e.ts；端口用 E2E_*_PORT，见 e2e/AGENTS.md）
 │   │   ├── scripts/typecheck.mjs  # 项目类型检查（filter TS5101 等）
@@ -93,7 +95,7 @@ hermes-agent-desktop-web/
 
 - **认证三条路**（协议细节见 relay/oauth/session.ts 头注，ADR-0023）：token（`X-Hermes-Session-Token` / WS `?token=`，loopback 未 gated 的 gateway）；OAuth（native PKCE 经代理 `/auth/native/*` 中转，REST Bearer + WS `?ticket=`，仅代理模式）；密码会话（"dashboard login"：`/auth/password-login` 换 cookie，`/api/proxy/session/*` 中转，仅代理模式）。密码本体不落盘。
 
-- **布尔门**：用字面 `if (false)` 关功能入口，不做 feature-flag 系统（gates.ts 已删）；语义权威见 denied.ts 头注 + ADR-0009（artifacts/agents 的 gate 已撤销）。
+- **能力拒绝面（denied）**：bridge 三分法中的拒绝面：浏览器不可实现 **且** remote gateway 不支持（无对应 REST 端点）才归入；语义权威见 denied.ts 头注 + ADR-0010。不做 feature-flag 系统（gates.ts 已删）。
 
 - **响应式覆盖**收敛在 `apps/web/src/web.css`（非 vendor）：移动端状态栏滚动、Connection mode 只留 remote、boot-failure 隐藏 use-local/repair/open-logs。改 vendor 布局前先看能否 CSS 覆盖。
 

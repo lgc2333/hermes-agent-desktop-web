@@ -5,7 +5,7 @@
  *   1. browser.ts   —— 浏览器原生等价（剪贴板 / openExternal / 通知 / …）
  *   2. gateway.ts   —— 走代理 RPC（连接注册表 / api() REST 转发 / boot 面 /
  *                      连接设置面）
- *   3. denied.ts    —— 布尔门空实现（voice / 终端 / 文件 / 窗口 / git /
+ *   3. denied.ts    —— 拒绝类空实现（voice / 终端 / 文件 / 窗口 / git /
  *                      preview / pet / hud / …）
  *
  * 安装顺序：必须在渲染层模块图求值前完成（main.tsx 的 ESM import 顺序保证），
@@ -133,7 +133,7 @@ export function buildWebBridge(
     gitRoot: (path) => gateway.gitRoot(path),
     git: gateway.git,
 
-    // ── 布尔门空实现（类 3）────────────────────────────────────────────────
+    // ── 拒绝面空实现（类 3）────────────────────────────────────────────────
     // openSessionWindow / openWindow 走浏览器新 tab 实现（web 多窗口 = 同源新 tab）。
     openSessionWindow: (sessionId, opts) => browser.openSessionWindow(sessionId, opts),
     openSessionInTerminal: (sessionId, opts) =>
@@ -145,7 +145,7 @@ export function buildWebBridge(
     hud: denied.hud,
     quickEntry: denied.quickEntry,
     // ADR-0022：语音放行——requestMicrophoneAccess 从 denied 切到浏览器等价
-    // （getUserMedia 原生处理权限）；denied.ts 保留布尔门实现便于隔离测试。
+    // （getUserMedia 原生处理权限）；denied.ts 保留拒绝实现便于隔离测试。
     requestMicrophoneAccess: () => browser.requestMicrophoneAccess(),
     // ADR-0022：媒体播放入口——Web 桥返回同源代理流 URL（/api/proxy/media-stream）。
     streamMediaUrl: (path) => gateway.streamMediaUrl(path),
@@ -169,7 +169,7 @@ export function buildWebBridge(
     updates: denied.updates,
     uninstall: denied.uninstall,
     // ADR-0021：主题供应商从 denied 空实现切到浏览器直连（官方接口 CORS
-    // 放行 *，无代理、无凭证）。denied.ts 仍保留布尔门实现便于隔离测试。
+    // 放行 *，无代理、无凭证）。denied.ts 仍保留拒绝实现便于隔离测试。
     themes: browser.themes,
     findInPage: (query) => denied.findInPage(query),
     stopFindInPage: () => denied.stopFindInPage(),

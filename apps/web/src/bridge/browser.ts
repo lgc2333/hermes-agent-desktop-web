@@ -1,7 +1,7 @@
 /**
  * Class 1 — 浏览器原生等价的桥面。
  *
- * 这些能力在浏览器里直接有对应物，不做布尔门：
+ * 这些能力在浏览器里直接有对应物，不做拒绝面（denied），全部实现：
  *   - clipboard：navigator.clipboard + execCommand('copy') 降级；
  *   - openExternal / openPreviewInBrowser：window.open；
  *   - fetchLinkTitle：fetch + DOMParser（CORS 受限时返回 ''，与桌面语义一致）；
