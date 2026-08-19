@@ -6,11 +6,11 @@
 ## 1. Subtree 基准（Baseline）
 
 - 上游仓库：https://github.com/NousResearch/hermes-agent.git
-- 基准提交：`daca38696738524ffdb901c18dbdbef64c1a97a9`(上游 **main** HEAD，2026-08-18)
+- 基准提交：`13ce0c5c675e843af70d19c9e5144249cd51c8d1`(上游 **main** HEAD，2026-08-19)
 - vendor/hermes-desktop：上游 `apps/desktop`（含 src/ 渲染层、scripts/、vite.config.ts 等）
 - vendor/hermes-shared：上游 `apps/shared`（`@hermes/shared` 源码）
 - 引入方式：`git subtree add --squash`（对过滤提交执行，见 §2）
-- 当前子树 split：hermes-desktop: `caf535b050d572588847b072b0339f8b7fdf72de`；hermes-shared: `8b09caae37870a2f2059fdda0250dc63bcec5f30`
+- 当前子树 split：hermes-desktop: `8b49349f4b8e044c32eef7ba197d1f1f7392bfed`；hermes-shared: `7aa52d730ea793956633615e539beb2e7ddecbaa`
 
 ### 2. 引入方式说明（重要）
 
@@ -150,6 +150,11 @@ m3/main 实测：上游 main 相对上一基准只改了 11 个补丁文件里�
     （不复制）。vite.config.ts 头注已说明：subtree pull 除路径常量外无需对账。
   - 同步注意：上游若移动目录或改入口模块名（如 src/debug/dev-only.ts），
     更新三处配置的路径常量与别名即可。
+  - driver.js 别名（2026-08-19 同步起）：上游 tour 功能 import
+    `driver.js/dist/driver.js.iife.js?raw`，但该包 exports map 不暴露此 dist
+    文件；上游在 vendored vite.config.ts 用 resolve.alias 指到真实 sibling，
+    我们 apps/web/vite.config.ts 同样需镜像该别名（+ optimizeDeps.exclude）。
+    缺失则 rolldown 构建报 `"./dist/driver.js.iife.js" is not exported`。
 
 - apps/web/src/bridge/
   - WebCapabilityAdapter 实现 window.hermesDesktop 表面，签名以

@@ -24,3 +24,6 @@ allowBuilds:
   get-windows: false
   node-pty: false
   esbuild: false
+
+minimumReleaseAgeExclude:
+  - blobatar@2.0.0

@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import path from 'node:path'
 import fs from 'node:fs'
+import { createRequire } from 'node:module'
 
 import { webVersionString } from './scripts/build-version.mjs'
 
@@ -35,6 +36,17 @@ const fsAllow = [
   ),
 ]
 
+// driver.js: the tour feature's preview surface injects the package's prebuilt
+// IIFE as raw source, but driver.js's exports map doesn't expose
+// dist/driver.js.iife.js. Mirror the vendored vite.config.ts alias (upstream
+// sync 2026-08-19 adds this dep). `?raw` stays attached in dev but is stripped
+// in some build paths, hence both keys.
+const requireFromApp = createRequire(import.meta.url)
+const driverIife = path.join(
+  path.dirname(requireFromApp.resolve('driver.js')),
+  'driver.js.iife.js',
+)
+
 export default defineConfig(({ command }) => ({
   base: './',
   // Vendor's public/ (icons, sprites) served as our public dir —
@@ -63,8 +75,22 @@ export default defineConfig(({ command }) => ({
       '@hermes/shared/billing': path.join(vendorShared, 'src/billing-types.ts'),
       '@hermes/shared/translucency': path.join(vendorShared, 'src/translucency.ts'),
       '@hermes/shared': path.join(vendorShared, 'src'),
+      // See driverIife above (upstream sync 2026-08-19).
+      'driver.js/dist/driver.js.iife.js?raw': `${driverIife}?raw`,
+      'driver.js/dist/driver.js.iife.js': driverIife,
     },
     dedupe: ['react', 'react-dom', 'react-router'],
+  },
+  // driver.js enters the graph only via the tour's dynamic import chain; left
+  // alone the dep scanner would prebundle the `?raw` IIFE at first use and
+  // break the raw-text transform (mirrors vendored optimizeDeps.exclude).
+  optimizeDeps: {
+    exclude: [
+      'driver.js',
+      'driver.js/dist/driver.js.iife.js',
+      'driver.js/dist/driver.js.iife.js?raw',
+      'driver.js/dist/driver.css?raw',
+    ],
   },
   server: {
     host: '127.0.0.1',
