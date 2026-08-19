@@ -26,9 +26,8 @@ _Avoid_: 密钥、token（太泛）
 
 **Password session**:
 密码门禁 gateway 的会话（"dashboard login"）：/auth/password-login 用用户名/密码
-换 cookie 会话（hermes_session_at/_rt）。代理把捕获的 jar 编码进浏览器
-httpOnly cookie（代理域，per-target，ADR-0023），转发时从请求 cookie 解码
-注入（REST Cookie / WS 经 ws-ticket），零落盘、重启无感恢复；密码本体不落盘不缓存。
+换 cookie 会话（hermes_session_at/_rt）。jar 编码进浏览器 httpOnly cookie（代理域，
+per-target，ADR-0023），机制见 session.ts 头注。密码本体不落盘不缓存。
 _Avoid_: 登录流程（太泛）、cookie（实现细节）
 
 **Session token**:
@@ -58,9 +57,9 @@ _Avoid_: 前端（单指 SPA 时）
 _Avoid_: WebUI（部署单元）、前端（口语）
 
 **Proxy**:
-WebUI 内的 Deno 组件：同源转发 REST/WS 到 Target，托管 SPA 静态产物；零凭证
-内存态——OAuth token set 与 Password session 的 cookie jar 都在浏览器
-httpOnly cookie（ADR-0023），代理无状态、重启无感恢复、零落盘。
+WebUI 内的 Deno 组件：同源转发 REST/WS 到 Target，托管 SPA 静态产物。凭证模型
+（ADR-0023）：零凭证内存态——OAuth token set 与 Password session 的 cookie jar 都
+在浏览器 httpOnly cookie，代理无状态、重启无感恢复、零落盘（见 proxy 头注）。
 SPA 的所有出站面恒经代理（ADR-0016），不存在直连路径。
 _Avoid_: 薄代理（口语）、网关（错误）、直连（已删除）
 

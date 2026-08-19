@@ -36,30 +36,20 @@ git subtree add --prefix=vendor/hermes-shared  $FILTERED_SHARED --squash
 
 ### 3. 同步流程（subtree pull）
 
-因过滤提交不在上游历史中，同步用 `git subtree merge --squash` 对**新过滤提交**执行。
-完整流程见 `scripts/sync-upstream.sh`（fetch --depth=1 → commit-tree 过滤提交 →
-subtree merge，desktop/shared 循环处理；已处理浅取 tag 的 `^{commit}` peel 与
-squash 后清理）。
+同步用 `git subtree merge --squash` 对**新过滤提交**执行（过滤提交不在上游历史）。全程
+自动化在 `scripts/sync-upstream.sh`：fetch --depth=1 → commit-tree 过滤提交（树 =
+apps/desktop|shared）→ subtree merge，desktop/shared 循环；已含 tag `^{commit}` peel
+与 squash 后 shallow 清理。勿手跑 `git subtree`/全量 fetch。
 
-**git-subtree 依赖历史 split 对象（过滤提交）**：`git subtree merge` 会从历史
-squash 提交的 message 里 `rev-parse` 旧过滤提交作为 merge 基准。过滤提交是本地造的、
-**不挂任何 ref、只被 message 引用**——是"不可达对象"，任何 `git gc`（默认 2 周
-grace 期后；`--prune=now` 只是立即触发）都会把它回收，随后 merge fatal `could not
-rev-parse split hash`（2026-08-18 实测）。**防再犯：过滤提交必须挂 ref 保护**
-（`git update-ref refs/subtree-anchors/<dir> <filtered-sha>`，见 sync-upstream.sh）。
-split 命令遍历全部历史、无法靠堆新提交恢复（merge 可以，见下）。
+**split 对象（过滤提交）gc 保护**：它们不挂任何 ref、只被 squash message 引用，
+`git gc`（2 周 grace 后）会回收致 merge fatal `could not rev-parse split hash`
+（2026-08-18 实测）。脚本已自动 `git update-ref refs/subtree-anchors/<dir>` 保护；
+`subtree split/push` 遍历全部历史不可用（下游 merge 可恢复，见下）。
 
-**若 split 对象已丢（2026-08-18 修复记录）**：merge 可恢复——在 HEAD 上堆
-**两个纯 message squash 提交**（desktop/shared 各一，树 = 上一基准的上游纯树
-**不含补丁**），`git-subtree-split` 指向新造的过滤提交（commit-tree 树 = 该
-上游纯树），并**挂 ref 保护新过滤提交**。HEAD 树保持不变（含补丁），它相对锚点的
-delta = 恰好是 §4 补丁，三方合并即自动保留补丁。**锚点树必须纯上游**——若锚点树
-带补丁，base==ours，merge 会静默覆盖全部补丁（2026-08-18 实测踩坑）。
-`git subtree split`/`push` 遍历全部历史仍不可用，本项目只做下游 merge 不受影响。
-
-m3/main 实测：上游 main 相对上一基准只改了 11 个补丁文件里的 4 个
-（global.d.ts、i18n/en|zh|types），三方合并全部无冲突自动合入；桥层
-补 main 新增 `getProfileRoutes` 表面（空实现）。
+**若 split 对象已丢**：在 HEAD 上堆两个纯 message squash 提交（desktop/shared 各一，
+树 = 上一基准的**纯上游树、不含补丁**），`git-subtree-split` 指向新造的过滤提交并挂
+ref 保护——HEAD 树不变（含补丁），其相对锚点 delta = 恰好是 §4 补丁，三方合并自动
+保留。**锚点树必须纯上游**，否则 base==ours 静默覆盖全部补丁（2026-08-18 踩坑）。
 
 ## 4. 当前 vendor 原位改动清单
 
