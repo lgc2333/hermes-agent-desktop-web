@@ -123,13 +123,13 @@ jobs:
 
   # ── E2E（Playwright Test，多 worker 并行 + CI 分片）───────────
   e2e:
-    name: e2e (playwright, shard ${{ matrix.shard }}/4)
+    name: e2e (playwright, shard ${{ matrix.shard }}/2)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
+        shard: [1, 2]
     steps:
       - uses: actions/checkout@v7
       - uses: denoland/setup-deno@v2
@@ -146,4 +146,4 @@ jobs:
       - name: Install Chromium (Playwright)
         run: pnpm --filter @hermes-web/web e2e:install
       - name: Run e2e suite (shard)
-        run: pnpm --filter @hermes-web/web exec playwright test --shard=${{ matrix.shard }}/4
+        run: pnpm --filter @hermes-web/web exec playwright test --shard=${{ matrix.shard }}/2
