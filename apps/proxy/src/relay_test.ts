@@ -2,13 +2,11 @@
  * relay_test.ts — 转发核心单测（deno test）。
  * 集成测试在本文件内起临时本地服务（echo HTTP / echo WS），不依赖外部网络。
  */
-import { assertEquals, assertStrictEquals, assertThrows } from 'jsr:@std/assert'
+import { assertEquals, assertStrictEquals, assertThrows } from '@std/assert'
 import {
   mediaStreamUpstreamRequest,
   normalizeTarget,
   parseAllowedTargets,
-  relayRest,
-  relayWs,
   targetAllowed,
   upstreamUrl,
   upstreamWsUrl,

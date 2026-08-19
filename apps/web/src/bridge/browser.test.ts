@@ -10,8 +10,8 @@ import { BrowserAdapter } from './browser'
  * fake 目录 handle 验证 OPFS 语义（clearAll / write / read / remove）。
  */
 
-describe('BlobStore 抽象', () => {
-  it('MemoryBlobStore 行为等价：写读删清', async () => {
+describe('blobStore 抽象', () => {
+  it('memoryBlobStore 行为等价：写读删清', async () => {
     const store = new MemoryBlobStore()
     const blob = new Blob(['hello'], { type: 'text/plain' })
 
@@ -27,7 +27,7 @@ describe('BlobStore 抽象', () => {
     expect(store.names()).toEqual([])
   })
 
-  it('OpfsBlobStore 用 navigator.storage.getDirectory 落到 web-blobs/ 目录', async () => {
+  it('opfsBlobStore 用 navigator.storage.getDirectory 落到 web-blobs/ 目录', async () => {
     const files = new Map<string, { data: string; blob: Blob | null }>()
     const dirHandle = {
       entries: vi.fn(async function* () {
@@ -88,7 +88,7 @@ describe('BlobStore 抽象', () => {
   })
 })
 
-describe('BrowserAdapter 附件存储（ADR-0020）', () => {
+describe('browserAdapter 附件存储（ADR-0020）', () => {
   const makeAdapter = (store = new MemoryBlobStore()) => new BrowserAdapter(store)
 
   it('saveImageFile 对 File 保留引用（Map 命中，读回瞬态 b64）', async () => {

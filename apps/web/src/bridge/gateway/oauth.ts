@@ -114,7 +114,7 @@ export class OauthBroker {
     return { ok: true, baseUrl, connected: true }
   }
 
-  async logout(remoteUrl?: string): Promise<DesktopOauthLogoutResult> {
+  async logout(_remoteUrl?: string): Promise<DesktopOauthLogoutResult> {
     const proxy = proxyBaseUrl()
 
     try {

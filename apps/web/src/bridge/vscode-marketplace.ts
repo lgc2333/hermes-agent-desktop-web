@@ -57,7 +57,7 @@ function looksLikeIconTheme(extension: GalleryExtension): boolean {
   const text =
     `${extension.displayName ?? ''} ${extension.shortDescription ?? ''}`.toLowerCase()
 
-  return /\b(icon theme|file icons?|product icons?|icon pack|fileicons)\b/.test(text)
+  return /\b(?:icon theme|file icons?|product icons?|icon pack|fileicons)\b/.test(text)
 }
 
 /** 搜索颜色主题扩展；空查询返回安装量最高的那些。返回轻量卡片（不含下载）。 */

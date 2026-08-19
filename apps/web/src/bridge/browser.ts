@@ -25,7 +25,8 @@ import type {
   HermesSelectPathsOptions,
 } from '@/global'
 
-import { OpfsBlobStore, type AttachmentBlobStore } from './blob-store'
+import { OpfsBlobStore } from './blob-store'
+import type { AttachmentBlobStore } from './blob-store'
 import { fetchMarketplaceThemes, searchMarketplaceThemes } from './vscode-marketplace'
 
 function safeLocalStorageSet(key: string, value: string): void {
@@ -97,8 +98,10 @@ export class BrowserAdapter {
     Object.entries(BrowserAdapter.EXT_MIME_TYPES).map(([ext, mime]) => [mime, ext]),
   )
 
-  /** 虚拟路径 → File 引用（ADR-0020：拖入文件保留引用，零常驻字节，
-   *  随用随读 arrayBuffer() 瞬态 b64 读完即弃；页面消亡即清）。 */
+  /**
+   * 虚拟路径 → File 引用（ADR-0020：拖入文件保留引用，零常驻字节，
+   *  随用随读 arrayBuffer() 瞬态 b64 读完即弃；页面消亡即清）。
+   */
   static readonly blobFiles = new Map<string, File>()
   static nextBlobId = 0
 
@@ -236,7 +239,7 @@ export class BrowserAdapter {
 
     try {
       if (Notification.permission === 'granted') {
-        new Notification(payload.title ?? 'Hermes', {
+        void new Notification(payload.title ?? 'Hermes', {
           body: payload.body,
           silent: payload.silent ?? true,
           tag: payload.tag,
@@ -249,7 +252,7 @@ export class BrowserAdapter {
         const permission = await Notification.requestPermission()
 
         if (permission === 'granted') {
-          new Notification(payload.title ?? 'Hermes', {
+          void new Notification(payload.title ?? 'Hermes', {
             body: payload.body,
             silent: payload.silent ?? true,
             tag: payload.tag,
@@ -461,12 +464,12 @@ export class BrowserAdapter {
       const safeName = sanitizeBlobName(name)
       // 分隔符用 '/'：打散到独立路径段，pathLabel / imageFilenameFromPath 取
       // basename 得到干净文件名（<id> 不污染上传名）；OPFS 扁平键仍用 <id>-<name>。
-      const path = 'web-blob://attach/' + id + '/' + safeName
+      const path = `web-blob://attach/${id}/${safeName}`
 
       if (blob instanceof File) {
         BrowserAdapter.blobFiles.set(path, blob)
       } else {
-        await this.blobStore.write(id + '-' + safeName, blob)
+        await this.blobStore.write(`${id}-${safeName}`, blob)
       }
 
       return path
@@ -486,9 +489,9 @@ export class BrowserAdapter {
         bytes.byteOffset,
         bytes.byteOffset + bytes.byteLength,
       ) as ArrayBuffer
-      const extSafe = ext.startsWith('.') ? ext : '.' + ext
+      const extSafe = ext.startsWith('.') ? ext : `.${ext}`
 
-      return this.saveImageFile(new Blob([buffer], { type: mime }), 'image' + extSafe)
+      return this.saveImageFile(new Blob([buffer], { type: mime }), `image${extSafe}`)
     } catch {
       return ''
     }
@@ -507,8 +510,10 @@ export class BrowserAdapter {
     }
   }
 
-  /** 虚拟路径命中返回 dataURL（File 瞬态 b64 / OPFS getFile 瞬态 b64）；
-   *  非虚拟路径返回 ''（adapter 组合层 fallback 到 gateway REST）。 */
+  /**
+   * 虚拟路径命中返回 dataURL（File 瞬态 b64 / OPFS getFile 瞬态 b64）；
+   *  非虚拟路径返回 ''（adapter 组合层 fallback 到 gateway REST）。
+   */
   async readFileDataUrl(filePath: string): Promise<string> {
     try {
       const file = BrowserAdapter.blobFiles.get(filePath)
@@ -533,8 +538,10 @@ export class BrowserAdapter {
     return ''
   }
 
-  /** 粘贴剪贴板图片：ClipboardItem → 虚拟路径（无图片 / 无权限返回 ''，
-   *  渲染层提示 noClipboardImage，与桌面一致）。 */
+  /**
+   * 粘贴剪贴板图片：ClipboardItem → 虚拟路径（无图片 / 无权限返回 ''，
+   *  渲染层提示 noClipboardImage，与桌面一致）。
+   */
   async saveClipboardImage(): Promise<string> {
     try {
       const items = await navigator.clipboard?.read?.()
@@ -556,7 +563,7 @@ export class BrowserAdapter {
             ([, mime]) => mime === blob.type,
           )?.[0] ?? '.png'
 
-        return this.saveImageFile(blob, 'pasted' + ext)
+        return this.saveImageFile(blob, `pasted${ext}`)
       }
 
       return ''
@@ -576,19 +583,25 @@ function blobToDataUrl(blob: Blob): Promise<string> {
   })
 }
 
-/** 虚拟路径里的文件名消毒：去掉路径分隔符与危险字符（嵌进虚拟路径要可被
- *  pathLabel 当 basename 解析，且 OPFS 文件名不能含 '/' 或 NUL）。 */
+/**
+ * 虚拟路径里的文件名消毒：去掉路径分隔符与危险字符（嵌进虚拟路径要可被
+ *  pathLabel 当 basename 解析，且 OPFS 文件名不能含 '/' 或 NUL）。
+ */
 function sanitizeBlobName(name: string): string {
   return (
     name
-      .replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_')
+      // 有意匹配控制字符（OPFS/虚拟路径不允许出现），no-control-regex 豁免
+      // eslint-disable-next-line no-control-regex
+      .replace(/[\\/:*?"<>|\u0000-\u001F]/g, '_')
       .replace(/^\.+$/, 'file')
       .slice(0, 200) || 'file'
   )
 }
 
-/** 从虚拟路径提取 OPFS 扁平文件名（web-blob://attach/<id>/<name> → <id>-<name>，
- *  与 saveImageFile 的 OPFS 写键一致）；非虚拟路径返回 ''。 */
+/**
+ * 从虚拟路径提取 OPFS 扁平文件名（web-blob://attach/<id>/<name> → <id>-<name>，
+ *  与 saveImageFile 的 OPFS 写键一致）；非虚拟路径返回 ''。
+ */
 function blobNameFromPath(path: string): string {
   const prefix = 'web-blob://attach/'
 
@@ -597,8 +610,8 @@ function blobNameFromPath(path: string): string {
 
 interface BatteryLike {
   charging: boolean
-  addEventListener(type: string, listener: () => void): void
-  removeEventListener(type: string, listener: () => void): void
+  addEventListener: (type: string, listener: () => void) => void
+  removeEventListener: (type: string, listener: () => void) => void
 }
 
 type BatteryNavigator = Navigator & { getBattery?: () => Promise<BatteryLike> }

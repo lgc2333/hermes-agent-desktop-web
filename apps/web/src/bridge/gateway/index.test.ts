@@ -25,7 +25,7 @@ describe('webApi (REST forwarding)', () => {
     vi.unstubAllGlobals()
   })
 
-  it('GETs the gateway base URL with the session-token header', async () => {
+  it('gETs the gateway base URL with the session-token header', async () => {
     fetchMock.mockResolvedValue(jsonResponse(200, { ok: true }))
 
     await webApi({ path: '/api/status' })
@@ -64,7 +64,7 @@ describe('webApi (REST forwarding)', () => {
     expect(result.total).toBe(0)
   })
 
-  it('POSTs JSON bodies with the JSON content type', async () => {
+  it('pOSTs JSON bodies with the JSON content type', async () => {
     fetchMock.mockResolvedValue(jsonResponse(200, { ok: true }))
 
     await webApi({
@@ -98,7 +98,7 @@ describe('webApi (REST forwarding)', () => {
   })
 })
 
-describe('GatewayAdapter', () => {
+describe('gatewayAdapter', () => {
   beforeEach(() => {
     window.localStorage.clear()
     loadRegistry()
@@ -236,8 +236,9 @@ describe('proxy mode (VITE_PROXY_URL set)', () => {
 
     expect(conn.baseUrl).toBe('http://127.0.0.1:8787')
     expect(conn.wsUrl).toBe(
-      'ws://127.0.0.1:8787/api/ws?token=mock-token&target=' +
-        encodeURIComponent('http://127.0.0.1:5180'),
+      `ws://127.0.0.1:8787/api/ws?token=mock-token&target=${encodeURIComponent(
+        'http://127.0.0.1:5180',
+      )}`,
     )
   })
 
@@ -300,7 +301,7 @@ describe('same-origin proxy (no VITE_PROXY_URL — ADR-0016)', () => {
   })
 })
 
-describe('M3 OAuth (proxy mode)', () => {
+describe('m3 OAuth (proxy mode)', () => {
   beforeEach(() => {
     window.localStorage.clear()
     loadRegistry()
@@ -376,8 +377,9 @@ describe('M3 OAuth (proxy mode)', () => {
     const conn = await adapter.getConnection()
 
     expect(conn.wsUrl).toBe(
-      'ws://127.0.0.1:6722/api/ws?target=' +
-        encodeURIComponent('http://127.0.0.1:9119'),
+      `ws://127.0.0.1:6722/api/ws?target=${encodeURIComponent(
+        'http://127.0.0.1:9119',
+      )}`,
     )
     expect(conn.wsUrl.includes('token=')).toBe(false)
   })
@@ -792,7 +794,7 @@ describe('M3 OAuth (proxy mode)', () => {
   })
 })
 
-describe('GatewayAdapter fs/git REST parity (remote-mode members, ADR-0010)', () => {
+describe('gatewayAdapter fs/git REST parity (remote-mode members, ADR-0010)', () => {
   const fetchMock = vi.fn()
 
   beforeEach(() => {
@@ -961,7 +963,7 @@ describe('GatewayAdapter fs/git REST parity (remote-mode members, ADR-0010)', ()
   })
 })
 
-describe('M5 password login ("dashboard login", proxy mode)', () => {
+describe('m5 password login ("dashboard login", proxy mode)', () => {
   beforeEach(() => {
     window.localStorage.clear()
     loadRegistry()
@@ -1156,14 +1158,14 @@ describe('M5 password login ("dashboard login", proxy mode)', () => {
   })
 })
 
-describe('WEB_VERSION (build-injected client identity, ADR-0014)', () => {
+describe('wEB_VERSION (build-injected client identity, ADR-0014)', () => {
   // 项目标识：HEAD 打 tag → 版本号；否则 → g<短sha>（无 git 时退回项目版本号）。
   it('follows the <desktop version>+web.<tag version | g<sha>> shape', () => {
     expect(WEB_VERSION).toMatch(/^\d+\.\d+\.\d+\+web\.(?:g[0-9a-f]+|\d+\.\d+\.\d+)$/)
   })
 })
 
-describe('GatewayAdapter.streamMediaUrl (ADR-0022)', () => {
+describe('gatewayAdapter.streamMediaUrl (ADR-0022)', () => {
   beforeEach(() => {
     window.localStorage.clear()
     loadRegistry()

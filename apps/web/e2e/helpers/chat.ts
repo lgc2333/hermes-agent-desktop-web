@@ -6,7 +6,9 @@ export async function focusComposer(page: Page): Promise<boolean> {
     const el = [...document.querySelectorAll('[contenteditable="true"]')].find(
       (e) => e.getBoundingClientRect().width > 50,
     )
-    if (!el) return false
+    if (!el) {
+      return false
+    }
     ;(el as HTMLElement).focus()
     el.textContent = ''
     return true

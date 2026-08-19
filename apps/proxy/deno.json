@@ -7,8 +7,12 @@
   "compilerOptions": {
     "strict": true
   },
-  "fmt": {
-    "lineWidth": 110,
-    "singleQuote": true
+  "imports": {
+    "@std/assert": "jsr:@std/assert@^1.0.19"
+  },
+  "lint": {
+    "rules": {
+      "exclude": ["require-await"]
+    }
   }
 }

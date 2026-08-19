@@ -1,4 +1,5 @@
-import { chromium, type Browser, type BrowserContext, type Page } from 'playwright'
+import { chromium } from 'playwright'
+import type { Browser, BrowserContext, Page } from 'playwright'
 
 /**
  * Launch a headless Chromium context for one e2e test file.

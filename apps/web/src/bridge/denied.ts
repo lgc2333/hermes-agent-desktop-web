@@ -47,8 +47,9 @@ import type {
   QuickEntrySubmitPayload,
 } from '@/store/quick-entry'
 
-const UNAVAILABLE = (what: string) =>
-  new Error(`Hermes Web: ${what} is not available in the browser`)
+function UNAVAILABLE(what: string) {
+  return new Error(`Hermes Web: ${what} is not available in the browser`)
+}
 
 const noopUnsub = () => () => undefined
 

@@ -15,6 +15,7 @@
  * pnpm symlink) — is fixed in tsconfig.json by pinning react/react-dom
  * through `paths` to the root @types .d.ts files.
  */
+import process from 'node:process'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import ts from 'typescript'

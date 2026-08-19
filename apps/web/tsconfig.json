@@ -2,24 +2,12 @@
   "compilerOptions": {
     "ignoreDeprecations": "6.0",
     "target": "ES2022",
+    "jsx": "react-jsx",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "useDefineForClassFields": true,
+    "baseUrl": ".",
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "jsx": "react-jsx",
-    "strict": true,
-    "noEmit": true,
-    "skipLibCheck": true,
-    "isolatedModules": true,
-    "resolveJsonModule": true,
-    "esModuleInterop": true,
-    "useDefineForClassFields": true,
-    "allowImportingTsExtensions": true,
-    // 只显式纳入 vite/client 环境类型；不自动 include 全部 @types ——
-    // 否则 root node_modules/@types/react 与 apps/web/node_modules/@types/react
-    // （pnpm symlink）同时进程序，产生"Two different types with this name exist"
-    // 的全库伪错（M0 遗留；CLI 因 TS5101 提前退出从未暴露）。
-    "types": ["vite/client"],
-    "baseUrl": ".",
     "paths": {
       // react 类型统一钉到 root @types：apps/web 的 jsx-runtime 从
       // apps/web/node_modules（pnpm symlink → store）解析、vendor 从 root 解析，
@@ -36,7 +24,19 @@
       "@hermes/shared": ["../../vendor/hermes-shared/src/index.ts"],
       "@hermes/plugin-sdk": ["../../vendor/hermes-desktop/src/sdk/index.ts"],
       "@/debug/dev-only": ["../../vendor/hermes-desktop/src/debug/dev-only.noop.ts"]
-    }
+    },
+    "resolveJsonModule": true,
+    // 只显式纳入 vite/client 环境类型；不自动 include 全部 @types ——
+    // 否则 root node_modules/@types/react 与 apps/web/node_modules/@types/react
+    // （pnpm symlink）同时进程序，产生"Two different types with this name exist"
+    // 的全库伪错（M0 遗留；CLI 因 TS5101 提前退出从未暴露）。
+    "types": ["vite/client"],
+    "allowImportingTsExtensions": true,
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "isolatedModules": true,
+    "skipLibCheck": true
   },
   "include": [
     "src",

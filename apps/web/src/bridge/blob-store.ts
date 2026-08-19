@@ -16,41 +16,41 @@ export const WEB_BLOBS_DIR = 'web-blobs'
 /** 附件字节存储：web-blobs/ 目录的读写清删。 */
 export interface AttachmentBlobStore {
   /** 清空整个 web-blobs/ 目录（页面载入初始化调用）。 */
-  clearAll(): Promise<void>
+  clearAll: () => Promise<void>
   /** 流式写入一个文件（OPFS: createWritable + file.stream()）。 */
-  write(name: string, blob: Blob): Promise<void>
+  write: (name: string, blob: Blob) => Promise<void>
   /** 读回文件；不存在返回 null。 */
-  read(name: string): Promise<Blob | null>
+  read: (name: string) => Promise<Blob | null>
   /** 删除文件；不存在时静默。 */
-  remove(name: string): Promise<void>
+  remove: (name: string) => Promise<void>
 }
 
 interface OpfsFileSystemDirectoryHandle {
-  entries(): AsyncIterable<[string, unknown]>
-  getDirectoryHandle(
+  entries: () => AsyncIterable<[string, unknown]>
+  getDirectoryHandle: (
     name: string,
     options?: { create?: boolean },
-  ): Promise<OpfsFileSystemDirectoryHandle>
-  getFileHandle(
+  ) => Promise<OpfsFileSystemDirectoryHandle>
+  getFileHandle: (
     name: string,
     options?: { create?: boolean },
-  ): Promise<OpfsFileSystemFileHandle>
-  removeEntry(name: string): Promise<void>
+  ) => Promise<OpfsFileSystemFileHandle>
+  removeEntry: (name: string) => Promise<void>
 }
 
 interface OpfsFileSystemFileHandle {
-  createWritable(): Promise<OpfsFileSystemWritableFileStream>
-  getFile(): Promise<File>
+  createWritable: () => Promise<OpfsFileSystemWritableFileStream>
+  getFile: () => Promise<File>
 }
 
 interface OpfsFileSystemWritableFileStream {
-  write(data: Blob | BlobPart[] | string): Promise<void>
-  close(): Promise<void>
+  write: (data: Blob | BlobPart[] | string) => Promise<void>
+  close: () => Promise<void>
 }
 
 /** navigator.storage 的最小 OPFS 表型（避免依赖 lib.dom 的较新声明）。 */
 interface OpfsNavigatorStorage {
-  getDirectory(): Promise<OpfsFileSystemDirectoryHandle>
+  getDirectory: () => Promise<OpfsFileSystemDirectoryHandle>
 }
 
 function opfsStorage(): OpfsNavigatorStorage | null {

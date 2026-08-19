@@ -4,7 +4,7 @@
  * 编解码（ADR-0023：凭证进浏览器 cookie）、无状态 store（交换/刷新/
  * ws-ticket）、端点处理器。
  */
-import { assertEquals, assertStrictEquals, assertThrows } from 'jsr:@std/assert'
+import { assertEquals, assertStrictEquals, assertThrows } from '@std/assert'
 import {
   OAuthStore,
   PENDING_COOKIE_NAME,
@@ -468,7 +468,7 @@ Deno.test(
 
 Deno.test('store: sessionInfo never exposes the token body', async () => {
   const store = new OAuthStore(makeDeps({ now: () => 1000 }))
-  const { cookieValue } = await loginAndGetCookie(store)
+  await loginAndGetCookie(store)
   const withSecret = encodeSessionCookie(
     'http://gw:9119',
     tokenSet({ accessToken: 'abcdsecret' }),

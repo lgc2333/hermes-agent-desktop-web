@@ -50,7 +50,7 @@ function gitInfo(repoRoot) {
  */
 export function composeWebVersion(desktopVersion, projectId) {
   if (projectId.includes('+web.')) return projectId
-  return desktopVersion + '+web.' + projectId
+  return `${desktopVersion}+web.${projectId}`
 }
 
 export function webVersionString(webRoot) {
@@ -63,6 +63,6 @@ export function webVersionString(webRoot) {
   )
   const webPkg = JSON.parse(fs.readFileSync(path.join(webRoot, 'package.json'), 'utf8'))
   const git = gitInfo(repoRoot)
-  const projectId = git?.tag ?? (git?.hash ? 'g' + git.hash : webPkg.version)
+  const projectId = git?.tag ?? (git?.hash ? `g${git.hash}` : webPkg.version)
   return composeWebVersion(desktopPkg.version, projectId)
 }

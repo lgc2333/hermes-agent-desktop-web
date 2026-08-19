@@ -20,7 +20,7 @@ const root = path.resolve(import.meta.dirname, '../..')
 const vendorDesktop = path.join(root, 'vendor', 'hermes-desktop')
 const vendorShared = path.join(root, 'vendor', 'hermes-shared')
 
-const real = (p: string): string | null => {
+function real(p: string): string | null {
   try {
     return fs.realpathSync(p)
   } catch {

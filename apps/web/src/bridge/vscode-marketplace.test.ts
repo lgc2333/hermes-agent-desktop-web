@@ -39,7 +39,7 @@ afterEach(() => {
 })
 
 describe('searchMarketplaceThemes', () => {
-  it('POSTs a Themes-scoped gallery query and maps results to cards', async () => {
+  it('pOSTs a Themes-scoped gallery query and maps results to cards', async () => {
     mockFetch({
       gallery: {
         results: [

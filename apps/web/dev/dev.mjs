@@ -11,7 +11,9 @@
  *   boot-failure 恢复面）。
  */
 
+/* eslint-disable no-console */
 import { spawn } from 'node:child_process'
+import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 
@@ -30,7 +32,7 @@ function run(name, command, args, env = {}) {
   })
   children.push(child)
   child.on('exit', (code) => {
-    console.log('[' + name + '] exited with code', code)
+    console.log(`[${name}] exited with code`, code)
     for (const other of children) {
       if (other !== child && !other.killed) {
         other.kill()

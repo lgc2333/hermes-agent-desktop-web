@@ -3,7 +3,7 @@
  * 覆盖：cookie 工具、jar cookie 编解码（ADR-0023：凭证进浏览器 cookie）、
  * 无状态 store（登录/注入/轮换/ws-ticket）、端点处理器。
  */
-import { assertEquals } from 'jsr:@std/assert'
+import { assertEquals } from '@std/assert'
 import {
   SessionStore,
   authLogoutUrl,
@@ -18,7 +18,6 @@ import {
   passwordSessionCookieValue,
   wsTicketUrl,
   type PasswordSessionEntry,
-  type RawPostResult,
   type SessionDeps,
 } from './session.ts'
 import { targetHash } from './oauth.ts'

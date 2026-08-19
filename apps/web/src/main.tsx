@@ -16,6 +16,6 @@ import { installWebBridge } from './bridge/adapter'
 // Web 响应式覆盖层（移动端状态栏等；独立于 vendor 渲染树，见 web.css 头注）。
 import './web.css'
 
-installWebBridge()
-
 import '../../../vendor/hermes-desktop/src/main'
+
+installWebBridge()

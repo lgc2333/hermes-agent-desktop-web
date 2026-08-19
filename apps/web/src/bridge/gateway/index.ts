@@ -46,12 +46,11 @@ import {
   loadRegistry,
   readProfilePreference,
   removeConnection,
-  saveRegistry,
   setPrimaryConnection,
   upsertConnection,
   writeProfilePreference,
-  type WebConnectionRecord,
 } from '../registry'
+import type { WebConnectionRecord } from '../registry'
 
 import { RemoteFsGit } from './fs-git'
 import { OauthBroker } from './oauth'
@@ -72,9 +71,9 @@ import {
 export const WEB_VERSION =
   typeof __HERMES_WEB_VERSION__ === 'string' ? __HERMES_WEB_VERSION__ : '0.0.0+web.dev'
 
+export type { BridgeApi } from './fs-git'
 // 保持 './gateway' 既有导入面（gateway.test.ts / adapter.ts）。
 export { toHermesConnection, webApi } from './rest'
-export type { BridgeApi } from './fs-git'
 
 /**
  * ADR-0022：媒体路径 → 网关侧文件路径（镜像 vendor media.ts filePathFromMediaPath：

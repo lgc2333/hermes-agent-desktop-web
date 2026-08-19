@@ -426,7 +426,7 @@ async function handleWs(
         },
         request,
       )
-    } catch (headersError) {
+    } catch {
       // upgrade 请求的 headers 已被消费/关闭时不能再读（回退无 CORS 的 502）。
       return new Response(JSON.stringify({ detail: 'proxy ws upgrade failed' }), {
         status: 502,

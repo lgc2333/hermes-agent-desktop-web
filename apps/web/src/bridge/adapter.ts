@@ -22,7 +22,8 @@ import type {
 import { BrowserAdapter } from './browser'
 import type { AttachmentBlobStore } from './blob-store'
 import { DeniedAdapter } from './denied'
-import { GatewayAdapter, type WebBridgeOptions } from './gateway'
+import { GatewayAdapter } from './gateway'
+import type { WebBridgeOptions } from './gateway'
 
 type Bridge = Window['hermesDesktop']
 

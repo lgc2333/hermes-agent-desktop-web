@@ -6,9 +6,9 @@
  */
 
 import type { HermesApiRequest, HermesConnection } from '@/global'
-import type { GatewayWsUrlResult } from '@hermes/shared'
 
-import { getPrimaryConnection, type WebConnectionRecord } from '../registry'
+import { getPrimaryConnection } from '../registry'
+import type { WebConnectionRecord } from '../registry'
 
 /**
  * 代理基址（唯一落点，ADR-0007/0016）：SPA 由代理托管是唯一受支持拓扑，

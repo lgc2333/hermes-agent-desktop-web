@@ -2,7 +2,7 @@
  * main_test.ts — 代理端到端测试：真实 Deno.serve 起代理 + 临时目标服务，
  * 客户端走完整 HTTP/WS 链路（同 main.ts 生产形态）。
  */
-import { assert, assertEquals } from 'jsr:@std/assert'
+import { assert, assertEquals } from '@std/assert'
 import { createProxyHandler, defaultWebDist } from './main.ts'
 import {
   decodeSessionCookie,

@@ -33,6 +33,8 @@ export default antfu(
       'perfectionist/sort-imports': 'off',
       'perfectionist/sort-named-imports': 'off',
 
+      'unicorn/prefer-dom-node-text-content': 'off',
+
       'ts/no-redeclare': ['error', { ignoreDeclarationMerge: true }],
 
       'yaml/plain-scalar': 'off',

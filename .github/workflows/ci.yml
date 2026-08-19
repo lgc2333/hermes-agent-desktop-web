@@ -1,8 +1,11 @@
 name: CI
 
 on:
-  # push:
-  #   branches: ['main']
+  push:
+    branches: ['main']
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
   pull_request:
   workflow_dispatch:
 
@@ -63,7 +66,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm lint
+      - run: pnpm --filter @hermes-web/web lint
 
   # ── 编译（生产构建 → apps/web/dist）───────────────────────────
   build:
@@ -94,9 +97,11 @@ jobs:
         working-directory: apps/proxy
         run: deno task lint
       - name: deno check
+        if: always()
         working-directory: apps/proxy
         run: deno check src/main.ts
       - name: deno test
+        if: always()
         working-directory: apps/proxy
         run: deno task test
 

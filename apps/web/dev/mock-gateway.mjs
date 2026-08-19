@@ -16,8 +16,11 @@
  * Usage:  node dev/mock-gateway.mjs [port]
  */
 
+/* eslint-disable no-console */
+import { Buffer } from 'node:buffer'
 import http from 'node:http'
 import fs from 'node:fs'
+import process from 'node:process'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createHash, randomBytes } from 'node:crypto'
@@ -96,7 +99,7 @@ function mintId(prefix) {
   return `${prefix}-${Date.now().toString(36)}-${nextId++}`
 }
 
-function sessionInfoRow(session, runtime) {
+function sessionInfoRow(session, _runtime) {
   const messages = session.messages
   const lastMessage = messages[messages.length - 1]
   const preview =
@@ -370,7 +373,7 @@ const RPC_HANDLERS = {
     }
 
     // Fire-and-forget：ACK 立即返回，回复走事件流。
-    setTimeout(() => streamTurn(socket, session, text), 50)
+    setTimeout(streamTurn, 50, socket, session, text)
 
     return { ok: true }
   },
@@ -383,7 +386,7 @@ const RPC_HANDLERS = {
       session.approvalPending = null
       const text = session.pendingText ?? ''
       session.pendingText = null
-      setTimeout(() => streamTurn(socket, session, text), 80)
+      setTimeout(streamTurn, 80, socket, session, text)
 
       return { ok: true, resolved: true, request_id: pending.request_id }
     }
@@ -908,8 +911,6 @@ wss.on('connection', (socket, request) => {
 
     if (frame.id !== undefined && frame.id !== null) {
       handleRpc(socket, frame)
-
-      return
     }
 
     // Ignore client events.

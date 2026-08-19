@@ -3,11 +3,11 @@ import { clearRegistry } from './registry'
 
 /** window.hermesDesktop — the WebCapabilityAdapter surface installed at boot. */
 export interface HermesDesktop {
-  saveConnectionConfig(cfg: unknown): Promise<Record<string, unknown>>
-  getConnectionConfig(): Promise<Record<string, unknown>>
-  getConnection(): Promise<{ wsUrl: string }>
-  oauthLoginConnectionConfig(url: string): Promise<Record<string, unknown>>
-  oauthLogoutConnectionConfig(url: string): Promise<Record<string, unknown>>
+  saveConnectionConfig: (cfg: unknown) => Promise<Record<string, unknown>>
+  getConnectionConfig: () => Promise<Record<string, unknown>>
+  getConnection: () => Promise<{ wsUrl: string }>
+  oauthLoginConnectionConfig: (url: string) => Promise<Record<string, unknown>>
+  oauthLogoutConnectionConfig: (url: string) => Promise<Record<string, unknown>>
 }
 
 declare global {
@@ -57,8 +57,10 @@ export async function waitForBodyText(
   throw new Error(`waitForBodyText timeout: ${opts.label ?? text}`)
 }
 
-/** Poll an async (Node-side) fn until it returns truthy. Use for checks that
- *  cannot be expressed as a serializable page expression (e.g. `getConfig`). */
+/**
+ * Poll an async (Node-side) fn until it returns truthy. Use for checks that
+ *  cannot be expressed as a serializable page expression (e.g. `getConfig`).
+ */
 export async function poll<T>(
   fn: () => Promise<T>,
   opts: { timeout?: number; label?: string } = {},
@@ -88,8 +90,8 @@ export async function bootClean(page: Page, timeout = 60000): Promise<void> {
   await waitForReady(page, timeout)
 }
 
-export const saveOauthConnection = (page: Page, target: string) =>
-  page.evaluate(
+export function saveOauthConnection(page: Page, target: string) {
+  return page.evaluate(
     (t) =>
       window
         .hermesDesktop!.saveConnectionConfig({
@@ -100,18 +102,30 @@ export const saveOauthConnection = (page: Page, target: string) =>
         .then((c) => ({ authMode: c.remoteAuthMode, url: c.remoteUrl })),
     target,
   )
+}
 
-export const oauthLogin = (page: Page, target: string) =>
-  page.evaluate((t) => window.hermesDesktop!.oauthLoginConnectionConfig(t), target)
+export function oauthLogin(page: Page, target: string) {
+  return page.evaluate(
+    (t) => window.hermesDesktop!.oauthLoginConnectionConfig(t),
+    target,
+  )
+}
 
-export const oauthLogout = (page: Page, target: string) =>
-  page.evaluate((t) => window.hermesDesktop!.oauthLogoutConnectionConfig(t), target)
+export function oauthLogout(page: Page, target: string) {
+  return page.evaluate(
+    (t) => window.hermesDesktop!.oauthLogoutConnectionConfig(t),
+    target,
+  )
+}
 
-export const getConfig = (page: Page) =>
-  page.evaluate(() => window.hermesDesktop!.getConnectionConfig().then((c) => c))
+export function getConfig(page: Page) {
+  return page.evaluate(() => window.hermesDesktop!.getConnectionConfig().then((c) => c))
+}
 
-/** Run a chat round-trip over the connection's WebSocket (JSON-RPC), waiting
- *  for a streaming event (e.g. `message.complete`) to arrive. */
+/**
+ * Run a chat round-trip over the connection's WebSocket (JSON-RPC), waiting
+ *  for a streaming event (e.g. `message.complete`) to arrive.
+ */
 export async function wsJsonRpc(
   page: Page,
   opts: { waitEvent?: string; text?: string; timeout?: number } = {},
@@ -166,8 +180,10 @@ export async function wsJsonRpc(
         text: text ?? 'hello',
       })
       const deadline = Date.now() + timeout
-      while (waitEvent && !out[waitEvent] && Date.now() < deadline) {
-        await new Promise((r) => setTimeout(r, 200))
+      if (waitEvent) {
+        while (!out[waitEvent] && Date.now() < deadline) {
+          await new Promise((r) => setTimeout(r, 200))
+        }
       }
       ws.close()
       return out

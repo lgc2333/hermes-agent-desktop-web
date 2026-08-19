@@ -18,20 +18,23 @@ export interface WebConnectionsStore {
   connections: WebConnectionRecord[]
 }
 
-export const clearRegistry = (page: Page) =>
-  page.evaluate((k) => localStorage.removeItem(k), CONNECTIONS_KEY)
+export function clearRegistry(page: Page) {
+  return page.evaluate((k) => localStorage.removeItem(k), CONNECTIONS_KEY)
+}
 
-export const setRegistry = (page: Page, store: WebConnectionsStore) =>
-  page.evaluate(
+export function setRegistry(page: Page, store: WebConnectionsStore) {
+  return page.evaluate(
     (s) => localStorage.setItem('hermes-web.connections.v1', JSON.stringify(s)),
     store,
   )
+}
 
-export const readRegistry = (page: Page) =>
-  page.evaluate(
+export function readRegistry(page: Page) {
+  return page.evaluate(
     (k) => JSON.parse(localStorage.getItem(k) ?? 'null'),
     CONNECTIONS_KEY,
   ) as Promise<WebConnectionsStore>
+}
 
 /** A token-mode registry pointing at a single gateway URL. */
 export function tokenRegistry(
