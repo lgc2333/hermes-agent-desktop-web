@@ -97,7 +97,7 @@ describe('BrowserAdapter 附件存储（ADR-0020）', () => {
     const file = new File(['hello'], 'report.pdf', { type: 'application/pdf' })
 
     const path = await adapter.saveImageFile(file, 'report.pdf')
-    expect(path).toMatch(/^web-blob:\/\/attach\/\d+-report\.pdf$/)
+    expect(path).toMatch(/^web-blob:\/\/attach\/\d+\/report\.pdf$/)
 
     // File 分支不写 OPFS：web-blobs/ 目录应为空。
     expect(store.names()).toEqual([])
@@ -112,7 +112,7 @@ describe('BrowserAdapter 附件存储（ADR-0020）', () => {
     const blob = new Blob([new Uint8Array([1, 2, 3])], { type: 'image/png' })
 
     const path = await adapter.saveImageFile(blob, 'pasted.png')
-    expect(path).toMatch(/^web-blob:\/\/attach\/\d+-pasted\.png$/)
+    expect(path).toMatch(/^web-blob:\/\/attach\/\d+\/pasted\.png$/)
 
     // Blob 分支不入 File 引用表：readFileDataUrl 从 OPFS 读。
     expect(store.names()).toHaveLength(1)
@@ -167,15 +167,15 @@ describe('BrowserAdapter 附件存储（ADR-0020）', () => {
     expect(store.names()).toEqual([])
   })
 
-  it('虚拟路径嵌真实文件名：pathLabel 语义取 basename 供 file.attach name 用', async () => {
+  it('虚拟路径末段是干净上传名：pathLabel 取 basename 不带 Blob id（供 file.attach name / image filename）', async () => {
     const adapter = makeAdapter()
     const file = new File(['hello'], 'quarterly report.pdf', {
       type: 'application/pdf',
     })
 
     const path = await adapter.saveImageFile(file, 'quarterly report.pdf')
-    // web-blob://attach/<id>-<name>：末段 = <id>-<name>，嵌真实文件名。
-    const basename = path.split(/[\\/]/).filter(Boolean).pop()
-    expect(basename).toContain('quarterly report.pdf')
+    // web-blob://attach/<id>/<name>：末段 = <name>（Blob id 在独立路径段，不污染上传名）。
+    const basename = path.split('/').filter(Boolean).pop()
+    expect(basename).toBe('quarterly report.pdf')
   })
 })

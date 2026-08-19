@@ -6,8 +6,9 @@
  *   - openExternal / openPreviewInBrowser：window.open；
  *   - fetchLinkTitle：fetch + DOMParser（CORS 受限时返回 ''，与桌面语义一致）；
  *   - notify：Notification API（权限拒绝时静默降级）；
- *   - selectPaths/selectSavePath：返回空 —— 浏览器拿不到"gateway 侧路径"，
- *     选了也没意义（M2 起可用 `<input type=file>` 走附件上传管道）；
+ *   - selectPaths：浏览器 File 拿不到 gateway 侧路径 → 打开本机文件选择框，
+ *     选中文件经 saveImageFile 转为 web-blob:// 虚拟路径返回（File 仅存内存
+ *     引用、随用随读零落盘；「＋」菜单文件/图片入口）；selectSavePath 返回空；
  *   - zoom：浏览器级缩放（document.body.style.zoom）；
  *   - reportRendererError：console.error（错误边界兜底日志）；
  *   - saveImageFromUrl：fetch → blob → a[download] 浏览器下载（ADR-0010，
@@ -21,6 +22,7 @@ import type {
   DesktopMarketplaceSearchItem,
   DesktopMarketplaceThemeResult,
   HermesNotification,
+  HermesSelectPathsOptions,
 } from '@/global'
 
 import { OpfsBlobStore, type AttachmentBlobStore } from './blob-store'
@@ -263,9 +265,45 @@ export class BrowserAdapter {
     return false
   }
 
-  async selectPaths(): Promise<string[]> {
-    // 浏览器 File 对象没有 gateway 侧路径；选择对远端聊天无意义 → 空。
-    return []
+  async selectPaths(options?: HermesSelectPathsOptions): Promise<string[]> {
+    // 浏览器 File 没有 gateway 侧路径。选中文件经 saveImageFile 持久化为
+    // web-blob:// 虚拟路径返回，让渲染层的路径型附加链路（attachContextFilePath /
+    // attachImagePath → readFileDataUrl 组合层，ADR-0020）在 Web 走通——「＋」
+    // 菜单的文件/图片即此入口。目录（directories）对远端聊天无意义 → 空。
+    if (options?.directories) {
+      return []
+    }
+
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.multiple = options?.multiple !== false
+
+    const accept = options?.filters
+      ?.map((f) => f.extensions.map((ext) => `.${ext.replace(/^\./, '')}`).join(','))
+      .filter(Boolean)
+      .join(',')
+
+    if (accept) {
+      input.accept = accept
+    }
+
+    const files = await new Promise<File[]>((resolve) => {
+      input.addEventListener('change', () => resolve(Array.from(input.files ?? [])))
+      input.addEventListener('cancel', () => resolve([]))
+      input.click()
+    })
+
+    const paths: string[] = []
+
+    for (const file of files) {
+      const saved = await this.saveImageFile(file, file.name || 'file')
+
+      if (saved) {
+        paths.push(saved)
+      }
+    }
+
+    return paths
   }
 
   async selectSavePath(): Promise<string | null> {
@@ -408,18 +446,22 @@ export class BrowserAdapter {
   //     释放（Map.delete），残留由页面刷新兜底（Map 随页面消亡）。
   //   - 纯内存字节（粘贴图片 / HTML 预览拼接）→ OPFS web-blobs/ 目录落盘
   //     （页面载入初始化清空，无 TTL）；读时 getFile() 瞬态进 b64。
-  // 虚拟路径统一 web-blob://attach/<id>-<name>（嵌真实文件名，file.attach 的
-  // name 参数取自 pathLabel(path)）。
+  // 虚拟路径统一 web-blob://attach/<id>/<name>：<id> 仅 Web 内部存储身份
+  // （blobFiles Map / OPFS 扁平键唯一），真实文件名永远落在末段——渲染层的
+  // pathLabel / imageFilenameFromPath 取 basename 即得干净文件名，不把 <id>
+  // 泄漏进上传到 gateway 的 name / filename（桌面端无此前缀）。
 
   /**
    * 保存附件 File/Blob：File → 保留引用；Blob → OPFS 流式写盘。
-   * 返回虚拟路径（web-blob://attach/<id>-<name>）；失败返回 ''。
+   * 返回虚拟路径（web-blob://attach/<id>/<name>）；失败返回 ''。
    */
   async saveImageFile(blob: Blob, name: string): Promise<string> {
     try {
       const id = ++BrowserAdapter.nextBlobId
       const safeName = sanitizeBlobName(name)
-      const path = 'web-blob://attach/' + id + '-' + safeName
+      // 分隔符用 '/'：打散到独立路径段，pathLabel / imageFilenameFromPath 取
+      // basename 得到干净文件名（<id> 不污染上传名）；OPFS 扁平键仍用 <id>-<name>。
+      const path = 'web-blob://attach/' + id + '/' + safeName
 
       if (blob instanceof File) {
         BrowserAdapter.blobFiles.set(path, blob)
@@ -545,12 +587,12 @@ function sanitizeBlobName(name: string): string {
   )
 }
 
-/** 从虚拟路径提取 OPFS 文件名（web-blob://attach/<id>-<name> → <id>-<name>）；
- *  非虚拟路径返回 ''。 */
+/** 从虚拟路径提取 OPFS 扁平文件名（web-blob://attach/<id>/<name> → <id>-<name>，
+ *  与 saveImageFile 的 OPFS 写键一致）；非虚拟路径返回 ''。 */
 function blobNameFromPath(path: string): string {
   const prefix = 'web-blob://attach/'
 
-  return path.startsWith(prefix) ? path.slice(prefix.length) : ''
+  return path.startsWith(prefix) ? path.slice(prefix.length).replace('/', '-') : ''
 }
 
 interface BatteryLike {

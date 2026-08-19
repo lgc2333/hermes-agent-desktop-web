@@ -46,7 +46,45 @@ describe('buildWebBridge / installWebBridge', () => {
     expect(await bridge.quickEntry.getSettings()).toMatchObject({ enabled: false })
     expect(await bridge.updates.check()).toMatchObject({ supported: false })
     expect(await bridge.requestMicrophoneAccess()).toBe(false)
-    expect(await bridge.selectPaths()).toEqual([])
+    // directories 对浏览器本地文件无意义 → 不开文件框、直接返回空。
+    expect(await bridge.selectPaths({ directories: true })).toEqual([])
+  })
+
+  it('selectPaths opens a native file picker and returns picked files as web-blob paths', async () => {
+    // jsdom 没有原生对话框：拦截 <input> 构造，捕获后手动派发 change 模拟选中。
+    const createElement = document.createElement.bind(document)
+    let captured: HTMLInputElement | null = null
+    const spy = vi
+      .spyOn(document, 'createElement')
+      .mockImplementation((tagName, options) => {
+        const el = createElement(tagName, options)
+
+        if (tagName === 'input') {
+          captured = el as HTMLInputElement
+        }
+
+        return el
+      })
+
+    try {
+      const bridge = buildWebBridge()
+      const pending = bridge.selectPaths({ multiple: false })
+      await new Promise((resolve) => setTimeout(resolve, 0))
+
+      expect(captured).not.toBeNull()
+      expect(captured!.type).toBe('file')
+      expect(captured!.multiple).toBe(false)
+
+      const file = new File(['hello'], 'note.txt')
+      Object.defineProperty(captured!, 'files', { value: [file], configurable: true })
+      captured!.dispatchEvent(new Event('change'))
+
+      await expect(pending).resolves.toEqual([
+        expect.stringMatching(/^web-blob:\/\/attach\/\d+\/note\.txt$/),
+      ])
+    } finally {
+      spy.mockRestore()
+    }
   })
 
   it('denied terminal.start rejects with a clear message (callers show an error state)', async () => {
@@ -86,7 +124,11 @@ describe('buildWebBridge / installWebBridge', () => {
     })
 
     it('openSessionWindow opens ?win=secondary#/<id> in a new tab', async () => {
-      const openMock = vi.fn(() => ({ closed: false }))
+      const openMock = vi.fn(
+        (_url?: string | URL, _target?: string, _features?: string) => ({
+          closed: false,
+        }),
+      )
       vi.stubGlobal('open', openMock)
       const bridge = buildWebBridge()
 
@@ -103,7 +145,11 @@ describe('buildWebBridge / installWebBridge', () => {
     })
 
     it('openSessionWindow passes watch=1 for spectator windows', async () => {
-      const openMock = vi.fn(() => ({ closed: false }))
+      const openMock = vi.fn(
+        (_url?: string | URL, _target?: string, _features?: string) => ({
+          closed: false,
+        }),
+      )
       vi.stubGlobal('open', openMock)
       const bridge = buildWebBridge()
 
@@ -116,7 +162,11 @@ describe('buildWebBridge / installWebBridge', () => {
     })
 
     it('openSessionWindow encodes the session id in the hash route', async () => {
-      const openMock = vi.fn(() => ({ closed: false }))
+      const openMock = vi.fn(
+        (_url?: string | URL, _target?: string, _features?: string) => ({
+          closed: false,
+        }),
+      )
       vi.stubGlobal('open', openMock)
       const bridge = buildWebBridge()
 
@@ -145,7 +195,11 @@ describe('buildWebBridge / installWebBridge', () => {
     })
 
     it('openWindow opens a fresh peer tab at the app base URL', async () => {
-      const openMock = vi.fn(() => ({ closed: false }))
+      const openMock = vi.fn(
+        (_url?: string | URL, _target?: string, _features?: string) => ({
+          closed: false,
+        }),
+      )
       vi.stubGlobal('open', openMock)
       const bridge = buildWebBridge()
 

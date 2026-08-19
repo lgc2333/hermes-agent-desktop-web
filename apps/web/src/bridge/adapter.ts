@@ -108,7 +108,7 @@ export function buildWebBridge(
     openPreviewInBrowser: (url) => browser.openPreviewInBrowser(url),
     fetchLinkTitle: (url) => browser.fetchLinkTitle(url),
     notify: (payload) => browser.notify(payload),
-    selectPaths: () => browser.selectPaths(),
+    selectPaths: (options) => browser.selectPaths(options),
     selectSavePath: () => browser.selectSavePath(),
     getPathForFile: () => browser.getPathForFile(),
     zoom: {

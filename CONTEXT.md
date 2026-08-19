@@ -80,6 +80,14 @@ _Avoid_: 不支持的能力（与"未实现"混淆）
 按动机三分：**能力缺失**（桥无法提供，如终端/窗口）、**产品范围**（技术上可行但计划外，如语音）、**上游已处理**（上游在 remote 模式下原生支持——此类不应 gate，ADR-0009 撤销了 artifacts/agents 的 gate）。
 _Avoid_: feature flag（语义不同）
 
+**Blob attachment（Web 虚拟附件）**:
+浏览器 File / 粘贴图片没有 gateway 侧文件路径，渲染层又是桌面式"路径模型"，Web 桥用一条承载真实文件名的虚拟路径（`web-blob://attach/...`）指代附件，字节随用随读（File 保留引用零常驻；仅纯内存字节才落 OPFS）。虚拟路径含两段正交身份：**附件身份（blob id）**——Web 内部存储唯一键，永不随上传离开 Web；**上传文件名**——提交给 gateway 的实际文件名，与桌面端一致。二者正交（不在同一个 basename 里混着）。
+_Avoid_: 本地文件路径（Web 没有 gateway 侧等价）、临时文件（随用随读非常驻）、"文件名前缀"（指 blob id 时的歧义称呼）
+
+**Blob id（附件身份）**:
+虚拟路径里的单调递增内部序号，用作 Web 本地存储键的唯一身份（ADR-0020）。仅 Web 内部可见，不进入提交给 gateway 的上传文件名。
+_Avoid_: 前缀、序号（口语）
+
 **Session source**:
 session.create 上标记客户端表面的标签；本项目复用桌面端的 'desktop' 值。
 _Avoid_: 平台（上游 platform 是另一个概念）
