@@ -21,13 +21,14 @@
 pnpm install     # 首次（pnpm 11，node >=22.22）
 pnpm dev         # mock(5180) + proxy(6722) + vite(5173)，SPA 只走代理（ADR-0016）
 pnpm dev:remote  # proxy + vite，无 mock（连自己的 gateway）
-pnpm --filter @hermes-web/web test  # vitest（桥单测，apps/web）
-pnpm typecheck   # apps/web 类型检查（typecheck.mjs）
+pnpm --filter @hermes-web/web test  # vitest（桥单测）
+pnpm typecheck   # apps/web 类型检查
 pnpm --filter @hermes-web/web lint[:fix]  # ESLint
 pnpm format      # 格式化
 pnpm build       # 生产构建 → apps/web/dist
-cd apps/proxy && deno task test  # 代理单测（deno test，42+ 用例）
-cd apps/proxy && deno check src/  # 代理类型检查（deno check）
+cd apps/proxy && deno task test  # 代理单测
+cd apps/proxy && deno check src/main.ts  # 代理类型检查（deno check）
+cd apps/proxy && deno task lint  # 代理 Lint
 deno run --allow-net --allow-read --allow-env apps/proxy/src/main.ts  # 手动起代理
 MOCK_OAUTH=1 node apps/web/dev/mock-gateway.mjs 5182  # gated mock（native OAuth 面）
 MOCK_PASSWORD=1 node apps/web/dev/mock-gateway.mjs 5183  # 密码门禁 mock（admin/admin，M5）
