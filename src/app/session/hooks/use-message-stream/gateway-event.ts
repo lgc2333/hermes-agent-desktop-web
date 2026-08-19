@@ -22,10 +22,17 @@ import { triggerHaptic } from '@/lib/haptics'
 import { modelOptionsQueryKey } from '@/lib/model-options'
 import { isProviderSetupErrorMessage } from '@/lib/provider-setup-errors'
 import { invalidateSlashCompletions } from '@/lib/slash-completion-cache'
+import type { TourAction, TourStep } from '@/lib/tour'
 import { type AgentNoticePayload, clearAgentNotice, nativeNoticeInput, showAgentNotice } from '@/store/agent-notices'
 import { reconcileApprovalModeForProfile } from '@/store/approval-mode'
 import { billingCtaLabel, clearBillingBlock, runBillingRecovery, setBillingBlock } from '@/store/billing-block'
-import { clearClarifyRequest, normalizeChoices, setClarifyRequest, warnDroppedChoices } from '@/store/clarify'
+import {
+  clearClarifyRequest,
+  normalizeChoices,
+  normalizeQuestions,
+  setClarifyRequest,
+  warnDroppedChoices
+} from '@/store/clarify'
 import { setSessionCompacting } from '@/store/compaction'
 import { refreshBackgroundProcesses } from '@/store/composer-status'
 import { $gateway, activeGatewayConnectionId } from '@/store/gateway'
@@ -43,7 +50,7 @@ import { setMcpSetupRequest } from '@/store/mcp-setup'
 import { dispatchNativeNotification } from '@/store/native-notifications'
 import { isDiskFullErrorMessage, notify, notifyError } from '@/store/notifications'
 import { requestDesktopOnboarding, requestDesktopOnboardingForCredentialWarning } from '@/store/onboarding'
-import { revealDesktopPane } from '@/store/pane-focus'
+import { applyDesktopLayoutPreset, revealDesktopPane } from '@/store/pane-focus'
 import { flashPetActivity, markPetUnread, setPetActivity } from '@/store/pet'
 import { $activeGatewayProfile, normalizeProfileKey } from '@/store/profile'
 import { followActiveSessionCwd } from '@/store/projects'
@@ -1165,8 +1172,66 @@ export function useGatewayEventHandler(deps: GatewayEventDeps) {
         const rawChoices = payload?.choices
         const choices = normalizeChoices(rawChoices)
         const multiSelect = payload?.multi_select === true
+        // Batch (multi-question) clarify: `questions` replaces question/choices
+        // on the wire. `answers` rides along only on reconnect replay, carrying
+        // the per-question locks the server already accepted.
+        const questions = normalizeQuestions(payload?.questions)
 
-        if (requestId && question) {
+        const lockedAnswers =
+          typeof payload?.answers === 'object' && payload?.answers !== null
+            ? Object.fromEntries(
+                Object.entries(payload.answers as Record<string, unknown>).filter(
+                  (entry): entry is [string, string] => typeof entry[1] === 'string'
+                )
+              )
+            : undefined
+
+        if (requestId && questions.length > 0) {
+          setClarifyRequest({
+            choices: null,
+            lockedAnswers,
+            multiSelect: false,
+            question: '',
+            questions,
+            requestId,
+            sessionId: sessionId ?? null
+          })
+
+          if (sessionId) {
+            // Same hydration-race guard as the single-question path below: the
+            // form mounts from the tool row, so upsert a stable one keyed by
+            // the request id in case tool.start was missed.
+            upsertToolCall(
+              sessionId,
+              {
+                args: {
+                  questions: questions.map(q => ({
+                    choices: q.choices ?? undefined,
+                    multi_select: q.multiSelect || undefined,
+                    question: q.question
+                  }))
+                },
+                name: 'clarify',
+                tool_id: requestId
+              },
+              'running',
+              event.type,
+              occurredAt
+            )
+            updateSessionState(sessionId, state => ({ ...state, needsInput: true }))
+
+            if (sessionId === activeSessionIdRef.current) {
+              requestScrollToBottom()
+            }
+          }
+
+          dispatchNativeNotification({
+            body: questions.map(q => q.question).join(' · '),
+            kind: 'input',
+            sessionId,
+            title: translateNow('notifications.native.inputTitle')
+          })
+        } else if (requestId && question) {
           if (rawChoices != null && choices.length === 0) {
             warnDroppedChoices('gateway', question, rawChoices)
           }
@@ -1390,6 +1455,48 @@ export function useGatewayEventHandler(deps: GatewayEventDeps) {
         // Agent closed its own read-only tab via the desktop-gated close_terminal tool.
         // The process is untouched — this only drops the view.
         closeAgentTerminalByProc(payload?.process_id ?? '')
+      } else if (event.type === 'tour.request') {
+        // tour tool: run one guided-tour action (highlight/step/discover) via
+        // driver.js — on the app's own DOM or inside the preview pane's guest
+        // page — and answer with the outcome. Dynamic import keeps driver.js
+        // and the preview injection payload off the boot path. Active session
+        // only: a background turn must never paint overlays on the user's
+        // screen (desktop AGENTS.md: offer, don't hijack).
+        const requestId = typeof payload?.request_id === 'string' ? payload.request_id : ''
+
+        if (requestId) {
+          const answer = (result: unknown) =>
+            $gateway.get()?.request('tour.respond', {
+              request_id: requestId,
+              text: result ? JSON.stringify(result) : ''
+            })
+
+          if (isActiveEvent) {
+            void import('@/lib/tour')
+              .then(({ runTour }) =>
+                runTour(
+                  {
+                    kind: (payload?.action ?? 'stop') as TourAction['kind'],
+                    selector: payload?.selector,
+                    side: payload?.side as TourStep['side'],
+                    startAt: payload?.step_index,
+                    steps: payload?.steps as TourStep[] | undefined,
+                    text: payload?.text,
+                    title: payload?.title
+                  },
+                  payload?.surface === 'preview' ? 'preview' : 'app'
+                )
+              )
+              .then(answer, error =>
+                answer({ error: error instanceof Error ? error.message : String(error), success: false })
+              )
+          } else {
+            void answer({
+              error: 'Tours only run in the session the user is looking at.',
+              success: false
+            })
+          }
+        }
       } else if (event.type === 'pane.reveal') {
         // Agent revealed a pane via the desktop-gated focus_pane tool, in
         // response to an explicit user request. Active session only — a
@@ -1397,6 +1504,14 @@ export function useGatewayEventHandler(deps: GatewayEventDeps) {
         // offer, don't hijack).
         if (isActiveEvent) {
           revealDesktopPane(payload?.pane ?? '')
+        }
+      } else if (event.type === 'layout.apply') {
+        // Agent applied a layout preset via the desktop-gated apply_layout
+        // tool. Same contract as pane.reveal: active session only, and the
+        // preset resolves against the SAME layouts registry the picker reads,
+        // so core, plugin, and user presets are all addressable.
+        if (isActiveEvent) {
+          applyDesktopLayoutPreset(typeof payload?.preset === 'string' ? payload.preset : '')
         }
       } else if (event.type === 'message.reaction') {
         // The agent reacted to a message via the desktop-gated
