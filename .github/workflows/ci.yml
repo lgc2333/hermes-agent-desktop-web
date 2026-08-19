@@ -49,6 +49,22 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
 
+  # ── ESLint（apps/web）───────────────────────────────────────
+  lint:
+    name: lint (eslint)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11.22.0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+
   # ── 编译（生产构建 → apps/web/dist）───────────────────────────
   build:
     name: build
@@ -65,15 +81,18 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
 
-  # ── Deno：类型检查 + 代理单测（apps/proxy）────────────────────
+  # ── Deno：Lint + 类型检查 + 代理单测（apps/proxy）─────────────
   deno:
-    name: deno (check + test)
+    name: deno (lint + check + test)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
+      - name: deno lint
+        working-directory: apps/proxy
+        run: deno task lint
       - name: deno check
         working-directory: apps/proxy
         run: deno check src/main.ts

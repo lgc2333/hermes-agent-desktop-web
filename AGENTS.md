@@ -23,9 +23,11 @@ pnpm dev         # mock(5180) + proxy(6722) + vite(5173)，SPA 只走代理（AD
 pnpm dev:remote  # proxy + vite，无 mock（连自己的 gateway）
 pnpm --filter @hermes-web/web test  # vitest（桥单测，apps/web）
 pnpm typecheck   # apps/web 类型检查（typecheck.mjs）
+pnpm --filter @hermes-web/web lint[:fix]  # ESLint
 pnpm format      # 格式化
 pnpm build       # 生产构建 → apps/web/dist
 cd apps/proxy && deno task test  # 代理单测（deno test，42+ 用例）
+cd apps/proxy && deno check src/  # 代理类型检查（deno check）
 deno run --allow-net --allow-read --allow-env apps/proxy/src/main.ts  # 手动起代理
 MOCK_OAUTH=1 node apps/web/dev/mock-gateway.mjs 5182  # gated mock（native OAuth 面）
 MOCK_PASSWORD=1 node apps/web/dev/mock-gateway.mjs 5183  # 密码门禁 mock（admin/admin，M5）
@@ -105,7 +107,7 @@ hermes-agent-desktop-web/
 
 - **默认 URL**：`WEB_DEFAULT_GATEWAY_URL` → `/api/proxy/meta` 运行时下发前端预填；同 dist 可部署任意环境。SPA 恒经同源代理（ADR-0016，见 gateway/rest.ts）：`proxyBaseUrl()` 恒非空，无直连路径。
 
-- **格式**：一切改动（含文档 `.md`）提交前跑 `pnpm format`（= `prettier -cw .`）格式化，保持全仓一致风格。
+- **格式**：一切改动（含文档 `.md`）提交前跑 `pnpm format`（= `prettier -cw .`）格式化，保持全仓一致风格。如果 Prettier 与 ESLint 格式规则冲突，保持 Prettier 风格，将此条规则禁用写入 `eslint.config.mjs`
 
 - **测试纪律**：桥层行为用 vitest（`apps/web/src/bridge/*.test.ts`），代理用 deno test；先写测试再实现（tdd）。改桥/代理协议后跑全量：`deno task test` + `pnpm --filter @hermes-web/web test` + `pnpm typecheck` 三件套全绿才提交。
 

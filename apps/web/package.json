@@ -15,7 +15,9 @@
     "test:e2e": "vitest run --config vitest.e2e.config.ts",
     "e2e:install": "playwright install chromium",
     "dev:gateway": "node dev/mock-gateway.mjs",
-    "dev:remote": "node dev/dev.mjs --no-mock"
+    "dev:remote": "node dev/dev.mjs --no-mock",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix"
   },
   "dependencies": {
     "hermes": "workspace:*"
