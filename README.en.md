@@ -56,15 +56,24 @@ For developers. Requires Node.js ≥ 22.22, pnpm 11; Deno is also needed for pro
 
 ```bash
 pnpm install
-pnpm dev  # local experience (bundled mock gateway)
-pnpm --filter @hermes-web/web dev:remote  # connect to your own gateway
+pnpm dev  # local experience (bundled mock gateway), or
+pnpm dev:remote  # connect to your own gateway
 ```
 
 ## FAQ
 
+**How's the mobile experience?**
+
+It's only _just about usable_. The Hermes Desktop layout isn't designed for mobile, but it's far better than hermes-webui, which struggles even with basic chat.
+
 **Why can't I complete OAuth login?**
 
-Hermes' official OAuth login requires the callback address to be a loopback address (`127.0.0.1`). After authorization, the browser needs to be able to redirect back to the server's `127.0.0.1` — if you're accessing from a phone or via a public domain, you'll need an SSH tunnel or VPN. This is an official security restriction and cannot be bypassed.
+Hermes' official OAuth login requires the callback address to be a local loopback address (`127.0.0.1`):
+
+- **Browser and server on the same machine** (dev environment): the popup completes automatically — nothing to do.
+- **Remote access** (phone / public domain): after signing in, the browser jumps to the local `127.0.0.1` and shows "Connection failed" — this is **expected**. Copy the full URL from the address bar and paste it into the "Paste callback URL" input below the login box, and you're done — no SSH tunnel or VPN needed.
+
+This is the official security boundary; this project doesn't bypass it — it just has you carry the code back to the proxy yourself, with the same security properties as the desktop app.
 
 **Why do I have to sign in again after the server restarts?**
 
