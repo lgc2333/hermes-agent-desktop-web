@@ -79,7 +79,7 @@ This is the official security boundary; this project doesn't bypass it — it ju
 
 **Where are my credentials stored?**
 
-Connection info is stored in your browser's local storage; login sessions (OAuth / username-password) exist only in the server's memory. The server never saves any credential to disk.
+Gateway addresses and static tokens are stored in this browser's local storage. OAuth and username/password login sessions are stored in `HttpOnly` cookies for the browser's proxy origin; the username and password themselves are not saved. The proxy neither writes credentials to disk nor keeps them in memory, so you normally stay signed in after it restarts.
 
 **Is my password safe when I sign in with username/password?**
 
