@@ -85,3 +85,20 @@
     ) !important;
   }
 }
+
+/* 6b. 移动端 composer 内层横向溢出（窄屏时 send/控件被裁）：
+  composer-surface 是 grid-rows-[auto_1fr]，它本身 fit 父级，但内层网格
+  （menu/input/controls 一行）的单元格默认按不可断内容取最小值——控件簇一
+  宽就把 grid 撑出 surface，被 surface 的 overflow-hidden 裁掉右侧 send。
+  修复：让 composer-surface 的网格项可收缩（min-width:0），并允许 menu/
+  controls 两个 auto 列换行，使整行收敛进 surface 宽度。只覆盖移动端，
+  桌面宽度控件放得下，无需换行。 */
+@media (max-width: 640px) {
+  [data-slot='composer-surface'] > * {
+    min-width: 0;
+  }
+  [data-slot='composer-fade'] [class*='grid-area:controls'],
+  [data-slot='composer-fade'] [class*='grid-area:menu'] {
+    flex-wrap: wrap;
+  }
+}
