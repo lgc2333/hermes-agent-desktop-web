@@ -1,6 +1,6 @@
 import { test, expect } from './fixtures'
 import { startMock, stopByPort, waitForHttp } from './helpers/topology'
-import { waitForReady, waitFor, waitForBodyText, bootClean } from './helpers/bridge'
+import { waitForReady, waitFor, waitForBodyText } from './helpers/bridge'
 
 // From cdp-find.mjs — ADR-0019: web build 下 vendor find.shortcut 被禁用，Ctrl+F 不得
 // 打开 vendor find-bar（[role="search"] 覆盖层），应交给浏览器原生查找接管。
@@ -18,7 +18,6 @@ test.describe('find: Ctrl+F does not open the vendor find-bar (ADR-0019)', () =>
     await waitForHttp(`${stack.tokenTarget}/api/status`)
     await page.goto(stack.appUrl)
     await waitForReady(page)
-    await bootClean(page)
     await waitForBodyText(page, 'Gateway', { timeout: 60000, label: 'Gateway ready' })
 
     await test.step('does not preventDefault a synthetic Ctrl+F keydown (native find not swallowed)', async () => {

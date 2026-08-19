@@ -3,7 +3,6 @@ import { startMock, stopByPort, waitForHttp } from './helpers/topology'
 import {
   waitForReady,
   waitFor,
-  bootClean,
   gotoHash,
   saveOauthConnection,
   oauthLogin,
@@ -24,8 +23,6 @@ test.describe('oauth: bridge-level native login + chat + persistence', () => {
 
     await page.goto(stack.appUrl)
     await waitForReady(page)
-    await bootClean(page)
-
     const oauthConnected = async (): Promise<boolean> => {
       const config = await getConfig(page)
       return config.remoteOauthConnected === true

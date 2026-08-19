@@ -1,12 +1,6 @@
 import { test, expect } from './fixtures'
 import { startMock, stopByPort, waitForHttp } from './helpers/topology'
-import {
-  waitForReady,
-  waitFor,
-  waitForBodyText,
-  bootClean,
-  gotoHash,
-} from './helpers/bridge'
+import { waitForReady, waitFor, waitForBodyText, gotoHash } from './helpers/bridge'
 
 // From cdp-mobile3.mjs + cdp-statusbar-check.mjs — M4 响应式验收：移动端视口 390x844。
 // 断言汉堡菜单打开抽屉、设置页 gateway tab 渲染、状态栏在 390px 宽仍然可读。
@@ -23,7 +17,6 @@ test.describe('responsive: mobile-viewport (390x844) layout invariants', () => {
     await waitForHttp(`${stack.tokenTarget}/api/status`)
     await page.goto(stack.appUrl)
     await waitForReady(page)
-    await bootClean(page)
     await waitForBodyText(page, 'Gateway', { timeout: 60000, label: 'Gateway ready' })
 
     await test.step('renders the settings gateway tab in the mobile viewport', async () => {

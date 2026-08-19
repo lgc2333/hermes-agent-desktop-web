@@ -2,7 +2,7 @@ import { test, expect } from './fixtures'
 import fs from 'node:fs'
 import path from 'node:path'
 import { repoRoot, startMock, stopByPort, waitForHttp } from './helpers/topology'
-import { waitForReady, waitForBodyText, bootClean, poll } from './helpers/bridge'
+import { waitForReady, waitForBodyText, poll } from './helpers/bridge'
 
 // From cdp-attach.mjs — M8 / ADR-0020: 把非图片文件拖到 composer，出现 chip，发送，
 // mock gateway 把字节落盘到 temp/mock-attachments/。应用通过 [data-slot="composer-bounds"]
@@ -30,7 +30,6 @@ test.describe('attach: non-image file → chip → send → gateway lands it (AD
     await waitForHttp(`${stack.tokenTarget}/api/status`)
     await page.goto(stack.appUrl)
     await waitForReady(page)
-    await bootClean(page)
     await waitForBodyText(page, 'Gateway', { timeout: 60000, label: 'Gateway ready' })
 
     await test.step('attaches a non-image file via a drop (chip appears)', async () => {

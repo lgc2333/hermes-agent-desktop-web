@@ -4,7 +4,6 @@ import {
   waitForReady,
   waitFor,
   waitForBodyText,
-  bootClean,
   gotoHash,
   getConfig,
   saveOauthConnection,
@@ -23,7 +22,6 @@ test.describe('ui: settings OAuth sign-in + chat + persistence', () => {
     await waitForHttp(`${stack.oauthTarget}/api/status`)
     await page.goto(stack.appUrl)
     await waitForReady(page)
-    await bootClean(page)
     await saveOauthConnection(page, stack.oauthTarget)
 
     await test.step('renders the OAuth sign-in button in settings', async () => {

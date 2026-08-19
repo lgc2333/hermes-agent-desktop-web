@@ -1,6 +1,5 @@
 import { test, expect } from './fixtures'
 import { startMock, stopByPort, waitForHttp } from './helpers/topology'
-import { clearRegistry } from './helpers/registry'
 import { waitForReady, waitFor } from './helpers/bridge'
 
 // Reference migration (vitest describe/it → playwright test + step).
@@ -14,11 +13,6 @@ test.describe('smoke: app boots against the per-worker token-mock topology', () 
 
     await page.goto(stack.appUrl)
     await waitForReady(page)
-    // no cross-test registry pollution — start clean
-    await clearRegistry(page)
-    await page.reload()
-    await waitForReady(page, 60000)
-
     expect(await page.evaluate(() => !!(window as any).hermesDesktop)).toBe(true)
 
     // Gateway status appears in the status bar once booted/reconciled.

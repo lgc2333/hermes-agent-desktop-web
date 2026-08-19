@@ -4,7 +4,6 @@ import {
   waitForReady,
   waitFor,
   waitForBodyText,
-  bootClean,
   gotoHash,
   getConfig,
   saveOauthConnection,
@@ -20,7 +19,6 @@ test.describe('reconnect A: token disconnect → auto-reconnect', () => {
     await waitForHttp(`${stack.tokenTarget}/api/status`)
     await page.goto(stack.appUrl)
     await waitForReady(page)
-    await bootClean(page)
 
     await test.step('streams a baseline chat reply before any disconnect', async () => {
       await gotoHash(page, '#/')
@@ -73,7 +71,6 @@ test.describe('reconnect C: feedback when sending while connecting', () => {
     await waitForHttp(`${stack.tokenTarget}/api/status`)
     await page.goto(stack.appUrl)
     await waitForReady(page)
-    await bootClean(page)
     await gotoHash(page, '#/')
 
     await test.step('surfaces feedback when a message is sent while the gateway is down', async () => {
@@ -129,7 +126,6 @@ test.describe('reconnect B: OAuth session survives proxy restart (ADR-0023)', ()
     await waitForHttp(`${stack.oauthTarget}/api/status`)
     await page.goto(stack.appUrl)
     await waitForReady(page)
-    await bootClean(page)
     await saveOauthConnection(page, stack.oauthTarget)
 
     await test.step('renders the OAuth sign-in button in settings', async () => {
