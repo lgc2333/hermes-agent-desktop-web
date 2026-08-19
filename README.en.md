@@ -77,10 +77,6 @@ Hermes' official OAuth login requires the callback address to be a local loopbac
 
 This is the official security boundary; this project doesn't bypass it — it just has you carry the code back to the proxy yourself, with the same security properties as the desktop app.
 
-**Why do I have to sign in again after the server restarts?**
-
-Login sessions are only kept in the server's memory and are lost on restart — this is by design: the server never writes any credential to disk. Just sign in once more.
-
 **Where are my credentials stored?**
 
 Connection info is stored in your browser's local storage; login sessions (OAuth / username-password) exist only in the server's memory. The server never saves any credential to disk.
