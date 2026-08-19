@@ -121,4 +121,4 @@ jobs:
       - name: Install Chromium (Playwright)
         run: pnpm --filter @hermes-web/web e2e:install
       - name: Run e2e suite
-        run: pnpm --filter @hermes-web/web test:e2e
+        run: pnpm --filter @hermes-web/web e2e

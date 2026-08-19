@@ -36,11 +36,11 @@ docker compose up -d --build  # 生产部署（见 README.md「快速开始」�
 bash scripts/sync-upstream.sh [tag]  # 上游 subtree 同步（PATCHES.md §3）
 ```
 
-浏览器验收（Vitest + Playwright 客户端驱动 Chromium，独立于 dev 端口 5173/6722/5180，见 apps/web/e2e/AGENTS.md）：
+浏览器验收（@playwright/test runner，多 worker 并行，每 worker 独享 proxy/Vite/mock，见 apps/web/playwright.config.ts 与 apps/web/e2e/AGENTS.md）：
 
 ```bash
 pnpm --filter @hermes-web/web e2e:install   # 一次性装 Chromium
-pnpm --filter @hermes-web/web test:e2e      # 全量 e2e（串行单 worker）
+pnpm --filter @hermes-web/web e2e           # 全量 e2e
 ```
 
 ## 项目结构

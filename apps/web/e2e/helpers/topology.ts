@@ -1,5 +1,7 @@
-import { spawn, execSync, type ChildProcess } from 'node:child_process'
+import { spawn, execSync } from 'node:child_process'
+import type { ChildProcess } from 'node:child_process'
 import { existsSync } from 'node:fs'
+import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 
@@ -163,27 +165,57 @@ export function startProxy(port = PROXY_PORT): ChildProcess {
 }
 
 /** Spawn the Vite dev server for the SPA (with the e2e proxy + mock injected). */
-export function startVite(): ChildProcess {
-  killPort(VITE_PORT)
+export function startVite(opts?: {
+  vitePort?: number
+  proxyPort?: number
+  mockGatewayWs?: string
+}): ChildProcess {
+  const vitePort = opts?.vitePort ?? VITE_PORT
+  const proxyUrl = `http://127.0.0.1:${opts?.proxyPort ?? PROXY_PORT}`
+  const mockGatewayWs =
+    opts?.mockGatewayWs ?? `ws://127.0.0.1:${MOCK_TOKEN_PORT}/gateway`
+  killPort(vitePort)
   const c = spawn(
     process.execPath,
-    [viteBin, '--host', '127.0.0.1', '--port', String(VITE_PORT)],
+    [viteBin, '--host', '127.0.0.1', '--port', String(vitePort)],
     {
       cwd: appRoot,
       detached: true,
       stdio: 'ignore',
       env: {
         ...process.env,
-        VITE_PROXY_URL: PROXY_URL,
+        VITE_PROXY_URL: proxyUrl,
         // Seeded default connection (registry.ts) already points at the e2e
         // token mock, so a cleared-registry boot probes the right port.
-        VITE_MOCK_GATEWAY_WS: `ws://127.0.0.1:${MOCK_TOKEN_PORT}/gateway`,
+        VITE_MOCK_GATEWAY_WS: mockGatewayWs,
       },
     },
   )
   c.unref()
-  track('vite', c)
+  track(`vite:${vitePort}`, c)
   return c
+}
+
+/**
+ * Per-worker port block (Playwright migration). Each worker owns a disjoint,
+ * deterministic slice so its mock/proxy/Vite never collide with another
+ * worker's, even when a spec restarts its own proxy. `workerIndex` is 0-based.
+ */
+export function portsFor(workerIndex: number): {
+  tokenPort: number
+  oauthPort: number
+  passwordPort: number
+  proxyPort: number
+  vitePort: number
+} {
+  const tokenPort = 30000 + workerIndex * 3
+  return {
+    tokenPort,
+    oauthPort: tokenPort + 1,
+    passwordPort: tokenPort + 2,
+    proxyPort: 28100 + workerIndex,
+    vitePort: 27100 + workerIndex,
+  }
 }
 
 export interface MockOptions {

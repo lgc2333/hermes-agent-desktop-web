@@ -1,88 +1,70 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest'
-import type { Browser, Page } from 'playwright'
-import { launchBrowser } from './helpers/browser'
-import {
-  APP_URL,
-  MOCK_TOKEN_PORT,
-  startMock,
-  stopByPort,
-  waitForHttp,
-} from './helpers/topology'
+import { test, expect } from './fixtures'
+import { startMock, stopByPort, waitForHttp } from './helpers/topology'
 import { waitForReady, waitFor, waitForBodyText, bootClean } from './helpers/bridge'
 
-// From cdp-find.mjs — ADR-0019: under the web build the vendor find.shortcut is
-// disabled, so Ctrl+F must NOT open the vendor find-bar (the [role="search"]
-// overlay). The web build lets the browser native find take over, so no such
-// overlay may appear after Ctrl+F.
-// Uses the plain token mock (MOCK_TOKEN_PORT) so boot works without login.
-describe('find: Ctrl+F does not open the vendor find-bar (ADR-0019)', () => {
-  let browser: Browser
-  let page: Page
+// From cdp-find.mjs — ADR-0019: web build 下 vendor find.shortcut 被禁用，Ctrl+F 不得
+// 打开 vendor find-bar（[role="search"] 覆盖层），应交给浏览器原生查找接管。
+// 用 plain token mock，免登录即可 boot。
 
-  // Self-contained page expression (only page globals) — the find overlay is a
-  // `[role="search"]` element.
-  const noFindBar = () => !document.querySelector('[role="search"]')
+// 自包含页面表达式（只用页面全局）——find 覆盖层是一个 [role="search"] 元素。
+const noFindBar = () => !document.querySelector('[role="search"]')
 
-  beforeAll(async () => {
-    startMock(MOCK_TOKEN_PORT)
-    await waitForHttp(`http://127.0.0.1:${MOCK_TOKEN_PORT}/api/status`)
-    const launched = await launchBrowser()
-    browser = launched.browser
-    page = launched.page
-    await page.goto(APP_URL)
+test.describe('find: Ctrl+F does not open the vendor find-bar (ADR-0019)', () => {
+  test('find: Ctrl+F does not open the vendor find-bar (ADR-0019)', async ({
+    page,
+    stack,
+  }) => {
+    startMock(stack.tokenPort)
+    await waitForHttp(`${stack.tokenTarget}/api/status`)
+    await page.goto(stack.appUrl)
     await waitForReady(page)
     await bootClean(page)
     await waitForBodyText(page, 'Gateway', { timeout: 60000, label: 'Gateway ready' })
-  })
 
-  afterAll(async () => {
-    await browser?.close()
-    stopByPort(MOCK_TOKEN_PORT)
-  })
+    await test.step('does not preventDefault a synthetic Ctrl+F keydown (native find not swallowed)', async () => {
+      // vendor dispatch 必须保留 defaultPrevented=false，浏览器原生 find 才能接管。
+      const notPrevented = await waitFor(
+        page,
+        () => {
+          const ev = new KeyboardEvent('keydown', {
+            key: 'f',
+            code: 'KeyF',
+            ctrlKey: true,
+            bubbles: true,
+            cancelable: true,
+          })
+          window.dispatchEvent(ev)
+          return ev.defaultPrevented === false ? true : null
+        },
+        { timeout: 20000, label: 'synthetic Ctrl+F not prevented' },
+      )
+      expect(notPrevented).toBe(true)
+      // 合成按键之后也不出现 find-bar。
+      expect(await page.evaluate(noFindBar)).toBe(true)
+    })
 
-  it('does not preventDefault a synthetic Ctrl+F keydown (native find not swallowed)', async () => {
-    // Vendor dispatch must leave defaultPrevented=false so the browser-native
-    // find accelerator can take over (scenario 1 of cdp-find.mjs).
-    const notPrevented = await waitFor(
-      page,
-      () => {
-        const ev = new KeyboardEvent('keydown', {
-          key: 'f',
-          code: 'KeyF',
-          ctrlKey: true,
-          bubbles: true,
-          cancelable: true,
-        })
-        window.dispatchEvent(ev)
-        return ev.defaultPrevented === false ? true : null
-      },
-      { timeout: 20000, label: 'synthetic Ctrl+F not prevented' },
-    )
-    expect(notPrevented).toBe(true)
-    // No find-bar after the synthetic press either.
-    await expect(page.evaluate(noFindBar)).resolves.toBe(true)
-  })
+    await test.step('shows no find-bar overlay after a real Control+f', async () => {
+      await page.keyboard.press('Control+f')
+      await page.waitForTimeout(1200)
+      expect(await page.evaluate(noFindBar)).toBe(true)
+    })
 
-  it('shows no find-bar overlay after a real Control+f', async () => {
-    await page.keyboard.press('Control+f')
-    await page.waitForTimeout(1200)
-    await expect(page.evaluate(noFindBar)).resolves.toBe(true)
-  })
+    await test.step('regression: Ctrl+K still opens the command palette dialog', async () => {
+      // 调色板是 Radix dialog；稳定语义锚点是其内部 search input 的 placeholder。
+      await page.keyboard.press('Control+k')
+      const palette = await waitFor(
+        page,
+        () =>
+          [...document.querySelectorAll('[role="dialog"]')].some((d) =>
+            /search sessions/i.test(d.querySelector('input')?.placeholder ?? ''),
+          )
+            ? true
+            : null,
+        { timeout: 15000, label: 'command palette dialog' },
+      ).catch(() => null)
+      expect(palette).toBe(true)
+    })
 
-  it('regression: Ctrl+K still opens the command palette dialog', async () => {
-    // The palette is a Radix dialog; the stable semantic anchor is the search
-    // input placeholder inside it (scenario 4 of cdp-find.mjs).
-    await page.keyboard.press('Control+k')
-    const palette = await waitFor(
-      page,
-      () =>
-        [...document.querySelectorAll('[role="dialog"]')].some((d) =>
-          /search sessions/i.test(d.querySelector('input')?.placeholder ?? ''),
-        )
-          ? true
-          : null,
-      { timeout: 15000, label: 'command palette dialog' },
-    ).catch(() => null)
-    expect(palette).toBe(true)
+    stopByPort(stack.tokenPort)
   })
 })

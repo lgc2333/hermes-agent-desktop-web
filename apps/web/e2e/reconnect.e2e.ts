@@ -1,18 +1,5 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest'
-import type { Browser, Page } from 'playwright'
-import { launchBrowser } from './helpers/browser'
-import {
-  APP_URL,
-  PROXY_URL,
-  PROXY_PORT,
-  MOCK_TOKEN_PORT,
-  MOCK_OAUTH_PORT,
-  startMock,
-  stopByPort,
-  startProxy,
-  waitForHttp,
-  pidsByPort,
-} from './helpers/topology'
+import { test, expect } from './fixtures'
+import { startMock, stopByPort, startProxy, waitForHttp } from './helpers/topology'
 import {
   waitForReady,
   waitFor,
@@ -26,240 +13,209 @@ import {
 import { sendChat } from './helpers/chat'
 
 // From cdp-reconnect-a.mjs — token-mode WS disconnect → auto-reconnect.
-// Boot on the plain token mock, confirm baseline streaming, kill the mock,
-// restart it, and confirm the UI returns to ready and chat streams again.
 
-function tokenStatusUrl(): string {
-  return `http://127.0.0.1:${MOCK_TOKEN_PORT}/api/status`
-}
-
-describe('reconnect A: token disconnect → auto-reconnect', () => {
-  let browser: Browser
-  let page: Page
-
-  beforeAll(async () => {
-    startMock(MOCK_TOKEN_PORT)
-    await waitForHttp(tokenStatusUrl())
-    const launched = await launchBrowser()
-    browser = launched.browser
-    page = launched.page
-    await page.goto(APP_URL)
+test.describe('reconnect A: token disconnect → auto-reconnect', () => {
+  test('reconnect A: token disconnect → auto-reconnect', async ({ page, stack }) => {
+    startMock(stack.tokenPort)
+    await waitForHttp(`${stack.tokenTarget}/api/status`)
+    await page.goto(stack.appUrl)
     await waitForReady(page)
     await bootClean(page)
-  })
 
-  afterAll(async () => {
-    await browser?.close()
-    stopByPort(MOCK_TOKEN_PORT)
-  })
-
-  it('streams a baseline chat reply before any disconnect', async () => {
-    await gotoHash(page, '#/')
-    await sendChat(page, 'reconnect test message')
-    await waitForBodyText(page, 'Hello from the mock gateway', {
-      timeout: 30000,
-      label: 'baseline reply',
+    await test.step('streams a baseline chat reply before any disconnect', async () => {
+      await gotoHash(page, '#/')
+      await sendChat(page, 'reconnect test message')
+      await waitForBodyText(page, 'Hello from the mock gateway', {
+        timeout: 30000,
+        label: 'baseline reply',
+      })
     })
-  })
 
-  it('kills the mock, restarts it, auto-reconnects and streams again', async () => {
-    stopByPort(MOCK_TOKEN_PORT)
-    // let the UI observe the disconnect (transitive state; not asserted on its own)
-    await page.waitForTimeout(4000)
+    await test.step('kills the mock, restarts it, auto-reconnects and streams again', async () => {
+      stopByPort(stack.tokenPort)
+      // 让 UI 观察到断连（transitive 状态，不单独断言）。
+      await page.waitForTimeout(4000)
 
-    startMock(MOCK_TOKEN_PORT)
-    await waitForHttp(tokenStatusUrl())
+      startMock(stack.tokenPort)
+      await waitForHttp(`${stack.tokenTarget}/api/status`)
 
-    // status bar returns to a ready/open/connected state
-    const reconnected = await waitFor(
-      page,
-      () => {
-        const sb = document.querySelector('[data-slot="statusbar"]')?.innerText || ''
-        return sb.includes('ready') || /open|connected/i.test(sb)
-          ? sb.slice(0, 120)
-          : null
-      },
-      { timeout: 45000, label: 'reconnect ready' },
-    )
-    expect(reconnected).toBeTruthy()
+      // 状态栏回到 ready/open/connected。
+      const reconnected = await waitFor(
+        page,
+        () => {
+          const sb = document.querySelector('[data-slot="statusbar"]')?.innerText || ''
+          return sb.includes('ready') || /open|connected/i.test(sb)
+            ? sb.slice(0, 120)
+            : null
+        },
+        { timeout: 45000, label: 'reconnect ready' },
+      )
+      expect(reconnected).toBeTruthy()
 
-    await gotoHash(page, '#/')
-    await sendChat(page, 'after reconnect')
-    await waitForBodyText(page, 'Hello from the mock gateway', {
-      timeout: 30000,
-      label: 'post-reconnect reply',
+      await gotoHash(page, '#/')
+      await sendChat(page, 'after reconnect')
+      await waitForBodyText(page, 'Hello from the mock gateway', {
+        timeout: 30000,
+        label: 'post-reconnect reply',
+      })
     })
+
+    stopByPort(stack.tokenPort)
   })
 })
 
-describe('reconnect C: feedback when sending while connecting', () => {
-  let browser: Browser
-  let page: Page
-
-  beforeAll(async () => {
-    startMock(MOCK_TOKEN_PORT)
-    await waitForHttp(tokenStatusUrl())
-    const launched = await launchBrowser()
-    browser = launched.browser
-    page = launched.page
-    await page.goto(APP_URL)
+test.describe('reconnect C: feedback when sending while connecting', () => {
+  test('reconnect C: feedback when sending while connecting', async ({
+    page,
+    stack,
+  }) => {
+    startMock(stack.tokenPort)
+    await waitForHttp(`${stack.tokenTarget}/api/status`)
+    await page.goto(stack.appUrl)
     await waitForReady(page)
     await bootClean(page)
     await gotoHash(page, '#/')
-  })
 
-  afterAll(async () => {
-    await browser?.close()
-    stopByPort(MOCK_TOKEN_PORT)
-  })
+    await test.step('surfaces feedback when a message is sent while the gateway is down', async () => {
+      stopByPort(stack.tokenPort)
+      await page.waitForTimeout(5000)
 
-  it('surfaces feedback when a message is sent while the gateway is down', async () => {
-    stopByPort(MOCK_TOKEN_PORT)
-    await page.waitForTimeout(5000)
+      // 断连时尝试发送。
+      await sendChat(page, 'send while disconnected')
+      await page.waitForTimeout(2500)
 
-    // attempt to send while disconnected
-    await sendChat(page, 'send while disconnected')
-    await page.waitForTimeout(2500)
+      // 无假成功：dead gateway 无法流出 canned reply，composer 禁用或出现错误/离线提示。
+      const disFeedback = await page.evaluate(() =>
+        /not connected|unavailable|failed|error|offline|connection lost/i.test(
+          document.body.innerText.slice(-700),
+        ),
+      )
+      const gotReply = await page.evaluate(() =>
+        document.body.innerText.includes('Hello from the mock gateway'),
+      )
+      expect(disFeedback || !gotReply).toBe(true)
 
-    // No fake success: the canned reply cannot stream from a dead gateway, and
-    // either the composer is disabled or an error/offline hint is visible.
-    const disFeedback = await page.evaluate(() =>
-      /not connected|unavailable|failed|error|offline|connection lost/i.test(
-        document.body.innerText.slice(-700),
-      ),
-    )
-    const gotReply = await page.evaluate(() =>
-      document.body.innerText.includes('Hello from the mock gateway'),
-    )
-    expect(disFeedback || !gotReply).toBe(true)
+      // 重启 mock 并确认连接恢复 ready。
+      startMock(stack.tokenPort)
+      await waitForHttp(`${stack.tokenTarget}/api/status`)
+      const ready = await waitFor(
+        page,
+        () => {
+          const sb = document.querySelector('[data-slot="statusbar"]')?.innerText || ''
+          return sb.includes('ready') || /open|connected/i.test(sb)
+            ? sb.slice(0, 120)
+            : null
+        },
+        { timeout: 45000, label: 'mock recovered' },
+      )
+      expect(ready).toBeTruthy()
+    })
 
-    // restart the mock and confirm the connection recovers to ready
-    startMock(MOCK_TOKEN_PORT)
-    await waitForHttp(tokenStatusUrl())
-    const ready = await waitFor(
-      page,
-      () => {
-        const sb = document.querySelector('[data-slot="statusbar"]')?.innerText || ''
-        return sb.includes('ready') || /open|connected/i.test(sb)
-          ? sb.slice(0, 120)
-          : null
-      },
-      { timeout: 45000, label: 'mock recovered' },
-    )
-    expect(ready).toBeTruthy()
+    stopByPort(stack.tokenPort)
   })
 })
 
-// From cdp-reconnect-b.mjs — OAuth session is held in the browser's httpOnly
-// cookie (ADR-0023), so restarting the proxy keeps the session: the new proxy
-// instance decodes the cookie and the connection recovers without re-login.
+// From cdp-reconnect-b.mjs — OAuth session held in the browser's httpOnly
+// cookie (ADR-0023), so restarting the proxy keeps the session (ADR-0023).
 
-describe('reconnect B: OAuth session survives proxy restart (ADR-0023)', () => {
-  let browser: Browser
-  let page: Page
-
-  const TARGET = `http://127.0.0.1:${MOCK_OAUTH_PORT}`
-
-  beforeAll(async () => {
-    // Plain token mock for the default-seed boot probe; gated OAuth mock as
-    // the connection target that renders an auth provider.
-    startMock(MOCK_TOKEN_PORT)
-    startMock(MOCK_OAUTH_PORT, { oauth: true })
-    await waitForHttp(`${TARGET}/api/status`)
-    const launched = await launchBrowser()
-    browser = launched.browser
-    page = launched.page
-    await page.goto(APP_URL)
+test.describe('reconnect B: OAuth session survives proxy restart (ADR-0023)', () => {
+  test('reconnect B: OAuth session survives proxy restart (ADR-0023)', async ({
+    page,
+    stack,
+  }) => {
+    // 默认 seed boot 探测用普通 token mock；gated OAuth mock 作连接目标。
+    startMock(stack.tokenPort)
+    startMock(stack.oauthPort, { oauth: true })
+    await waitForHttp(`${stack.oauthTarget}/api/status`)
+    await page.goto(stack.appUrl)
     await waitForReady(page)
     await bootClean(page)
-    await saveOauthConnection(page, TARGET)
-  })
+    await saveOauthConnection(page, stack.oauthTarget)
 
-  afterAll(async () => {
-    await browser?.close()
-    stopByPort(MOCK_TOKEN_PORT)
-    stopByPort(MOCK_OAUTH_PORT)
-  })
+    await test.step('renders the OAuth sign-in button in settings', async () => {
+      await gotoHash(page, '#/settings?tab=gateway')
+      const signIn = await waitFor(
+        page,
+        () => {
+          const b = [...document.querySelectorAll('button')].find(
+            (x) =>
+              /sign in with/i.test(x.textContent ?? '') ||
+              /^sign in$/i.test((x.textContent ?? '').trim()),
+          )
+          return b ? (b.textContent?.trim() ?? null) : null
+        },
+        { timeout: 30000, label: 'sign in button' },
+      )
+      expect(signIn).toBeTruthy()
+    })
 
-  it('renders the OAuth sign-in button in settings', async () => {
-    await gotoHash(page, '#/settings?tab=gateway')
-    const signIn = await waitFor(
-      page,
-      () => {
+    await test.step('signs in and reports the oauth session connected', async () => {
+      await page.evaluate(() => {
         const b = [...document.querySelectorAll('button')].find(
           (x) =>
             /sign in with/i.test(x.textContent ?? '') ||
             /^sign in$/i.test((x.textContent ?? '').trim()),
         )
-        return b ? (b.textContent?.trim() ?? null) : null
-      },
-      { timeout: 30000, label: 'sign in button' },
-    )
-    expect(signIn).toBeTruthy()
-  })
-
-  it('signs in and reports the oauth session connected', async () => {
-    await page.evaluate(() => {
-      const b = [...document.querySelectorAll('button')].find(
-        (x) =>
-          /sign in with/i.test(x.textContent ?? '') ||
-          /^sign in$/i.test((x.textContent ?? '').trim()),
+        b?.click()
+      })
+      const connected = await waitFor(
+        page,
+        () => {
+          const btns = [...document.querySelectorAll('button')].map(
+            (b) => b.textContent?.trim() ?? '',
+          )
+          return btns.some((x) => /sign out/i.test(x)) ||
+            btns.some((x) => /signed in|connected to/i.test(x))
+            ? true
+            : null
+        },
+        { timeout: 45000, label: 'oauth connected UI' },
       )
-      b?.click()
+      expect(connected).toBe(true)
+      expect(
+        await poll(() => getConfig(page).then((c) => c.remoteOauthConnected === true), {
+          timeout: 15000,
+          label: 'bridge oauth connected',
+        }),
+      ).toBe(true)
     })
-    const connected = await waitFor(
-      page,
-      () => {
-        const btns = [...document.querySelectorAll('button')].map(
-          (b) => b.textContent?.trim() ?? '',
-        )
-        return btns.some((x) => /sign out/i.test(x)) ||
-          btns.some((x) => /signed in|connected to/i.test(x))
-          ? true
-          : null
-      },
-      { timeout: 45000, label: 'oauth connected UI' },
-    )
-    expect(connected).toBe(true)
-    expect(
-      await poll(() => getConfig(page).then((c) => c.remoteOauthConnected === true), {
-        timeout: 15000,
-        label: 'bridge oauth connected',
-      }),
-    ).toBe(true)
-  })
 
-  it('streams a chat reply over the oauth session', async () => {
-    await gotoHash(page, '#/')
-    await sendChat(page, 'oauth reconnect test')
-    await waitForBodyText(page, 'Hello from the mock gateway', {
-      timeout: 30000,
-      label: 'oauth baseline reply',
+    await test.step('streams a chat reply over the oauth session', async () => {
+      await gotoHash(page, '#/')
+      await sendChat(page, 'oauth reconnect test')
+      await waitForBodyText(page, 'Hello from the mock gateway', {
+        timeout: 30000,
+        label: 'oauth baseline reply',
+      })
     })
-  })
 
-  it('keeps the oauth session once the proxy is restarted', async () => {
-    stopByPort(PROXY_PORT)
-    await page.waitForTimeout(4000)
+    await test.step('keeps the oauth session once the proxy is restarted', async () => {
+      // 本 worker 独享代理：重启本 worker 自己的 proxyPort，不影响其它 worker。
+      stopByPort(stack.proxyPort)
+      await page.waitForTimeout(4000)
 
-    startProxy()
-    await waitForHttp(`${PROXY_URL}/api/proxy/meta`)
-    await page.waitForTimeout(3000)
+      startProxy(stack.proxyPort)
+      await waitForHttp(`http://127.0.0.1:${stack.proxyPort}/api/proxy/meta`)
+      await page.waitForTimeout(3000)
 
-    // ADR-0023：凭证在浏览器 cookie，新代理实例解码恢复——会话保持连接。
-    expect(
-      await poll(() => getConfig(page).then((c) => c.remoteOauthConnected === true), {
-        timeout: 20000,
-        label: 'oauth session survives restart',
-      }),
-    ).toBe(true)
+      // ADR-0023：凭证在浏览器 cookie，新代理实例解码恢复——会话保持连接。
+      expect(
+        await poll(() => getConfig(page).then((c) => c.remoteOauthConnected === true), {
+          timeout: 20000,
+          label: 'oauth session survives restart',
+        }),
+      ).toBe(true)
 
-    // 聊天继续可用（WS 经 cookie 恢复的会话拨号）。
-    await gotoHash(page, '#/')
-    await sendChat(page, 'after proxy restart')
-    await waitForBodyText(page, 'Hello from the mock gateway', {
-      timeout: 30000,
-      label: 'post-restart reply',
+      // 聊天继续可用（WS 经 cookie 恢复的会话拨号）。
+      await gotoHash(page, '#/')
+      await sendChat(page, 'after proxy restart')
+      await waitForBodyText(page, 'Hello from the mock gateway', {
+        timeout: 30000,
+        label: 'post-restart reply',
+      })
     })
+
+    stopByPort(stack.tokenPort)
+    stopByPort(stack.oauthPort)
   })
 })
