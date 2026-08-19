@@ -102,3 +102,10 @@
     flex-wrap: wrap;
   }
 }
+
+/* 7. 首屏 intro（HERMES AGENT wordmark）：上游是 w-full 无宽度上限，配合
+  fit-text 会把字撑满整行，桌面宽屏下巨宽。限到 48rem 并居中。 */
+[data-slot='aui_intro'] {
+  max-width: 48rem;
+  margin-inline: auto;
+}
