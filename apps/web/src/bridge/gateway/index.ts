@@ -52,6 +52,7 @@ import {
 } from '../registry'
 import type { WebConnectionRecord } from '../registry'
 
+import { GatewayFileDownloader } from './download'
 import { RemoteFsGit } from './fs-git'
 import { OauthBroker } from './oauth'
 import {
@@ -97,6 +98,7 @@ export interface WebBridgeOptions {
 
 export class GatewayAdapter {
   private readonly apiImpl: typeof webApi
+  private readonly downloader: GatewayFileDownloader
   private readonly fsGit: RemoteFsGit
   private readonly oauth: OauthBroker
   // M7：connectionApplied 订阅者。桌面端由 main 进程在 apply 后发 IPC；
@@ -106,6 +108,7 @@ export class GatewayAdapter {
 
   constructor(options: WebBridgeOptions = {}) {
     this.apiImpl = options.api ?? webApi
+    this.downloader = new GatewayFileDownloader()
     this.fsGit = new RemoteFsGit(this.apiImpl)
     this.oauth = new OauthBroker()
   }
@@ -608,6 +611,14 @@ export class GatewayAdapter {
 
   readFileDataUrl(filePath: string) {
     return this.fsGit.readFileDataUrl(filePath)
+  }
+
+  saveGatewayFile(payload: {
+    path: string
+    profile?: null | string
+    suggestedName?: string
+  }) {
+    return this.downloader.saveGatewayFile(payload)
   }
 
   gitRoot(path: string) {

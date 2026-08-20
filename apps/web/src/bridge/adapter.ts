@@ -129,6 +129,7 @@ export function buildWebBridge(
     // OPFS）；其余走 gateway REST。
     readFileDataUrl: async (path) =>
       (await browser.readFileDataUrl(path)) || gateway.readFileDataUrl(path),
+    saveGatewayFile: (payload) => gateway.saveGatewayFile(payload),
     saveImageFile: (blob, name) => browser.saveImageFile(blob, name),
     releaseBlobFile: (path) => browser.releaseBlobFile(path),
     gitRoot: (path) => gateway.gitRoot(path),
