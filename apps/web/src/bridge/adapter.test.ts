@@ -22,6 +22,7 @@ describe('buildWebBridge / installWebBridge', () => {
     expect(typeof bridge.petOverlay.open).toBe('function')
     expect(typeof bridge.git!.review.list).toBe('function')
     expect(typeof bridge.terminal.start).toBe('function')
+    expect(typeof bridge.saveGatewayFile).toBe('function')
   })
 
   it('bridge satisfies the global type contract (compile-time check)', () => {

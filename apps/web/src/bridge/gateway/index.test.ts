@@ -2,13 +2,40 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { GatewayAdapter, WEB_VERSION, toHermesConnection, webApi } from './index'
 import { proxyBaseUrl } from './rest'
-import { loadRegistry } from '../registry'
+import { loadRegistry, writeProfilePreference } from '../registry'
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: { 'Content-Type': 'application/json' },
   })
+}
+
+function textResponse(
+  status: number,
+  body: string,
+  headers: Record<string, string> = {},
+): Response {
+  return new Response(body, { status, headers })
+}
+
+function stubBrowserDownload(href: string) {
+  const createObjectUrl = vi.fn((_blob: Blob) => href)
+  const revokeObjectUrl = vi.fn()
+  const NativeURL = URL
+
+  class StubURL extends NativeURL {
+    static createObjectURL = createObjectUrl
+    static revokeObjectURL = revokeObjectUrl
+  }
+
+  vi.stubGlobal('URL', StubURL)
+  vi.useFakeTimers()
+
+  const click = vi.fn()
+  vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(click)
+
+  return { click, createObjectUrl, revokeObjectUrl }
 }
 
 describe('webApi (REST forwarding)', () => {
@@ -104,6 +131,12 @@ describe('gatewayAdapter', () => {
     loadRegistry()
   })
 
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+  })
+
   it('getConnection exposes every field the renderer reads', async () => {
     const adapter = new GatewayAdapter()
     const conn = await adapter.getConnection()
@@ -136,6 +169,138 @@ describe('gatewayAdapter', () => {
 
     expect(await adapter.revalidateConnection()).toEqual({ ok: true, rebuilt: false })
     expect(await adapter.touchBackend()).toEqual({ ok: true })
+  })
+
+  it('saveGatewayFile downloads through /api/fs/download and triggers a browser download', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      textResponse(200, 'hello', {
+        'Content-Disposition': "attachment; filename*=UTF-8''report%20final.txt",
+        'Content-Type': 'text/plain',
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    const { click, createObjectUrl, revokeObjectUrl } =
+      stubBrowserDownload('blob:download')
+
+    const adapter = new GatewayAdapter()
+    const result = await adapter.saveGatewayFile({
+      path: '/tmp/report.txt',
+      suggestedName: 'fallback.txt',
+    })
+
+    expect(result).toEqual({ path: 'report final.txt', saved: true })
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe(
+      `${window.location.origin}/api/fs/download?path=%2Ftmp%2Freport.txt`,
+    )
+    expect(init.credentials).toBe('include')
+    expect(init.headers['X-Hermes-Session-Token']).toBe('mock-token')
+    expect(init.headers['X-Hermes-Target']).toBe('http://127.0.0.1:5180')
+    const firstCall = createObjectUrl.mock.calls[0] as [Blob] | undefined
+    const downloaded = firstCall?.[0]
+    expect(downloaded).toBeTruthy()
+    if (!downloaded) {
+      throw new Error('missing downloaded blob')
+    }
+    expect(downloaded.type).toBe('text/plain')
+    expect(downloaded.size).toBe(5)
+    await expect(downloaded.text()).resolves.toBe('hello')
+    expect(click).toHaveBeenCalledTimes(1)
+    expect(document.querySelector('a[download="report final.txt"]')).toBeNull()
+    vi.runOnlyPendingTimers()
+    expect(revokeObjectUrl).toHaveBeenCalledWith('blob:download')
+  })
+
+  it('saveGatewayFile falls back to read-data-url only when /api/fs/download is missing', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(404, { detail: 'missing' }))
+      .mockResolvedValueOnce(
+        jsonResponse(200, { dataUrl: 'data:text/plain;base64,aGVsbG8=' }),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+    stubBrowserDownload('blob:fallback')
+
+    const adapter = new GatewayAdapter()
+    const result = await adapter.saveGatewayFile({
+      path: '/tmp/legacy.md',
+      suggestedName: 'legacy.md',
+    })
+
+    expect(result).toEqual({ path: 'legacy.md', saved: true })
+    expect(fetchMock.mock.calls[1][0]).toBe(
+      `${window.location.origin}/api/fs/read-data-url?path=%2Ftmp%2Flegacy.md`,
+    )
+  })
+
+  it('saveGatewayFile preserves a requested profile scope on both transports', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(404, { detail: 'missing' }))
+      .mockResolvedValueOnce(
+        jsonResponse(200, { dataUrl: 'data:text/plain;base64,aGVsbG8=' }),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+    stubBrowserDownload('blob:profile')
+
+    const adapter = new GatewayAdapter()
+    await adapter.saveGatewayFile({
+      path: '/tmp/profile.md',
+      profile: 'reviewer',
+      suggestedName: 'profile.md',
+    })
+
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      `${window.location.origin}/api/fs/download?path=%2Ftmp%2Fprofile.md&profile=reviewer`,
+    )
+    expect(fetchMock.mock.calls[1][0]).toBe(
+      `${window.location.origin}/api/fs/read-data-url?path=%2Ftmp%2Fprofile.md&profile=reviewer`,
+    )
+  })
+
+  it('saveGatewayFile falls back to the active profile preference when no profile is passed', async () => {
+    writeProfilePreference('coder')
+    const fetchMock = vi.fn().mockResolvedValue(textResponse(200, 'hello'))
+    vi.stubGlobal('fetch', fetchMock)
+    stubBrowserDownload('blob:active-profile')
+
+    const adapter = new GatewayAdapter()
+    await adapter.saveGatewayFile({ path: '/tmp/current.md' })
+
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      `${window.location.origin}/api/fs/download?path=%2Ftmp%2Fcurrent.md&profile=coder`,
+    )
+  })
+
+  it('saveGatewayFile surfaces non-404 download errors', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(500, { detail: 'boom' }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const adapter = new GatewayAdapter()
+
+    await expect(adapter.saveGatewayFile({ path: '/tmp/bad.txt' })).rejects.toThrow(
+      'HTTP 500',
+    )
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('saveGatewayFile omits the token header for cookie-backed sessions', async () => {
+    const adapter = new GatewayAdapter()
+    await adapter.saveConnectionConfig({
+      mode: 'remote',
+      remoteAuthMode: 'oauth',
+      remoteUrl: 'http://127.0.0.1:9119',
+    })
+    const fetchMock = vi.fn().mockResolvedValue(textResponse(200, 'hello'))
+    vi.stubGlobal('fetch', fetchMock)
+    stubBrowserDownload('blob:oauth')
+
+    await adapter.saveGatewayFile({ path: '/tmp/oauth.txt' })
+
+    const [, init] = fetchMock.mock.calls[0]
+    expect(init.credentials).toBe('include')
+    expect(init.headers['X-Hermes-Session-Token']).toBeUndefined()
+    expect(init.headers['X-Hermes-Target']).toBe('http://127.0.0.1:9119')
   })
 
   it('boot progress is an idle snapshot (the renderer drives its own steps)', async () => {

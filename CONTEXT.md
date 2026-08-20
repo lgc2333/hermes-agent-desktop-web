@@ -86,6 +86,10 @@ _Avoid_: 本地文件路径（Web 没有 gateway 侧等价）、临时文件（�
 虚拟路径里的单调递增内部序号，用作 Web 本地存储键的唯一身份（ADR-0020）。仅 Web 内部可见，不进入提交给 gateway 的上传文件名。
 _Avoid_: 前缀、序号（口语）
 
+**Gateway file download**:
+把 Target 上的单个 gateway 文件交给浏览器下载管理器保存（ADR-0025）。Web 只能返回浏览器可见的下载文件名，不承诺用户本机绝对路径，也不等同于打开所在文件夹。
+_Avoid_: 另存为路径选择（Web 不知道本机路径）、附件上传（反方向）、reveal/openDir（OS 文件管理器能力）
+
 **Session source**:
 session.create 上标记客户端表面的标签；本项目复用桌面端的 'desktop' 值。
 _Avoid_: 平台（上游 platform 是另一个概念）
