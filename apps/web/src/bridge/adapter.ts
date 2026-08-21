@@ -191,6 +191,10 @@ export function buildWebBridge(
     setActiveWork: (payload) => denied.setActiveWork(payload),
     setTitleBarTheme: (payload) => denied.setTitleBarTheme(payload),
     setNativeTheme: (mode) => denied.setNativeTheme(mode),
+    // Web 无 Electron 原生窗口材质；显式 false，避免 vendor 在非 Electron
+    // shell 里按 UA fallback 误开启 glass/translucency UI。
+    glassSupported: false,
+    translucencySupported: false,
     setTranslucency: (payload) => denied.setTranslucency(payload),
     setKeepAwake: (on) => denied.setKeepAwake(on),
     setPreviewShortcutActive: (active) => denied.setPreviewShortcutActive(active),

@@ -140,7 +140,7 @@ export class DeniedAdapter {
     setBounds(_bounds: { height: number; width: number; x: number; y: number }): void {
       // no-op
     },
-    async setVibrancy(_on: boolean): Promise<{ ok: boolean }> {
+    async setFrost(_on: boolean): Promise<{ ok: boolean }> {
       return { ok: false }
     },
     setSession(_sessionId: null | string): void {
