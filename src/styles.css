@@ -32,7 +32,17 @@
    behind another app. main.tsx owns this attribute only for the primary
    window; wake/pet overlays retain their purpose-built visibility behavior. */
 :root[data-renderer-animations-paused]
-  :is(.shimmer, .quest-glow, .pet-egg, .pet-egg__glow, .pet-egg-shadow, .pet-wobble, .progress-slide, .kanban-arc),
+  :is(
+    .shimmer,
+    .quest-glow,
+    .pet-egg,
+    .pet-egg__glow,
+    .pet-egg-shadow,
+    .pet-wobble,
+    .progress-slide,
+    .kanban-arc,
+    .glyph-spinner__strip
+  ),
 :root[data-renderer-animations-paused] .arc-border::before,
 :root[data-renderer-animations-paused]
   [data-slot='aui_assistant-message-content']
@@ -2095,6 +2105,28 @@ button[data-slot='aui_msg-reactions']:not([data-reacted]):focus-visible,
 button[data-slot='aui_msg-reactions']:not([data-reacted])[data-state='open'] {
   opacity: 0.5;
   pointer-events: auto;
+}
+
+/* Failed-turn error card actions (Retry · Switch provider · Open logs ·
+   Copy diagnostics) — compact pill buttons tinted to the card's destructive
+   palette. Stylesheet-owned so the CopyButton inline appearance picks the
+   same look via the shared class. */
+.aui-error-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  border: 1px solid color-mix(in srgb, var(--dt-destructive) 30%, transparent);
+  border-radius: 9999px;
+  background: transparent;
+  padding: 0.1rem 0.55rem;
+  font-size: 0.72rem;
+  line-height: 1.1rem;
+  color: color-mix(in srgb, var(--dt-destructive) 80%, var(--ui-text-secondary));
+  cursor: pointer;
+}
+
+.aui-error-action:hover {
+  background: color-mix(in srgb, var(--dt-destructive) 10%, transparent);
 }
 
 .group:hover button[data-slot='aui_msg-reactions']:not([data-reacted]):hover,
