@@ -149,6 +149,7 @@ export class DeniedAdapter {
     onGoto: noopUnsub,
     onChanged: noopUnsub,
     onCursor: noopUnsub,
+    onGameOverlay: noopUnsub,
   }
 
   quickEntry = {

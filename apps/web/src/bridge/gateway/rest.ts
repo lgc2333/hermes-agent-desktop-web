@@ -7,7 +7,7 @@
 
 import type { HermesApiRequest, HermesConnection } from '@/global'
 
-import { getPrimaryConnection } from '../registry'
+import { getConnectionById, getPrimaryConnection } from '../registry'
 import type { WebConnectionRecord } from '../registry'
 
 /**
@@ -100,7 +100,7 @@ export function apiError(status: number, path: string, body: string): Error {
  *   - upload：单文件 multipart（FastAPI UploadFile 端点）。
  */
 export async function webApi<T>(request: HermesApiRequest): Promise<T> {
-  const conn = getPrimaryConnection()
+  const conn = getConnectionById(request.connectionId)
   const base = gatewayBaseUrl()
   const path = request.path.startsWith('/') ? request.path : `/${request.path}`
   const method = (request.method ?? 'GET').toUpperCase()

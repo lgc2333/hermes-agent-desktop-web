@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 
 import {
   defaultMockConnection,
+  getConnectionById,
   getPrimaryConnection,
   loadRegistry,
   removeConnection,
@@ -47,6 +48,22 @@ describe('connection registry (ADR-0002: credentials in browser)', () => {
     const conn = getPrimaryConnection()
 
     expect(conn.id).toBe(DEFAULT_CONNECTION_ID)
+  })
+
+  it('getConnectionById resolves named sources and falls back safely', () => {
+    loadRegistry()
+    upsertConnection({
+      id: 'prod',
+      label: 'Prod',
+      kind: 'remote',
+      url: 'https://hermes.example',
+      authMode: 'token',
+      token: 'prod-token',
+    })
+
+    expect(getConnectionById('prod').url).toBe('https://hermes.example')
+    expect(getConnectionById('missing').id).toBe(DEFAULT_CONNECTION_ID)
+    expect(getConnectionById('local').id).toBe(DEFAULT_CONNECTION_ID)
   })
 
   it('setPrimaryConnection only accepts known ids', () => {

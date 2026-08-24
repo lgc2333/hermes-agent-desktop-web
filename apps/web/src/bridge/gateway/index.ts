@@ -614,6 +614,7 @@ export class GatewayAdapter {
   }
 
   saveGatewayFile(payload: {
+    connectionId?: null | string
     path: string
     profile?: null | string
     suggestedName?: string

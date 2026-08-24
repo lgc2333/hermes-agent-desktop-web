@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { GatewayAdapter, WEB_VERSION, toHermesConnection, webApi } from './index'
 import { proxyBaseUrl } from './rest'
-import { loadRegistry, writeProfilePreference } from '../registry'
+import { loadRegistry, upsertConnection, writeProfilePreference } from '../registry'
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -62,6 +62,24 @@ describe('webApi (REST forwarding)', () => {
     expect(init.headers['X-Hermes-Session-Token']).toBe('mock-token')
     expect(init.headers['X-Hermes-Target']).toBe('http://127.0.0.1:5180')
     expect(init.method).toBe('GET')
+  })
+
+  it('routes REST calls with connectionId through the selected registry target', async () => {
+    upsertConnection({
+      id: 'prod',
+      label: 'Prod',
+      kind: 'remote',
+      url: 'https://hermes.example',
+      authMode: 'token',
+      token: 'prod-token',
+    })
+    fetchMock.mockResolvedValue(jsonResponse(200, { ok: true }))
+
+    await webApi({ path: '/api/status', connectionId: 'prod' })
+
+    const [, init] = fetchMock.mock.calls[0]
+    expect(init.headers['X-Hermes-Session-Token']).toBe('prod-token')
+    expect(init.headers['X-Hermes-Target']).toBe('https://hermes.example')
   })
 
   it('normalizes 404 into the desktop endpoint-missing error shape', async () => {
@@ -256,6 +274,31 @@ describe('gatewayAdapter', () => {
     expect(fetchMock.mock.calls[1][0]).toBe(
       `${window.location.origin}/api/fs/read-data-url?path=%2Ftmp%2Fprofile.md&profile=reviewer`,
     )
+  })
+
+  it('saveGatewayFile routes connectionId-scoped downloads to that registry target', async () => {
+    upsertConnection({
+      id: 'prod',
+      label: 'Prod',
+      kind: 'remote',
+      url: 'https://hermes.example',
+      authMode: 'token',
+      token: 'prod-token',
+    })
+    const fetchMock = vi.fn().mockResolvedValue(textResponse(200, 'hello'))
+    vi.stubGlobal('fetch', fetchMock)
+    stubBrowserDownload('blob:prod')
+
+    const adapter = new GatewayAdapter()
+    await adapter.saveGatewayFile({
+      connectionId: 'prod',
+      path: '/tmp/prod.txt',
+      suggestedName: 'prod.txt',
+    })
+
+    const [, init] = fetchMock.mock.calls[0]
+    expect(init.headers['X-Hermes-Session-Token']).toBe('prod-token')
+    expect(init.headers['X-Hermes-Target']).toBe('https://hermes.example')
   })
 
   it('saveGatewayFile falls back to the active profile preference when no profile is passed', async () => {

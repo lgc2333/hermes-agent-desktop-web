@@ -101,6 +101,23 @@ export function getPrimaryConnection(): WebConnectionRecord {
   )
 }
 
+export function getConnectionById(id?: null | string): WebConnectionRecord {
+  const normalized = String(id ?? '').trim()
+
+  if (!normalized) {
+    return getPrimaryConnection()
+  }
+
+  const registry = loadRegistry()
+
+  return (
+    registry.connections.find((c) => c.id === normalized) ??
+    (normalized === DEFAULT_CONNECTION_ID
+      ? defaultMockConnection()
+      : getPrimaryConnection())
+  )
+}
+
 export function saveRegistry(store: WebConnectionsStore): void {
   writeRaw(store)
 }

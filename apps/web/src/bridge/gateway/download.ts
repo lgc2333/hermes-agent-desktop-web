@@ -3,11 +3,12 @@
  * 浏览器下载管理器。不同于 Electron save dialog，Web 不能知道用户本机路径。
  */
 
-import { getPrimaryConnection, readProfilePreference } from '../registry'
+import { getConnectionById, readProfilePreference } from '../registry'
 
 import { apiError, gatewayBaseUrl, proxyFetch } from './rest'
 
 export interface SaveGatewayFilePayload {
+  connectionId?: null | string
   path: string
   profile?: null | string
   suggestedName?: string
@@ -135,10 +136,15 @@ export class GatewayFileDownloader {
     const profile =
       payload.profile === undefined ? readProfilePreference() : payload.profile
     const downloadPath = gatewayFsPath('download', filePath, profile)
-    const res = await this.fetchGateway(downloadPath)
+    const res = await this.fetchGateway(downloadPath, payload.connectionId)
 
     if (res.status === 404) {
-      return this.saveViaDataUrl(filePath, suggested || fallbackName, profile)
+      return this.saveViaDataUrl(
+        filePath,
+        suggested || fallbackName,
+        profile,
+        payload.connectionId,
+      )
     }
 
     if (!res.ok) {
@@ -159,9 +165,10 @@ export class GatewayFileDownloader {
     filePath: string,
     filename: string,
     profile?: null | string,
+    connectionId?: null | string,
   ): Promise<SaveGatewayFileResult> {
     const path = gatewayFsPath('read-data-url', filePath, profile)
-    const res = await this.fetchGateway(path)
+    const res = await this.fetchGateway(path, connectionId)
 
     if (!res.ok) {
       throw await responseError(res, path)
@@ -179,8 +186,8 @@ export class GatewayFileDownloader {
     return { path: filename, saved: true }
   }
 
-  private fetchGateway(path: string): Promise<Response> {
-    const conn = getPrimaryConnection()
+  private fetchGateway(path: string, connectionId?: null | string): Promise<Response> {
+    const conn = getConnectionById(connectionId)
     const oauth = conn.authMode === 'oauth'
 
     return proxyFetch(`${gatewayBaseUrl()}${path}`, {
