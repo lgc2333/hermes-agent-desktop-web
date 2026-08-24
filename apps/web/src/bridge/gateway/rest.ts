@@ -7,7 +7,7 @@
 
 import type { HermesApiRequest, HermesConnection } from '@/global'
 
-import { getConnectionById, getPrimaryConnection } from '../registry'
+import { getConnectionById } from '../registry'
 import type { WebConnectionRecord } from '../registry'
 
 /**
