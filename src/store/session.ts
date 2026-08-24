@@ -117,27 +117,47 @@ export function sessionBelongsToProfile(
 }
 
 /**
- * The profile a routed session belongs to, for keying the remembered id.
+ * The profile that owns a session, from SYNC known sources only: the session
+ * row (the cross-profile aggregator tags each row) then the owner hint recorded
+ * at open time. Returns undefined when neither knows — the caller must resolve
+ * it (cross-profile probe) rather than fall back to whatever is active, because
+ * "active" is presentation state and never a routing authority. Hidden sessions
+ * (Bot Mode's canonical "Bot Chat") never appear in the row list, so the hint is
+ * often the only sync source.
+ */
+export function knownSessionProfile(sessions: readonly SessionInfo[], sessionId: null | string): string | undefined {
+  if (!sessionId) {
+    return undefined
+  }
+
+  const owner = sessions.find(session => sessionMatchesStoredId(session, sessionId))?.profile?.trim()
+
+  if (owner) {
+    return owner
+  }
+
+  const hint = getSessionOwnerHint(sessionId)
+
+  return (hint?.targetProfile ?? hint?.profile)?.trim() || undefined
+}
+
+/**
+ * The profile a routed session belongs to, for keying the remembered id and
+ * other PRESENTATION uses (which profile's sidebar/navigation this session sits
+ * under). Falls back to the active gateway profile when the owner is unknown.
  *
- * Prefer the owning profile recorded on the session row (the cross-profile
- * aggregator tags each row), so the session is remembered under ITS profile
- * even while a different one is live. Falls back to the active gateway profile
- * for a session not yet in the in-memory list.
+ * Do NOT use this to ROUTE a session-scoped RPC: the active-profile fallback is
+ * exactly what sends a hidden/unlisted session's RPC to a backend that never
+ * owned it. Routing must use `knownSessionProfile` + a cross-profile probe and
+ * surface an error instead of falling back. This remains for the navigation
+ * keying it was written for.
  */
 export function rememberedSessionProfile(
   sessions: readonly SessionInfo[],
   sessionId: null | string,
   activeProfile: null | string
 ): string {
-  if (sessionId) {
-    const owner = sessions.find(session => sessionMatchesStoredId(session, sessionId))?.profile?.trim()
-
-    if (owner) {
-      return owner
-    }
-  }
-
-  return (activeProfile ?? '').trim() || 'default'
+  return knownSessionProfile(sessions, sessionId) ?? ((activeProfile ?? '').trim() || 'default')
 }
 
 // The last non-overlay route (a page like /skills, or a session route), so a

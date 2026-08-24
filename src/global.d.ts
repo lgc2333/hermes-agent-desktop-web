@@ -101,6 +101,7 @@ declare global {
         onGoto: (callback: (sessionId: string) => void) => () => void
         onChanged: (callback: (state: { open: boolean; sessionId: null | string }) => void) => () => void
         onCursor: (callback: (point: { x: number; y: number } | null) => void) => () => void
+        onGameOverlay: (callback: (state: { active: boolean; app: string }) => void) => () => void
       }
       // Quick Entry: a global-hotkey mini composer window. Main owns the OS
       // shortcut registration + the persisted preference (it must restore the
@@ -220,7 +221,12 @@ declare global {
       }) => Promise<null | string>
       writeClipboard: (text: string) => Promise<boolean>
       readClipboard: () => Promise<string>
-      saveGatewayFile?: (payload: { path: string; profile?: null | string; suggestedName?: string }) => Promise<{
+      saveGatewayFile?: (payload: {
+        connectionId?: null | string
+        path: string
+        profile?: null | string
+        suggestedName?: string
+      }) => Promise<{
         canceled?: boolean
         path?: string
         saved: boolean

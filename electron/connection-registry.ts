@@ -1207,6 +1207,142 @@ export function setLastUsedConnection(registry: ConnectionRegistry, id: string):
   return { ...registry, lastUsed: id }
 }
 
+/**
+ * Reconcile a successfully-coerced global v1 connection config into the v2
+ * registry. Settings still writes connection.json for compatibility, but an
+ * Apply must publish the same primary identity to connections.json in the
+ * same transaction or the live remote descriptor has no connectionId.
+ *
+ * Remote-shaped entries are matched by normalized URL across remote/cloud so
+ * changing provenance never duplicates a gateway. Existing identity and
+ * user-chosen label win; a new entry derives both from the host. Switching to
+ * local keeps registered remotes available while moving primary/last-used
+ * back to This device.
+ */
+export function reconcileAppliedGlobalConnection(
+  registry: ConnectionRegistry,
+  config: Record<string, any>
+): ConnectionRegistry {
+  const mode = config?.mode
+
+  if (!modeIsRemoteLike(mode)) {
+    if (mode === 'local') {
+      return { ...registry, primary: LOCAL_CONNECTION_ID, lastUsed: LOCAL_CONNECTION_ID }
+    }
+
+    // SSH registry identity is managed by its existing registry editor and
+    // migration path. Do not reinterpret or delete it here.
+    return registry
+  }
+
+  const block = config.remote && typeof config.remote === 'object' ? config.remote : {}
+  const url = normalizeRemoteBaseUrl(block.url)
+
+  const existing = registry.connections.find(connection => {
+    if (connection.kind !== 'remote' && connection.kind !== 'cloud') {
+      return false
+    }
+
+    try {
+      return normalizeRemoteBaseUrl(connection.url) === url
+    } catch {
+      return false
+    }
+  })
+
+  const kind: ConnectionKind = mode === 'cloud' ? 'cloud' : 'remote'
+
+  const label =
+    existing?.label ||
+    uniqueLabel(
+      hostLabelFromBaseUrl(url) || (kind === 'cloud' ? 'Hermes Cloud' : 'Remote gateway'),
+      registry.connections.map(connection => connection.label)
+    )
+
+  const entry = normalizeConnectionInput(
+    {
+      id: existing?.id,
+      kind,
+      label,
+      url,
+      authMode: block.authMode,
+      token: block.token,
+      headers: block.headers,
+      org: block.org
+    },
+    registry
+  )
+
+  return {
+    ...upsertConnection(registry, entry),
+    primary: entry.id,
+    lastUsed: entry.id
+  }
+}
+
+/**
+ * Heal an already-created registry that never learned about the v1 route it is
+ * supposed to be serving.
+ *
+ * `migrateV1ToRegistry` runs exactly once — only when connections.json does not
+ * exist. A user who was local at that moment and configured a remote gateway
+ * afterwards (Settings -> Gateway writes connection.json alone) ends up with a
+ * live remote that the registry cannot name: `resolvedConnectionId` returns
+ * null, `primary` still says `local`, and every launch force-switches the
+ * window onto a fresh local backend seconds after boot. Deleting
+ * connections.json by hand is the only recovery today.
+ *
+ * Deliberately narrow: heal ONLY when the v1 global route has no matching
+ * registry entry at all. That is the drift state and nothing else. If the
+ * route is already registered but `primary` names another source, the user
+ * chose that in the Connections panel and we leave it alone.
+ */
+export function reconcileRegistryDrift(
+  registry: ConnectionRegistry,
+  v1: unknown
+): { changed: boolean; registry: ConnectionRegistry } {
+  const config = v1 && typeof v1 === 'object' ? (v1 as Record<string, any>) : {}
+  const unchanged = { changed: false, registry }
+
+  if (!modeIsRemoteLike(config.mode)) {
+    return unchanged
+  }
+
+  const block = config.remote && typeof config.remote === 'object' ? config.remote : {}
+
+  let url = ''
+
+  try {
+    url = normalizeRemoteBaseUrl(block.url)
+  } catch {
+    // An unparseable v1 URL is not a route we can register. The v1 path keeps
+    // failing the way it already does; do not corrupt the registry over it.
+    return unchanged
+  }
+
+  if (!url) {
+    return unchanged
+  }
+
+  const alreadyRegistered = registry.connections.some(connection => {
+    if (connection.kind !== 'remote' && connection.kind !== 'cloud') {
+      return false
+    }
+
+    try {
+      return normalizeRemoteBaseUrl(connection.url) === url
+    } catch {
+      return false
+    }
+  })
+
+  if (alreadyRegistered) {
+    return unchanged
+  }
+
+  return { changed: true, registry: reconcileAppliedGlobalConnection(registry, config) }
+}
+
 /** Choose whether launch restores the explicit primary or the last-used source. */
 export function setConnectionLaunchMode(registry: ConnectionRegistry, launchMode: string): ConnectionRegistry {
   if (launchMode !== 'last-used' && launchMode !== 'primary') {
