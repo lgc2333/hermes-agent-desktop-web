@@ -48,6 +48,7 @@ function loadOpenPath({ openSession, request }) {
       ? { bot: { name: owner }, key: owner, name: owner, route: null }
       : { bot: owner, key: owner?.name, name: owner?.name, route: owner?.route || null }),
     backendTargetProfile: (route, name) => route?.targetProfile || name,
+    botWorkspaceOwnerKey: bot => `bot:${bot?.connectionId ? `${bot.connectionId}::` : ''}${bot?.name || 'default'}`,
     requestForBot: (_bot, method, params) => context.host.request(method, params),
     window: { setTimeout: callback => callback() }
   }
@@ -76,12 +77,18 @@ test('open resolves the profile\u2019s "Bot Chat" row by exact title and opens i
     }
   })
 
-  assert.equal(await runtime.openBotCanonicalChat('ops'), 'forever-chat')
+  const opened = await runtime.openBotCanonicalChat('ops')
+  assert.equal(opened.registryId, 'forever-chat')
+  assert.equal(opened.openedId, 'forever-chat')
   assert.equal(runtime.opened.length, 1)
   assert.equal(runtime.opened[0].id, 'forever-chat')
   assert.equal(runtime.opened[0].options.profile, 'ops')
-  assert.equal(runtime.opened[0].options.keepAllProfilesScope, false,
-    'opening a bot moves the workspace onto that bot')
+  assert.equal(runtime.opened[0].options.keepAllProfilesScope, true,
+    'opening a bot leaves the Sessions workspace on its current gateway')
+  assert.equal(runtime.opened[0].options.intent, 'tab')
+  assert.equal(runtime.opened[0].options.workspaceMode, 'bots')
+  assert.equal(runtime.opened[0].options.workspaceOwnerKey, 'bot:ops')
+  assert.equal(runtime.opened[0].options.tabTitle, 'Bot Chat')
 
   const list = runtime.requests.find(r => r.method === 'session.list')
   assert.equal(list?.params?.title, 'Bot Chat', 'lookup is by exact title')
@@ -102,8 +109,9 @@ test('a compression-rotated registry row opens the lineage tip', async () => {
     }
   })
 
-  assert.equal(await runtime.openBotCanonicalChat('ops'), 'root-1',
-    'the durable registry id is returned')
+  const opened = await runtime.openBotCanonicalChat('ops')
+  assert.equal(opened.registryId, 'root-1', 'the durable registry id is returned')
+  assert.equal(opened.openedId, 'tip-9', 'the lineage tip rides alongside for focus matching')
   assert.equal(runtime.opened[0].id, 'tip-9', 'the live tip is what opens')
 })
 
@@ -134,7 +142,9 @@ test('no registry row mints a hidden "Bot Chat" session with the intro kickoff',
     }
   })
 
-  assert.equal(await runtime.openBotCanonicalChat('newbie'), 'fresh-1')
+  const opened = await runtime.openBotCanonicalChat('newbie')
+  assert.equal(opened.registryId, 'fresh-1')
+  assert.equal(opened.openedId, 'fresh-1')
   const create = runtime.requests.find(r => r.method === 'session.create')
   assert.equal(create?.params?.title, 'Bot Chat')
   assert.equal(create?.params?.hidden, true)
@@ -181,8 +191,9 @@ test('an ordinary titled session never satisfies the registry lookup', async () 
     }
   })
 
-  assert.equal(await runtime.openBotCanonicalChat('ops'), 'fresh-2',
-    'no row titled "Bot Chat" → create; never adopt an ordinary conversation')
+  const opened = await runtime.openBotCanonicalChat('ops')
+  assert.equal(opened.registryId, 'fresh-2', 'no row titled "Bot Chat" → create; never adopt an ordinary conversation')
+  assert.equal(opened.openedId, 'fresh-2')
   assert.ok(!runtime.opened.some(o => o.id === 'scratch'))
 })
 
