@@ -102,6 +102,15 @@ describe('buildWebBridge / installWebBridge', () => {
     expect(typeof bridge.onBootProgress(() => undefined)).toBe('function')
     expect(typeof bridge.onBackendExit(() => undefined)).toBe('function')
     expect(typeof bridge.petOverlay.onState(() => undefined)).toBe('function')
+    expect(bridge.hud?.nativeDrag).toBe(false)
+    expect(bridge.hud?.windowing).toEqual({
+      clientPlacement: false,
+      controlDrag: false,
+      nativeDrag: false,
+      workspaceTransfer: false,
+    })
+    expect(typeof bridge.hud?.setWorkspaceTransfer).toBe('function')
+    expect(typeof bridge.hud?.resetLayout).toBe('function')
     expect(typeof bridge.hud?.onGameOverlay(() => undefined)).toBe('function')
     expect(typeof bridge.quickEntry.onSubmit(() => undefined)).toBe('function')
   })

@@ -125,6 +125,13 @@ export class DeniedAdapter {
   }
 
   hud = {
+    nativeDrag: false,
+    windowing: {
+      clientPlacement: false,
+      controlDrag: false,
+      nativeDrag: false,
+      workspaceTransfer: false,
+    },
     async open(): Promise<{ ok: boolean }> {
       return { ok: false }
     },
@@ -137,8 +144,14 @@ export class DeniedAdapter {
     moveBy(_delta: { height: number; width: number; x: number; y: number }): void {
       // no-op
     },
+    setWorkspaceTransfer(_transferring: boolean): void {
+      // no-op
+    },
     setBounds(_bounds: { height: number; width: number; x: number; y: number }): void {
       // no-op
+    },
+    async resetLayout(): Promise<{ ok: boolean }> {
+      return { ok: false }
     },
     async setFrost(_on: boolean): Promise<{ ok: boolean }> {
       return { ok: false }
