@@ -126,8 +126,11 @@ ref 保护——HEAD 树不变（含补丁），其相对锚点 delta = 恰好�
 - apps/web/src/main.tsx
   - Web 入口：装桥（installWebBridge）→ import vendor 渲染树 + web.css，
     顺序即桥先于渲染层就位。
+  - 另在模块求值期先注册 `context-menu-interceptor`（`installContextMenuInterceptor`，
+    早于渲染层 AppContextMenu 的 useEffect 捕获监听器），处理 Web 独有的右键
+    原生菜单叠盖/文本框抢焦点问题（见 src/context-menu-interceptor.ts 头注）。
   - 同步注意：上游若重构 src/main.tsx 入口（改名/换路径/改 boot 序列），
-    此 import 与装桥顺序须按新结构核对。
+    此 import 与装桥顺序、拦截器注册须按新结构核对。
 
 - apps/web/src/web.css
   - Web 覆盖层（非 vendor）：隐藏桌面专属 UI、适配移动端视口等 Web 差异。
