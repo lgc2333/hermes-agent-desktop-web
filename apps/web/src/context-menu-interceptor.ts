@@ -41,8 +41,10 @@ export function installContextMenuInterceptor(): () => void {
   return () => window.removeEventListener('contextmenu', onContextMenu, true)
 }
 
-/** Mirrors the vendor's `editableFrom` (target.ts): form fields and
- *  `contenteditable` hosts that actually accept editing. */
+/**
+ * Mirrors the vendor's `editableFrom` (target.ts): form fields and
+ * `contenteditable` hosts that actually accept editing.
+ */
 function isEditableElement(element: Element | null): boolean {
   if (!element) {
     return false
