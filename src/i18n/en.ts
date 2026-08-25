@@ -251,6 +251,7 @@ export const en: Translations = {
     openStarmap: 'Open memory graph',
     enterHud: 'HUD mode',
     exitHud: 'Exit HUD mode',
+    resetHudLayout: 'Reset HUD size and position',
     layoutEditor: 'Layout editor',
     layoutEditorTitle: mod => `Layout editor — ${mod}-click resets the layout`
   },
@@ -319,7 +320,7 @@ export const en: Translations = {
       'view.nextTerminal': 'Next terminal',
       'view.prevTerminal': 'Previous terminal',
       'view.closeTerminal': 'Close terminal',
-      'view.terminalSelection': 'Send terminal selection to composer',
+      'view.selectionToComposer': 'Send selection to composer',
       'view.terminalCopy': 'Copy terminal selection',
       'view.terminalPaste': 'Paste into terminal',
       'view.closeTab': 'Close tab',
@@ -589,6 +590,9 @@ export const en: Translations = {
       reactionsDesc: 'iMessage-style emoji tapbacks — react to messages, and Hermes can react to yours.',
       composerPopoutTitle: 'Floating Composer',
       composerPopoutDesc: 'Allow dragging the composer out of its dock. Turn this off to keep it locked at the bottom.',
+      vibeHeartsTitle: 'Vibe Hearts',
+      vibeHeartsDesc:
+        'Floating hearts when you say thanks, ily, good bot, or send a heart. Separate from Message Reactions above.',
       embedsTitle: 'Inline Embeds',
       embedsDesc:
         'Rich previews load from third-party sites (YouTube, X, …). Ask shows a placeholder until you allow each one; Always loads them automatically; Off keeps plain links.',
@@ -1070,7 +1074,6 @@ export const en: Translations = {
       notInCatalog: "isn't in this provider's model list — calls may fall back to a backup.",
       tasks: {
         vision: { label: 'Vision', hint: 'Image analysis' },
-        web_extract: { label: 'Web extract', hint: 'Page summarization' },
         compression: { label: 'Compression', hint: 'Context compaction' },
         skills_hub: { label: 'Skills hub', hint: 'Skill search' },
         approval: { label: 'Approval', hint: 'Smart auto-approve' },
@@ -3071,6 +3074,7 @@ export const en: Translations = {
     closeToRight: 'Close to the right',
     closeAll: 'Close all',
     newSessionTab: 'New session tab',
+    newTab: 'New tab',
     pluginDisabled: pluginId => `Plugin "${pluginId}" disabled`,
     pluginDisabledBody: 'Re-enable it in Settings → Plugins to bring the pane back.',
     missingPane: paneId => `missing pane: ${paneId}`,
