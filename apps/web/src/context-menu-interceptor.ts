@@ -14,6 +14,10 @@
  * This interceptor restores the web-only intent, registered ahead of the vendor
  * AppContextMenu capture listener (import order in main.tsx, before the renderer
  * mounts):
+ *  - Surfaces with their own Radix context menu (pane tabs, status bar, file
+ *    tree, session rows, …) are LEFT ALONE. Radix preventDefaults the native
+ *    menu and opens its own, and it owns its touch long-press timer — any
+ *    interference here breaks e.g. the pane tab close menu on touch.
  *  - Touch long-press: text selection and editables keep the browser's OWN
  *    selection handles + editing affordance (the app menu would sit over the
  *    handles and block selection). Blank chrome, links and images keep the app
@@ -27,6 +31,19 @@
 export function installContextMenuInterceptor(): () => void {
   const onContextMenu = (event: MouseEvent): void => {
     const element = event.target instanceof Element ? event.target : null
+
+    // Surfaces with their own Radix context menu (pane tabs, status bar, file
+    // tree, session rows, …) must keep the WHOLE gesture. Radix preventDefaults
+    // the native menu itself and opens its own, and it has its own touch
+    // long-press timer — so any preventDefault/stopImmediatePropagation here
+    // fights it (a pane tab loses its close menu on touch). Leave them alone.
+    if (
+      element?.closest(
+        '[data-hermes-context-menu-trigger], [data-slot="context-menu-trigger"]',
+      )
+    ) {
+      return
+    }
 
     if (isTouchContext(event)) {
       // Touch drives the platform's own text selection: handles + a floating

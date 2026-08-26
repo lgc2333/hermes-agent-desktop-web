@@ -186,4 +186,29 @@ describe('context-menu-interceptor (web)', () => {
     expect(defaultPrevented).toBe(true)
     expect(calls).toEqual(['app-menu'])
   })
+
+  // ── Surfaces with their own Radix context menu ───────────────────────────
+
+  it('leaves a Radix context-menu surface alone (Radix owns the whole gesture)', () => {
+    const { defaultPrevented, calls } = dispatchOn(
+      'span',
+      '<div data-hermes-context-menu-trigger=""><span>pane tab</span></div>',
+    )
+
+    // Radix preventDefaults the native menu itself and opens its own; the
+    // interceptor must not interfere (no preventDefault, no propagate stop).
+    expect(defaultPrevented).toBe(false)
+    expect(calls).toEqual(['app-menu'])
+  })
+
+  it('leaves a Radix context-menu surface alone even on touch', () => {
+    const { defaultPrevented, calls } = dispatchOn(
+      'span',
+      '<div data-hermes-context-menu-trigger=""><span>pane tab</span></div>',
+      { touch: true },
+    )
+
+    expect(defaultPrevented).toBe(false)
+    expect(calls).toEqual(['app-menu'])
+  })
 })
