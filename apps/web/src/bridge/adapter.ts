@@ -68,7 +68,9 @@ export function buildWebBridge(
     oauthLoginConnectionConfig: (url) => gateway.oauthLoginConnectionConfig(url),
     oauthPasteConnectionConfig: (url, pasted) =>
       gateway.oauthPasteConnectionConfig(url, pasted),
-    oauthLogoutConnectionConfig: () => gateway.oauthLogoutConnectionConfig(),
+    oauthLogoutConnectionConfig: (url) => gateway.oauthLogoutConnectionConfig(url),
+    getSecretStorageEncryption: async () => ({ on: false }),
+    setSecretStorageEncryption: async () => ({ on: false }),
     passwordLoginConnectionConfig: (url, provider, username, password) =>
       gateway.passwordLoginConnectionConfig(url, provider, username, password),
     connections: {
@@ -89,6 +91,7 @@ export function buildWebBridge(
     },
     profile: {
       get: () => gateway.getProfile(),
+      remember: (name) => gateway.rememberProfile(name),
       set: (name) => gateway.setProfile(name),
     },
 
@@ -136,11 +139,14 @@ export function buildWebBridge(
     git: gateway.git,
 
     // ── 拒绝面空实现（类 3）────────────────────────────────────────────────
-    // openSessionWindow / openWindow 走浏览器新 tab 实现（web 多窗口 = 同源新 tab）。
+    // openSessionWindow / openWindow / openBrowserWindow 走浏览器新 tab 实现
+    // （web 多窗口 = 同源新 tab）。
     openSessionWindow: (sessionId, opts) => browser.openSessionWindow(sessionId, opts),
     openSessionInTerminal: (sessionId, opts) =>
       denied.openSessionInTerminal(sessionId, opts),
     openWindow: () => browser.openWindow(),
+    openBrowserWindow: (tabId) => browser.openBrowserWindow(tabId),
+    onBrowserPopoutClosed: (cb) => browser.onBrowserPopoutClosed(cb),
     claimAmbientCue: (key) => denied.claimAmbientCue(key),
     wakeIndicator: denied.wakeIndicator,
     petOverlay: denied.petOverlay,
@@ -198,6 +204,7 @@ export function buildWebBridge(
     setTranslucency: (payload) => denied.setTranslucency(payload),
     setKeepAwake: (on) => denied.setKeepAwake(on),
     setPreviewShortcutActive: (active) => denied.setPreviewShortcutActive(active),
+    setActiveConnectionRoute: () => undefined,
     // main 新增桥面：桌面插件 profile 路由表（跨联合注册表免凭证路由）。Web 无
     // 桌面主进程/插件层，恒返回空表（类 3 空实现）。
     getProfileRoutes: async () => [],

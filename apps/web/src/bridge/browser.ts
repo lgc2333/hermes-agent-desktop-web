@@ -11,6 +11,8 @@
  *     引用、随用随读零落盘；「＋」菜单文件/图片入口）；selectSavePath 返回空；
  *   - zoom：浏览器级缩放（document.body.style.zoom）；
  *   - reportRendererError：console.error（错误边界兜底日志）；
+ *   - openBrowserWindow/onBrowserPopoutClosed：同源新 tab + opener-side
+ *     close watcher；
  *   - saveImageFromUrl：fetch → blob → a[download] 浏览器下载（ADR-0010，
  *     此前 denied 返回 false 会吞掉渲染层的下载 fallback）；
  *   - getOnBattery/onBatteryChanged：navigator.getBattery（无 API 时恒 AC）。
@@ -125,6 +127,14 @@ export class BrowserAdapter {
     void this.blobStore.clearAll().catch(() => undefined)
   }
 
+  private browserPopoutChannel(): BroadcastChannel | null {
+    try {
+      return new BroadcastChannel('hermes-web.browser-popout')
+    } catch {
+      return null
+    }
+  }
+
   async requestMicrophoneAccess(): Promise<boolean> {
     // ADR-0022：语音放行——浏览器 getUserMedia 原生处理权限（一次性弹窗）；
     // 无 MediaDevices/录音环境时返回 false（use-mic-recorder 拒绝启动）。
@@ -208,6 +218,71 @@ export class BrowserAdapter {
     }
 
     return { ok: true }
+  }
+
+  async openBrowserWindow(tabId: string): Promise<{ error?: string; ok: boolean }> {
+    const tab = tabId.trim()
+
+    if (!tab) {
+      return { ok: false, error: 'invalid-tab-id' }
+    }
+
+    const win = window.open(
+      `${this.windowBaseUrl()}?win=browser&tab=${encodeURIComponent(tab)}#/`,
+      '_blank',
+    )
+
+    if (!win) {
+      return {
+        ok: false,
+        error: 'Hermes Web: the browser pop-out tab was blocked by the browser',
+      }
+    }
+
+    this.watchOpenedBrowserTab(tab, win)
+
+    return { ok: true }
+  }
+
+  private watchOpenedBrowserTab(tabId: string, win: Window): void {
+    const channel = this.browserPopoutChannel()
+
+    if (!channel) {
+      return
+    }
+
+    const timer = window.setInterval(() => {
+      if (!win.closed) {
+        return
+      }
+
+      window.clearInterval(timer)
+      channel.postMessage({ kind: 'closed', tabId })
+      channel.close()
+    }, 1000)
+  }
+
+  onBrowserPopoutClosed(callback: (tabId: string) => void): () => void {
+    const channel = this.browserPopoutChannel()
+
+    if (!channel) {
+      return () => undefined
+    }
+
+    const listener = (event: MessageEvent<unknown>) => {
+      const payload = event.data as { kind?: unknown; tabId?: unknown }
+
+      if (payload?.kind === 'closed' && typeof payload.tabId === 'string') {
+        callback(payload.tabId)
+      }
+    }
+
+    channel.addEventListener('message', listener)
+
+    return () => {
+      channel.removeEventListener('message', listener)
+      channel.close()
+    }
   }
 
   async fetchLinkTitle(url: string): Promise<string> {

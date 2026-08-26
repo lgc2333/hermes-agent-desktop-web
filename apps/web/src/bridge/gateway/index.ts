@@ -425,7 +425,7 @@ export class GatewayAdapter {
     // UI 不区分登出的是哪一种，幂等即可。
     const [oauth] = await Promise.all([
       this.oauth.logout(remoteUrl),
-      proxySessionLogout().catch(() => undefined),
+      proxySessionLogout(remoteUrl).catch(() => undefined),
     ])
 
     return oauth
@@ -455,6 +455,12 @@ export class GatewayAdapter {
 
   async getProfile(): Promise<DesktopActiveProfile> {
     return { profile: readProfilePreference() }
+  }
+
+  async rememberProfile(name: string | null): Promise<DesktopActiveProfile> {
+    writeProfilePreference(name)
+
+    return { profile: name }
   }
 
   async setProfile(name: string | null): Promise<DesktopActiveProfile> {

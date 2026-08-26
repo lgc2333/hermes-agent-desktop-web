@@ -670,6 +670,9 @@ describe('m3 OAuth (proxy mode)', () => {
     expect(result).toEqual({ ok: true, connected: false })
     expect(fetchMock.mock.calls[0][0]).toBe('http://127.0.0.1:6722/auth/native/logout')
     expect(fetchMock.mock.calls[0][1].credentials).toBe('include')
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+      target: 'http://127.0.0.1:9119',
+    })
   })
 
   it('oauthPasteConnectionConfig posts the pasted callback URL to the proxy', async () => {
@@ -1299,9 +1302,18 @@ describe('m5 password login ("dashboard login", proxy mode)', () => {
     const result = await adapter.oauthLogoutConnectionConfig('http://127.0.0.1:9119')
 
     expect(result).toEqual({ ok: true, connected: false })
-    const urls = fetchMock.mock.calls.map((call) => call[0])
-    expect(urls).toContain('http://127.0.0.1:6722/auth/native/logout')
-    expect(urls).toContain('http://127.0.0.1:6722/api/proxy/session/logout')
+    const calls = fetchMock.mock.calls.map((call) => ({
+      body: JSON.parse(call[1].body),
+      url: call[0],
+    }))
+    expect(calls).toContainEqual({
+      url: 'http://127.0.0.1:6722/auth/native/logout',
+      body: { target: 'http://127.0.0.1:9119' },
+    })
+    expect(calls).toContainEqual({
+      url: 'http://127.0.0.1:6722/api/proxy/session/logout',
+      body: { target: 'http://127.0.0.1:9119' },
+    })
   })
 
   it('getConnectionConfig reports connected when a password session exists (oauth endpoint empty)', async () => {

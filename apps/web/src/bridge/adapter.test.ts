@@ -127,11 +127,16 @@ describe('buildWebBridge / installWebBridge', () => {
   })
 
   describe('web multi-window = same-origin new tabs (web port of desktop openWindow / openSessionWindow)', () => {
-    it('canOpenSessionWindow / canOpenNewWindow report true (bridge exposes the fns)', () => {
+    it('canOpenSessionWindow / canOpenNewWindow report true (bridge exposes the fns)', async () => {
       const bridge = buildWebBridge()
       // canOpen* 判定只看桥是否暴露对应函数；web 桥暴露了浏览器实现。
       expect(typeof bridge.openSessionWindow).toBe('function')
       expect(typeof bridge.openWindow).toBe('function')
+      expect(typeof bridge.openBrowserWindow).toBe('function')
+      expect(typeof bridge.onBrowserPopoutClosed).toBe('function')
+      expect(await bridge.getSecretStorageEncryption()).toEqual({ on: false })
+      expect(await bridge.setSecretStorageEncryption(true)).toEqual({ on: false })
+      expect(typeof bridge.profile.remember).toBe('function')
     })
 
     it('openSessionWindow opens ?win=secondary#/<id> in a new tab', async () => {
@@ -220,6 +225,63 @@ describe('buildWebBridge / installWebBridge', () => {
       expect(openMock.mock.calls[0][0]).toBe(`${window.location.origin}/`)
       expect(openMock.mock.calls[0][1]).toBe('_blank')
       vi.unstubAllGlobals()
+    })
+
+    it('openBrowserWindow opens ?win=browser&tab=<id> in a new tab', async () => {
+      vi.useFakeTimers()
+      const posted: unknown[] = []
+      const channels: {
+        close: ReturnType<typeof vi.fn>
+        postMessage: ReturnType<typeof vi.fn>
+      }[] = []
+      class MockBroadcastChannel {
+        close = vi.fn()
+        postMessage = vi.fn((payload: unknown) => posted.push(payload))
+
+        constructor(_name: string) {
+          channels.push(this)
+        }
+
+        addEventListener(): void {
+          // no-op
+        }
+
+        removeEventListener(): void {
+          // no-op
+        }
+      }
+      const openMock = vi.fn(
+        (_url?: string | URL, _target?: string, _features?: string) => ({
+          closed: false,
+        }),
+      )
+      vi.stubGlobal('open', openMock)
+      vi.stubGlobal('BroadcastChannel', MockBroadcastChannel)
+      const bridge = buildWebBridge()
+
+      const result = await bridge.openBrowserWindow('tab 1')
+
+      expect(result).toEqual({ ok: true })
+      expect(openMock.mock.calls[0][0]).toBe(
+        `${window.location.origin}/?win=browser&tab=tab%201#/`,
+      )
+      expect(openMock.mock.calls[0][1]).toBe('_blank')
+      expect(posted).toEqual([])
+      openMock.mock.results[0].value.closed = true
+      vi.advanceTimersByTime(1000)
+      expect(posted).toEqual([{ kind: 'closed', tabId: 'tab 1' }])
+      expect(channels[0].close).toHaveBeenCalledTimes(1)
+      vi.unstubAllGlobals()
+      vi.useRealTimers()
+    })
+
+    it('openBrowserWindow returns ok:false for an empty tab id', async () => {
+      const bridge = buildWebBridge()
+
+      await expect(bridge.openBrowserWindow('  ')).resolves.toEqual({
+        ok: false,
+        error: 'invalid-tab-id',
+      })
     })
   })
 })

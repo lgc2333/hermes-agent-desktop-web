@@ -993,19 +993,34 @@ export function createOauthEndpoints(
       return Promise.resolve(json(200, info))
     },
 
-    handleLogout(request: Request): Promise<Response> {
-      // per-target cookie：清掉请求里所有 hermes_oauth_* 会话 cookie
-      // （桥层登出不区分 target；多连接共存时一并登出）。
+    async handleLogout(request: Request): Promise<Response> {
+      let target: string | null = null
+
+      try {
+        const body = (await request.json().catch(() => ({}))) as { target?: unknown }
+        if (typeof body.target === 'string' && body.target.trim()) {
+          target = normalizeTargetUrl(body.target)
+        }
+      } catch {
+        return json(400, { detail: 'invalid target' })
+      }
+
+      // per-target cookie：有 target 时只清当前 gateway；无 body 保持旧行为，
+      // 清掉请求里所有 hermes_oauth_* 会话 cookie（兼容旧客户端）。
       const cookies = parseCookies(request.headers.get('cookie'))
       const secure = ctx.isHttps(request)
       const headers = new Headers({ 'Content-Type': 'application/json' })
+      const onlyName = target ? oauthSessionCookieName(target) : null
       for (const name of Object.keys(cookies)) {
-        if (name.startsWith(SESSION_COOKIE_PREFIX)) {
+        if (
+          name.startsWith(SESSION_COOKIE_PREFIX) &&
+          (!onlyName || name === onlyName)
+        ) {
           headers.append('Set-Cookie', clearSessionCookieValue(name, { secure }))
         }
       }
 
-      return Promise.resolve(json(200, { ok: true }, headers))
+      return json(200, { ok: true }, headers)
     },
   }
 }

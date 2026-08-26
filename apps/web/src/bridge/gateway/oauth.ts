@@ -114,11 +114,19 @@ export class OauthBroker {
     return { ok: true, baseUrl, connected: true }
   }
 
-  async logout(_remoteUrl?: string): Promise<DesktopOauthLogoutResult> {
+  async logout(remoteUrl?: string): Promise<DesktopOauthLogoutResult> {
     const proxy = proxyBaseUrl()
 
     try {
-      const res = await proxyFetch(`${proxy}/auth/native/logout`, { method: 'POST' })
+      const res = await proxyFetch(`${proxy}/auth/native/logout`, {
+        method: 'POST',
+        ...(remoteUrl
+          ? {
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ target: remoteUrl.replace(/\/+$/, '') }),
+            }
+          : {}),
+      })
 
       return { ok: res.ok, connected: false }
     } catch {

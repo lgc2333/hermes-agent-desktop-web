@@ -614,9 +614,23 @@ export function createSessionEndpoints(
       const sessionCookies = readSessionCookies(request)
       const secure = ctx.isHttps(request)
       const headers = new Headers({ 'Content-Type': 'application/json' })
+      let target: string | null = null
+
+      try {
+        const body = (await request.json().catch(() => ({}))) as { target?: unknown }
+        if (typeof body.target === 'string' && body.target.trim()) {
+          target = normalizeTargetUrl(body.target)
+        }
+      } catch {
+        return json(400, { detail: 'invalid target' })
+      }
+      const onlyName = target ? passwordSessionCookieName(target) : null
 
       // 尽力转发 gateway /auth/logout（吊销 refresh token）；失败不阻塞。
       for (const [name, value] of Object.entries(sessionCookies)) {
+        if (onlyName && name !== onlyName) {
+          continue
+        }
         const decoded = decodeJarCookie(value)
         if (decoded) {
           try {

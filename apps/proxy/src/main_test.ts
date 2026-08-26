@@ -9,6 +9,7 @@ import {
   encodeSessionCookie,
   oauthSessionCookieName,
 } from './oauth.ts'
+import { encodeJarCookie, passwordSessionCookieName } from './session.ts'
 
 // ── 目标服务（echo HTTP / echo WS）─────────────────────────────────────────
 
@@ -765,6 +766,53 @@ Deno.test(
   },
 )
 
+Deno.test(
+  'proxy: OAuth logout with target only clears that target cookie',
+  async () => {
+    const proxy = await startProxy()
+    try {
+      const targetA = 'http://127.0.0.1:9119'
+      const targetB = 'http://127.0.0.1:9120'
+      const cookieA = `${oauthSessionCookieName(targetA)}=${encodeSessionCookie(
+        targetA,
+        {
+          accessToken: 'a1',
+          refreshToken: 'r1',
+          expiresAt: Math.floor(Date.now() / 1000) + 3600,
+          provider: 'nous',
+          userId: 'u1',
+        },
+      )}`
+      const cookieB = `${oauthSessionCookieName(targetB)}=${encodeSessionCookie(
+        targetB,
+        {
+          accessToken: 'a2',
+          refreshToken: 'r2',
+          expiresAt: Math.floor(Date.now() / 1000) + 3600,
+          provider: 'nous',
+          userId: 'u2',
+        },
+      )}`
+
+      const logout = await fetch(`${proxy.url}/auth/native/logout`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          cookie: `${cookieA}; ${cookieB}`,
+        },
+        body: JSON.stringify({ target: targetA }),
+      })
+
+      assertEquals(logout.status, 200)
+      const cleared = logout.headers.getSetCookie().map((c) => c.split('=')[0])
+      assertEquals(cleared.includes(oauthSessionCookieName(targetA)), true)
+      assertEquals(cleared.includes(oauthSessionCookieName(targetB)), false)
+    } finally {
+      await proxy.close()
+    }
+  },
+)
+
 Deno.test('proxy: OAuth WS dial mints a ticket and replaces token', async () => {
   const target = startOauthTarget()
   const proxy = await startProxy()
@@ -1204,6 +1252,53 @@ Deno.test(
     } finally {
       await proxy.close()
       await target.close()
+    }
+  },
+)
+
+Deno.test(
+  'proxy: password logout with target only clears that target cookie',
+  async () => {
+    const proxy = await startProxy()
+    try {
+      const targetA = 'http://127.0.0.1:9119'
+      const targetB = 'http://127.0.0.1:9120'
+      const cookieA = `${passwordSessionCookieName(targetA)}=${encodeJarCookie(
+        targetA,
+        {
+          target: targetA,
+          cookieHeader: 'hermes_session_at=at-a',
+          provider: 'basic',
+          username: 'alice',
+          createdAt: Date.now(),
+        },
+      )}`
+      const cookieB = `${passwordSessionCookieName(targetB)}=${encodeJarCookie(
+        targetB,
+        {
+          target: targetB,
+          cookieHeader: 'hermes_session_at=at-b',
+          provider: 'basic',
+          username: 'bob',
+          createdAt: Date.now(),
+        },
+      )}`
+
+      const logout = await fetch(`${proxy.url}/api/proxy/session/logout`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          cookie: `${cookieA}; ${cookieB}`,
+        },
+        body: JSON.stringify({ target: targetA }),
+      })
+
+      assertEquals(logout.status, 200)
+      const cleared = logout.headers.getSetCookie().map((c) => c.split('=')[0])
+      assertEquals(cleared.includes(passwordSessionCookieName(targetA)), true)
+      assertEquals(cleared.includes(passwordSessionCookieName(targetB)), false)
+    } finally {
+      await proxy.close()
     }
   },
 )

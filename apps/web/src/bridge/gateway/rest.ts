@@ -231,8 +231,16 @@ export async function proxySessionLogin(
 }
 
 /** M5：清密码会话（代理转发 /auth/logout + 清 jar 与 cookie）。 */
-export async function proxySessionLogout(): Promise<void> {
-  await proxyFetch(`${proxyBaseUrl()}/api/proxy/session/logout`, { method: 'POST' })
+export async function proxySessionLogout(target?: string): Promise<void> {
+  await proxyFetch(`${proxyBaseUrl()}/api/proxy/session/logout`, {
+    method: 'POST',
+    ...(target
+      ? {
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ target: normalizeTargetUrl(target) }),
+        }
+      : {}),
+  })
 }
 
 /** M5：查询密码会话状态（cookie + target 匹配才 connected）。 */
