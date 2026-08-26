@@ -166,13 +166,23 @@ export function BootFailureOverlay() {
   // Gateway settings panel — password shows the credential form, OAuth shows
   // the sign-in button + paste fallback (same source as Settings, no parallel
   // copy to drift). Remote browsers cannot reach the proxy's loopback redirect,
-  // so the paste affordance must live in exactly one place.
+  // so the paste affordance must live in exactly one place. Clear only this
+  // gateway's stale auth first so reconnect doesn't disturb other saved gateways.
   const signInRemote = async () => {
     if (!remoteReauth) {
       return
     }
 
-    setView('connect')
+    setBusy('signin')
+
+    try {
+      await window.hermesDesktop?.oauthLogoutConnectionConfig?.(remoteReauth.url)
+    } catch {
+      // Best effort: Settings still gives the user the actionable login path.
+    } finally {
+      setBusy(null)
+      setView('connect')
+    }
   }
 
   const openLogs = () => void window.hermesDesktop?.revealLogs().catch(() => undefined)
