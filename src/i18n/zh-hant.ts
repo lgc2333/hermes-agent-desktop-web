@@ -809,6 +809,10 @@ export const zhHant = defineLocale({
       plainTextStoredTitle: 'Token 以純文字儲存',
       plainTextStoredDesc:
         '安全儲存無法使用，因此已儲存的 Token 以未加密方式儲存在此裝置上應用程式的連線設定檔中。請安裝或啟用 GNOME Keyring 或 KWallet 以將其加密。',
+      keychainEncryptionTitle: '使用系統鑰匙圈加密已儲存的機密',
+      keychainEncryptionDesc:
+        '預設關閉。開啟後，閘道 Token 與登入憑證將使用系統鑰匙圈（Keychain Access、GNOME Keyring 或 Windows DPAPI）加密——系統可能會要求授權或密碼。關閉時，它們以僅目前使用者可讀的一般檔案形式儲存。',
+      keychainEncryptionFailed: '無法變更機密加密設定',
       testRemote: '測試遠端',
       saveForRestart: '儲存至下次重新啟動',
       saveAndReconnect: '儲存並重新連線',
@@ -2531,6 +2535,9 @@ export const zhHant = defineLocale({
     hide: '隱藏',
     openPreview: '開啟預覽',
     openInBrowser: '在瀏覽器中開啟',
+    openInExternal: '在外部開啟',
+    popIn: '彈回',
+    popOut: '彈出',
     linkHint: '⌘/Ctrl+點擊在預覽窗格開啟',
     sourceLineTitle: '點擊選取 · shift 點擊擴展 · 拖曳至輸入框',
     source: '原始碼',
