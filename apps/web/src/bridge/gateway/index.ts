@@ -105,6 +105,13 @@ export class GatewayAdapter {
   // Web 无后端子进程 → 桥内保存完成后自广播，驱动渲染层 use-gateway-boot
   // 的 softSwitch 重拨（否则修复连接后 boot-failure 覆盖层永不关闭）。
   private readonly connectionAppliedListeners = new Set<() => void>()
+  // 上游 sync 2026-08-27：connections.onChanged(cb) 订阅者（ removed / saved /
+  // updated 推送）。桌面由 main 进程在注册表变更时发 IPC；Web 的注册表本身在
+  // 浏览器 localStorage（ADR-0002），桥内写操作完成后自广播即浏览器等价语义。
+  // 同一标签页内即可驱动连接切换器刷新与次级 gateway dispose/redial。
+  private readonly connectionsChangedListeners = new Set<
+    (payload: { connectionId: string; reason: 'removed' | 'saved' | 'updated' }) => void
+  >()
 
   constructor(options: WebBridgeOptions = {}) {
     this.apiImpl = options.api ?? webApi
@@ -211,6 +218,33 @@ export class GatewayAdapter {
 
   onPreviewFileChanged(_callback: (payload: never) => void): () => void {
     return () => undefined
+  }
+
+  /** connections.onChanged 订阅入口（浏览器等价实现，见 connectionsChangedListeners）。 */
+  onConnectionsChanged(
+    callback: (payload: {
+      connectionId: string
+      reason: 'removed' | 'saved' | 'updated'
+    }) => void,
+  ): () => void {
+    this.connectionsChangedListeners.add(callback)
+
+    return () => {
+      this.connectionsChangedListeners.delete(callback)
+    }
+  }
+
+  private notifyConnectionsChanged(
+    reason: 'removed' | 'saved' | 'updated',
+    connectionId: string,
+  ): void {
+    for (const listener of [...this.connectionsChangedListeners]) {
+      try {
+        listener({ connectionId, reason })
+      } catch {
+        // 单个监听器抛错不阻断注册表写操作。
+      }
+    }
   }
 
   // ── 连接设置面 ───────────────────────────────────────────────────────────
@@ -481,6 +515,12 @@ export class GatewayAdapter {
     registry: DesktopConnectionsRegistry
   }> {
     const id = payload.id ?? `conn-${Date.now().toString(36)}`
+    // 'saved' = 新建或纯展示改名（#95393 refresh push）；'updated' = 端点/认证
+    // 实质编辑（消费方需 dispose 并重拨次级 gateway）。
+    const existed = loadRegistry().connections.some((c) => c.id === id)
+    const previous = existed
+      ? loadRegistry().connections.find((c) => c.id === id)
+      : undefined
     const record: WebConnectionRecord = {
       id,
       kind: payload.kind,
@@ -493,6 +533,20 @@ export class GatewayAdapter {
           : (payload.token ?? getPrimaryConnection().token),
     }
     upsertConnection(record)
+    // 注册表变更推送（上游 sync 2026-08-27）：语义对齐桌面 main，见 vendor
+    // use-gateway-boot.ts / connection-switcher.tsx 的 onChanged 消费方。
+    this.notifyConnectionsChanged(
+      // 新建，或仅 label 改名（#95393 refresh push）→ 'saved'；
+      // 端点 / 认证实质编辑 → 'updated'：消费方 dispose 并重拨次级 gateway。
+      !existed ||
+        (record.kind === previous?.kind &&
+          record.url === previous.url &&
+          record.authMode === previous.authMode &&
+          record.token === previous.token)
+        ? 'saved'
+        : 'updated',
+      id,
+    )
 
     return {
       ok: true,
@@ -531,7 +585,11 @@ export class GatewayAdapter {
   async connectionsRemove(
     id: string,
   ): Promise<{ ok: boolean; registry: DesktopConnectionsRegistry }> {
-    return { ok: true, registry: this.toRegistry(removeConnection(id)) }
+    removeConnection(id)
+    // 删除推送：消费方 dispose 次级 gateway 并清 owner hints（fail-closed）。
+    this.notifyConnectionsChanged('removed', id)
+
+    return { ok: true, registry: this.toRegistry(loadRegistry()) }
   }
 
   async connectionsSetPrimary(

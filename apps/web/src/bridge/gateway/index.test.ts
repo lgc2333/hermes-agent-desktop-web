@@ -391,6 +391,55 @@ describe('gatewayAdapter', () => {
     expect(registry.connections[0].tokenPreview).toBe('mock…')
     expect(registry.connections[0].tokenSet).toBe(true)
   })
+
+  it('connections.onChanged fires saved for a new connection and removed on delete', async () => {
+    const adapter = new GatewayAdapter()
+    const events: Array<{
+      connectionId: string
+      reason: 'removed' | 'saved' | 'updated'
+    }> = []
+    const off = adapter.onConnectionsChanged((payload) => events.push(payload))
+
+    await adapter.connectionsSave({
+      id: 'conn-new',
+      kind: 'remote',
+      label: 'new',
+      url: 'http://127.0.0.1:9999',
+      authMode: 'token',
+      token: 't',
+    })
+    // 新建 → 'saved'
+    expect(events).toEqual([{ connectionId: 'conn-new', reason: 'saved' }])
+
+    // 纯 label 改名 → 仍是 'saved'（#95393 refresh push）
+    await adapter.connectionsSave({
+      id: 'conn-new',
+      kind: 'remote',
+      label: 'renamed',
+      url: 'http://127.0.0.1:9999',
+      authMode: 'token',
+      token: 't',
+    })
+    expect(events[1]).toEqual({ connectionId: 'conn-new', reason: 'saved' })
+
+    // 端点实质编辑 → 'updated'
+    await adapter.connectionsSave({
+      id: 'conn-new',
+      kind: 'remote',
+      label: 'renamed',
+      url: 'http://127.0.0.1:8888',
+      authMode: 'token',
+      token: 't',
+    })
+    expect(events[2]).toEqual({ connectionId: 'conn-new', reason: 'updated' })
+
+    await adapter.connectionsRemove('conn-new')
+    expect(events[3]).toEqual({ connectionId: 'conn-new', reason: 'removed' })
+
+    off()
+    await adapter.connectionsRemove('local')
+    expect(events).toHaveLength(4)
+  })
 })
 
 describe('toHermesConnection', () => {

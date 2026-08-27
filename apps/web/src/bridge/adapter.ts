@@ -79,6 +79,9 @@ export function buildWebBridge(
       remove: (id) => gateway.connectionsRemove(id),
       setPrimary: (id) => gateway.connectionsSetPrimary(id),
       test: (id) => gateway.connectionsTest(id),
+      // 上游 sync 2026-08-27：注册表变更推送。浏览器等价实现（localStorage 注册表
+      // + 桥内广播）；updateManaged / updateAll 为桌面主进程专有更新通道，Web 不提供。
+      onChanged: (cb) => gateway.onConnectionsChanged(cb),
     },
     sshConfigHosts: () => gateway.sshConfigHosts(),
     sshResolveHost: (host) => gateway.sshResolveHost(host),
