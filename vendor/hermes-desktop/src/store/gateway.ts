@@ -4,6 +4,7 @@ import { atom } from 'nanostores'
 import type { HermesConnection } from '@/global'
 import { HermesGateway, setApiRequestConnection } from '@/hermes'
 import { reconnectBackoffDelayMs } from '@/lib/reconnect-backoff'
+import { RECONNECT_ATTEMPT_TIMEOUT_MS, withTimeout } from '@/lib/with-timeout'
 import { markNativeNotifyBaseline } from '@/store/notify-baseline'
 import { setConnection, setGatewayState } from '@/store/session'
 
@@ -261,6 +262,17 @@ export function setPrimaryGateway(gateway: HermesGateway | null, profile = 'defa
 }
 
 export function setPrimaryGatewayConnectionId(connectionId: null | string | undefined): void {
+  // Hardening for #95628: while the active route is a secondary scope, the
+  // window is looking at a NON-primary socket — any connection id flowing
+  // through presentation-layer code at that moment describes the secondary,
+  // not the primary. Accepting it would relabel the primary socket, so every
+  // ambient API/WebSocket helper (and new-session routing) silently lands on
+  // the wrong backend. The primary's own identity is (re)published by its
+  // boot/reconnect path, which runs with the primary route active.
+  if (!isActivePrimary()) {
+    return
+  }
+
   g.primaryConnectionId = (connectionId ?? '').trim() || null
 
   if (g.activeKey === g.primaryProfile) {
@@ -460,14 +472,41 @@ async function openSecondary(entry: Secondary): Promise<void> {
         // Best effort for partial test/HMR graphs. Production always loads the
         // real store; a failed import must not make the transport unrecoverable.
       }
+
+      // Runtime re-mint also invalidates the status-stack gone-latch: ids
+      // the dead runtime 4001'd may be live again once tiles re-resume.
+      // Fire-and-forget: composer-status imports from this module, so the
+      // import must stay dynamic (cycle), and it must NOT sit on the timed
+      // redial path — awaiting the module load here pushed cold-start
+      // redials past test/waitFor budgets. The reset needs no ordering
+      // guarantee relative to the dial.
+      void import('@/store/composer-status')
+        .then(({ resetBackgroundPollingGuard }) => resetBackgroundPollingGuard())
+        .catch(() => {
+          // Best effort for partial test/HMR graphs, same as above.
+        })
     }
 
     // Registry-scoped entries dial through getConnectionFor when the bridge has
-    // it. Local/legacy entries retain the existing getConnection path.
+    // it. Local/legacy entries retain the existing getConnection path. Both are
+    // IPC round-trips into the main process with no timeout of their own
+    // (#93454) — a wedged main-process round-trip otherwise hangs this await
+    // forever, latching entry.connectPromise so every routed action against
+    // this secondary (SSH terminal, messaging DELETE, session send, …) never
+    // settles either. Bound the same way use-gateway-boot.ts bounds the
+    // primary's equivalent awaits.
     const conn =
       entry.connectionId && desktop.getConnectionFor
-        ? await desktop.getConnectionFor({ connectionId: entry.connectionId, profile: entry.profile })
-        : await desktop.getConnection(entry.profile)
+        ? await withTimeout(
+            desktop.getConnectionFor({ connectionId: entry.connectionId, profile: entry.profile }),
+            RECONNECT_ATTEMPT_TIMEOUT_MS,
+            `Timed out connecting to profile "${entry.profile}"`
+          )
+        : await withTimeout(
+            desktop.getConnection(entry.profile),
+            RECONNECT_ATTEMPT_TIMEOUT_MS,
+            `Timed out connecting to profile "${entry.profile}"`
+          )
 
     entry.connection = conn
 
@@ -481,7 +520,11 @@ async function openSecondary(entry: Secondary): Promise<void> {
           ? {}
           : desktop
 
-    const wsUrl = await resolveGatewayWsUrl(wsDeps, conn)
+    const wsUrl = await withTimeout(
+      resolveGatewayWsUrl(wsDeps, conn),
+      RECONNECT_ATTEMPT_TIMEOUT_MS,
+      `Timed out re-minting the gateway WebSocket URL for profile "${entry.profile}"`
+    )
 
     try {
       await entry.gateway.connect(wsUrl)
@@ -490,7 +533,7 @@ async function openSecondary(entry: Secondary): Promise<void> {
       // reconnectSecondary classifies failures by message ("No connection
       // with id", "no longer exists") to fail-stop permanent conditions, and
       // wrapping here would break that. Callers decide surfacing (#81094).
-      console.error(`[gateway] dial for profile "${entry.profile}" failed:`, error)
+      console.error(`[gateway] dial failed for scope="${entry.scope}" profile="${entry.profile}":`, error)
       throw error
     }
 
@@ -672,7 +715,15 @@ async function sharedPrimaryRoute(profile: string): Promise<boolean> {
   }
 
   try {
-    const conn = await desktop.getConnection(profile)
+    // Unbounded IPC round-trip into main (#93454) — a wedge here must reject
+    // like any other failure, not hang the route decision forever, since
+    // every caller (gatewayForProfile → requestGatewayForProfile/Agent) awaits
+    // this before it can fall back to dialing a secondary.
+    const conn = await withTimeout(
+      desktop.getConnection(profile),
+      RECONNECT_ATTEMPT_TIMEOUT_MS,
+      `Timed out resolving the shared-primary route for profile "${profile}"`
+    )
 
     return Boolean(conn && typeof conn === 'object' && (conn as { sharedPrimary?: boolean }).sharedPrimary === true)
   } catch {
