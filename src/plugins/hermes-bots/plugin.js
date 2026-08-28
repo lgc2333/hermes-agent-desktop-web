@@ -308,8 +308,11 @@ const $selectedRosterHydrated = atom(false)
 const $rosterHydrated = atom(false)
 /** Mirrors host.paneVisibility('hermes-bots:pane') — wired in register(). */
 const $botsPaneVisible = atom(false)
-/** An explicit open landed: {key, openedRegistryId}. This transient view
- *  observation is empty only for the legacy newChat draft fallback. */
+/** An explicit open landed: {key, openedRegistryId, openedSessionId}. The
+ *  registry id is empty for the legacy newChat draft fallback and for a click
+ *  that came back to the bot's already-open tabs (only openedSessionId set —
+ *  no canonical chat was resolved). This transient view observation is what
+ *  releases the home; it is never an identity preference. */
 const $openBotChat = atom(null)
 /** A session owns the main workspace. The roster highlight and the home /
  *  Cronjobs lifecycles all key off this rather than reading host.state
@@ -514,7 +517,8 @@ const GROUP_ACTIVITY_LABELS = {
   settled: 'turn settled',
   capped: 'turn stopped at the round/message cap',
   delivered: 'delivered a late reply',
-  held: 'is held (stopped by you) — @mention it or say resume to release'
+  held: 'is held (stopped by you) — @mention it or say resume to release',
+  stopped: 'stopped the room — remaining turns are held until resumed'
 }
 
 const GROUP_ACTIVITY_GLYPHS = {
@@ -528,7 +532,8 @@ const GROUP_ACTIVITY_GLYPHS = {
   settled: 'check-all',
   capped: 'debug-step-over',
   delivered: 'mail-read',
-  held: 'debug-pause'
+  held: 'debug-pause',
+  stopped: 'debug-stop'
 }
 
 /** Text tone for an activity row: quiet for pass/cancel/settle, accent for
@@ -5646,6 +5651,24 @@ const canonicalCreations = new Map()
  *  adoption, stored-session lookups). */
 const PROFILE_SESSION_LIST_LIMIT = 200
 let botOpenGeneration = 0
+let botOpenInFlight = 0
+
+function beginBotOpen() {
+  const generation = ++botOpenGeneration
+  botOpenInFlight = generation
+  return generation
+}
+
+function finishBotOpen(generation) {
+  if (botOpenInFlight === generation) {
+    botOpenInFlight = 0
+  }
+}
+
+function cancelBotOpen() {
+  botOpenGeneration += 1
+  botOpenInFlight = 0
+}
 
 /** The one canonical title. (profile, CANONICAL_CHAT_TITLE) IS the bot's
  *  forever-chat identity — see the header above. */
@@ -5845,7 +5868,12 @@ function createCanonicalChat(owner, { kickoff = false, openingStillCurrent = nul
       // plugin-owned. Core applies this via the generic `hidden` flag
       // (deferred as pending_hidden until the row exists); older gateways
       // ignore the unknown param and it stays visible.
-      hidden: true
+      hidden: true,
+      // Explicit contract: this session's runtime always follows the member
+      // profile's CURRENT config. Resume must NOT restore the stored
+      // model/provider pin from an old row (that left bot DMs stuck on a
+      // stale provider — e.g. "out of Nous credits" — after a profile switch).
+      follow_profile_config: true
     })
     const sid = res?.stored_session_id
     const runtime = res?.session_id
@@ -6043,12 +6071,40 @@ async function ensureBotMetadata(bot) {
   return botRosterMeta(bot, $botMeta.get()) || {}
 }
 
+/** The tab this bot's workspace already has open, fronted — or null when it
+ *  has none. A roster click consults this BEFORE the canonical registry so a
+ *  bot with open tabs simply comes back to the one the user left. It is what
+ *  lets a closed Bot Chat STAY closed: the click path used to re-open the
+ *  forever-chat beside every newer thread on every bot switch, and nothing
+ *  records a close (this plugin keeps no closed set; core's tile bucket only
+ *  forgets), so the only honest signal is the open set itself. Feature-
+ *  detected — older shells fall through to the canonical open. */
+function focusExistingBotTab(bot) {
+  if (typeof host.focusOpenWorkspaceSession !== 'function') {
+    return null
+  }
+
+  try {
+    const focused = host.focusOpenWorkspaceSession(botWorkspaceOwnerKey(bot))
+
+    return typeof focused === 'string' && focused ? focused : null
+  } catch {
+    return null
+  }
+}
+
 /** Select one exact roster owner, then open its named canonical chat only when
  *  the current Desktop can route that owner without guessing. The workspace
  *  remembers only this transient opened-view observation; it never stores or
- *  resolves a canonical-chat id. */
-async function openRosterBot(bot) {
-  const generation = ++botOpenGeneration
+ *  resolves a canonical-chat id.
+ *
+ *  `canonical`: the user asked for the forever-chat itself (Bots home "Open
+ *  chat", the row menu's "Open Bot Chat"). A plain row click is "go to this
+ *  bot": when its workspace already holds tabs, the one the user last had
+ *  active is fronted and no chat is resolved or opened — see
+ *  focusExistingBotTab. */
+async function openRosterBot(bot, { canonical = false } = {}) {
+  const generation = beginBotOpen()
   const key = botRosterKey(bot)
   const meta = botRosterMeta(bot, $botMeta.get())
   // Keep the currently visible group as a fallback until this explicit action
@@ -6095,12 +6151,30 @@ async function openRosterBot(bot) {
     $botUnread.set(next)
   }
 
+  if (!canonical) {
+    const focused = focusExistingBotTab(bot)
+
+    if (focused) {
+      // Open tabs win: no source activation, no registry consult, no open.
+      // The claim carries only the fronted tab so the focus edge it fires
+      // keeps it (releaseStaleOpenBotChat) and the home yields.
+      // The handoff is complete the moment the tab fronts — release the
+      // bot-open guard (#95917) so passive home reconciliation resumes.
+      finishBotOpen(generation)
+      $openBotChat.set({ key, openedRegistryId: '', openedSessionId: focused })
+      closeBotsHomeWorkspace()
+
+      return true
+    }
+  }
+
   try {
     // Activation selects this row's source only. Canonical identity is resolved
     // after that by the owner profile's "Bot Chat" title registry.
     await prepareBotSource(bot)
   } catch (error) {
     if (generation === botOpenGeneration) {
+      finishBotOpen(generation)
       $openBotChat.set(null)
       restorePreviousGroup()
       syncBotsHomeWorkspace()
@@ -6112,6 +6186,7 @@ async function openRosterBot(bot) {
   }
 
   if (generation !== botOpenGeneration) {
+    finishBotOpen(generation)
     return false
   }
 
@@ -6119,6 +6194,7 @@ async function openRosterBot(bot) {
     const opened = await openBotCanonicalChat(bot, () => generation === botOpenGeneration)
 
     if (generation !== botOpenGeneration) {
+      finishBotOpen(generation)
       return false
     }
 
@@ -6136,11 +6212,13 @@ async function openRosterBot(bot) {
         openedRegistryId: opened.registryId,
         openedSessionId: opened.openedId
       })
+      finishBotOpen(generation)
       closeBotsHomeWorkspace()
       return true
     }
   } catch (error) {
     if (generation === botOpenGeneration) {
+      finishBotOpen(generation)
       $openBotChat.set(null)
       restorePreviousGroup()
       syncBotsHomeWorkspace()
@@ -6154,6 +6232,7 @@ async function openRosterBot(bot) {
   // An older Desktop without the profile-scoped draft API has no safe fallback:
   // do not navigate the current workspace or create a draft on the wrong owner.
   if (typeof host.newChat !== 'function') {
+    finishBotOpen(generation)
     $openBotChat.set(null)
     restorePreviousGroup()
     syncBotsHomeWorkspace()
@@ -6161,6 +6240,7 @@ async function openRosterBot(bot) {
   }
 
   $openBotChat.set({ key, openedRegistryId: '' })
+  finishBotOpen(generation)
   closeBotsHomeWorkspace()
   newBotChat(bot)
   return true
@@ -6718,6 +6798,44 @@ function isGroupPassText(text) {
   return /^\(?\s*pass\s*\)?\.?$/i.test(trimmed)
 }
 
+/** #94376: pick the reply a finished turn should surface among the messages
+ *  appended since `before`. Scans newest-first and prefers the last
+ *  substantive (non-pass) assistant answer over a trailing pass — a Codex
+ *  intent-ack continuation nudge can land a complete answer and then get a
+ *  synthetic "(pass)" to the nudge itself, which must not hide the answer.
+ *  When only pass text exists in range, returns the newest (last
+ *  chronological) one rather than the oldest. Returns null only when no
+ *  assistant message appears in that range. */
+function pickGroupTurnReply(messages, before) {
+  let passText = null
+
+  for (let i = messages.length - 1; i >= before; i--) {
+    const msg = messages[i]
+
+    if (msg?.role !== 'assistant') {
+      continue
+    }
+
+    const text = typeof msg.content === 'string'
+      ? msg.content
+      : Array.isArray(msg.content)
+        ? msg.content.map(p => (typeof p === 'string' ? p : p?.text || '')).join('')
+        : msg?.text || ''
+    const replyText = String(text).trim()
+
+    if (isGroupPassText(replyText)) {
+      if (passText === null) {
+        passText = replyText
+      }
+      continue
+    }
+
+    return replyText
+  }
+
+  return passText
+}
+
 /** Deterministic @mention parse. Handles @name, @"two words" via display
  *  titles, and @everyone/@all. Names match case-insensitively against member
  *  profile names, display titles, and collapsed no-space forms. */
@@ -7218,12 +7336,24 @@ function groupChatEntryId() {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
 }
 
+/** The agent loop's "(empty)" terminal sentinel (empty_response_exhausted) is
+ *  a FAILURE marker, never bot text. Mirror gateway/run.py's user-friendly
+ *  substitution so the room log never shows the raw sentinel. */
+const GROUP_EMPTY_SENTINEL = '(empty)'
+const GROUP_EMPTY_FRIENDLY =
+  '⚠️ The model returned no response after processing tool results. ' +
+  'This can happen with some models — try again or rephrase your question.'
+function normalizeGroupChatText(text) {
+  const trimmed = String(text || '').trim()
+  return trimmed === GROUP_EMPTY_SENTINEL ? GROUP_EMPTY_FRIENDLY : trimmed
+}
+
 function appendGroupChatEntry(group, from, text, thread, images) {
   const entry = {
     id: groupChatEntryId(),
     at: Date.now(),
     from,
-    text: String(text).trim(),
+    text: normalizeGroupChatText(text),
     thread: thread || 'legacy'
   }
 
@@ -7349,7 +7479,16 @@ async function ensureGroupChatSession(group, member) {
     profile: member.name,
     title,
     // Room member sessions are plumbing — always hidden from the sidebar.
-    hidden: true
+    hidden: true,
+    // Explicit contract: this session's runtime always follows the member
+    // profile's CURRENT config. Resume must NOT restore the stored
+    // model/provider pin from an old row (that left room bots stuck on a
+    // stale provider — e.g. "out of Nous credits" — after a profile switch).
+    room_plumbing: true,
+    // Same follow-profile-config contract as the canonical Bot Chat: a room
+    // member's runtime always follows the member profile's CURRENT config,
+    // never a stale stored model/provider pin from an old row.
+    follow_profile_config: true
   })
   const stored = created?.stored_session_id || null
 
@@ -7628,6 +7767,11 @@ async function runGroupChatMemberTurnLeased(group, member, prompt, thread, image
     return null
   }
 
+  // #91868/#94569: remember the epoch this turn was dispatched under so the
+  // poll loop below can tell an explicit stop from ordinary room churn.
+  const dispatchEpoch = ($groupChats.get()[group] || {}).epoch || 0
+  const memberKey = groupMemberKey(member)
+
   recordGroupActivity(group, { kind: 'working', member: member.name, thread })
 
   // Baseline: how many messages exist before our submit.
@@ -7703,6 +7847,18 @@ async function runGroupChatMemberTurnLeased(group, member, prompt, thread, image
   while (Date.now() < deadline) {
     await new Promise(resolve => setTimeout(resolve, GROUP_TURN_POLL_MS))
 
+    // #91868/#94569: an explicit stop (stopGroupThread) bumped the epoch AND
+    // held this member — the member's session was interrupted, so nothing is
+    // coming; abandon the poll instead of grinding until the deadline. Both
+    // conditions on purpose: an ordinary newer send bumps the epoch WITHOUT
+    // a hold, and that turn must keep polling so finished work can still be
+    // delivered (the #93127 commit check decides its fate, not this loop).
+    const roomDuringPoll = $groupChats.get()[group] || {}
+
+    if ((roomDuringPoll.epoch || 0) !== dispatchEpoch && (roomDuringPoll.holds || {})[memberKey]) {
+      return null
+    }
+
     let state = null
 
     try {
@@ -7723,25 +7879,16 @@ async function runGroupChatMemberTurnLeased(group, member, prompt, thread, image
     const done = !busy && !awaitingUser
 
     if (messages.length > before && done) {
-      for (let i = messages.length - 1; i >= 0; i--) {
-        const msg = messages[i]
+      const replyText = pickGroupTurnReply(messages, before)
 
-        if (msg?.role === 'assistant') {
-          const text = typeof msg.content === 'string'
-            ? msg.content
-            : Array.isArray(msg.content)
-              ? msg.content.map(p => (typeof p === 'string' ? p : p?.text || '')).join('')
-              : msg?.text || ''
-          const replyText = String(text).trim()
+      if (replyText !== null) {
+        recordGroupActivity(group, {
+          kind: isGroupPassText(replyText) ? 'passed' : 'replied',
+          member: member.name,
+          thread
+        })
 
-          recordGroupActivity(group, {
-            kind: isGroupPassText(replyText) ? 'passed' : 'replied',
-            member: member.name,
-            thread
-          })
-
-          return replyText
-        }
+        return replyText
       }
 
       recordGroupActivity(group, { kind: 'passed', member: member.name, thread })
@@ -7822,33 +7969,20 @@ async function harvestStrandedGroupReply(group, member) {
     return
   }
 
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const msg = messages[i]
+  const reply = pickGroupTurnReply(messages, strandedBefore)
 
-    if (msg?.role === 'assistant') {
-      const text = typeof msg.content === 'string'
-        ? msg.content
-        : Array.isArray(msg.content)
-          ? msg.content.map(p => (typeof p === 'string' ? p : p?.text || '')).join('')
-          : msg?.text || ''
-      const reply = String(text).trim()
-
-      if (reply && !isGroupPassText(reply)) {
-        recordGroupActivity(group, { kind: 'delivered', member: member.name, thread: strandedThread })
-        appendGroupChatEntry(
-          group,
-          { kind: 'member', name: member.name, ...(member.remoteSource ? { source: member.connectionLabel || member.connectionId } : {}) },
-          reply,
-          strandedThread
-        )
-        updateGroupChat(group, r => {
-          r.watermarks[`${strandedThread}::${memberKey}`] = r.log.length
-          return r
-        })
-      }
-
-      return
-    }
+  if (reply && !isGroupPassText(reply)) {
+    recordGroupActivity(group, { kind: 'delivered', member: member.name, thread: strandedThread })
+    appendGroupChatEntry(
+      group,
+      { kind: 'member', name: member.name, ...(member.remoteSource ? { source: member.connectionLabel || member.connectionId } : {}) },
+      reply,
+      strandedThread
+    )
+    updateGroupChat(group, r => {
+      r.watermarks[`${strandedThread}::${memberKey}`] = r.log.length
+      return r
+    })
   }
 }
 
@@ -8049,6 +8183,73 @@ function unaddressedGroupMentions(group, members, thread) {
 
     return answeredIdx === undefined || answeredIdx <= citedIdx
   })
+}
+
+/** #91868/#94569: the REAL stop path for a group round. The round loop's only
+ *  cancellation primitives were the epoch bump (checked at member boundaries)
+ *  and #93129 holds (skip FUTURE turns) — neither touches the member whose
+ *  model call is in flight RIGHT NOW, so "stop" meant "finish this turn
+ *  first". This primitive does all three legs atomically enough to matter:
+ *
+ *  1. Bumps the room epoch — the driving loop bails at its next boundary and
+ *     never selects another member (`isCurrent()` in runGroupChatRounds).
+ *  2. Sets a #93129 hold for EVERY member — future turns stay skipped until
+ *     the user explicitly releases (resume / @all resume / direct mention),
+ *     the exact contract user-typed "@all stop" already has.
+ *  3. Sends session.interrupt to the member currently ON TURN (room.turn,
+ *     runtime-only) via its own route, so the in-flight model call actually
+ *     dies instead of grinding to completion in the background. Best-effort:
+ *     an unreachable member still leaves the room stopped — the poll loop's
+ *     staleness check (epoch moved AND member held) abandons the turn.
+ *
+ *  `members` is the live roster when the caller has one (the workspace);
+ *  falls back to the room's durable roster so a two-arg call still works. */
+async function stopGroupThread(group, thread, members = null) {
+  const room = $groupChats.get()[group] || {}
+  const roster = Array.isArray(members) && members.length ? members : room.members || []
+  const turnName = room.turn || null
+  const stamp = { at: Date.now(), byMessageId: null, thread: thread || null }
+
+  updateGroupChat(group, r => {
+    r.epoch = (r.epoch || 0) + 1
+    r.running = false
+    r.turn = null
+
+    // Same hold shape applyGroupHoldDirective mints for "@all stop" — the
+    // held-skip path (watermark consume + 'held' activity note) and every
+    // release gesture apply unchanged. An existing hold keeps its stamp.
+    const holds = { ...(r.holds || {}) }
+
+    for (const member of roster) {
+      const key = groupMemberKey(member)
+
+      if (key && !holds[key]) {
+        holds[key] = { ...stamp }
+      }
+    }
+
+    r.holds = holds
+    return r
+  })
+
+  // Recorded AFTER the bump so the event is tagged with the new epoch — it
+  // stays visible as the current run's outcome instead of dropping out of
+  // view with the superseded run's events.
+  recordGroupActivity(group, { kind: 'stopped', member: 'You', thread: thread || null })
+
+  // Interrupt the member actually mid-turn. room.turn is runtime-only and
+  // names exactly one member (the loop is serial); a settled room has none.
+  const onTurn = turnName ? roster.find(member => member?.name === turnName) : null
+  const sessionId = onTurn ? (room.sessions || {})[groupMemberKey(onTurn)] : null
+
+  if (onTurn && sessionId) {
+    try {
+      await requestForBot(onTurn, 'session.interrupt', { session_id: sessionId })
+    } catch {
+      /* best-effort — the epoch/hold legs above already stopped the room;
+         the abandoned poll loop exits on its staleness check */
+    }
+  }
 }
 
 /** Drive one bounded round-robin turn for ONE THREAD. Serial — one member at
@@ -9092,6 +9293,13 @@ function BotRow({ bot, onDelete, onEdit, onGroup, showHandle }) {
             children: 'Duplicate'
           }),
           jsx(ContextMenuSeparator, {}),
+          jsx(ContextMenuItem, {
+            // The explicit ask for the forever-chat: a plain row click only
+            // comes back to the tabs already open (a closed Bot Chat stays
+            // closed), so this is how it is re-opened on purpose.
+            onSelect: () => void openRosterBot(bot, { canonical: true }),
+            children: 'Open Bot Chat'
+          }),
           jsx(ContextMenuItem, {
             onSelect: () => {
               saveSelectedRosterBot(bot)
@@ -13358,27 +13566,54 @@ function GroupChatWorkspace({ group, members, onBack, visible = true }) {
   // Events are epoch-tagged, so a superseded run's history drops out of view.
   const activityEvents = currentGroupActivity(group)
   const latestActivity = activityEvents.length ? activityEvents[activityEvents.length - 1] : null
+  // #94570 shell rewired onto the real primitive (#91868/#94569): the button
+  // must stop the ROUND, not just spray per-member interrupts — without the
+  // epoch bump + holds the loop marched on to the next member. Thread scope:
+  // the run being stopped is the one the latest activity belongs to.
+  const stopRoomRun = async () => {
+    await stopGroupThread(group, latestActivity?.thread || null, memberDescriptors())
+    host.notify({ kind: 'success', message: `Stopped ${group} — remaining turns are held until you resume` })
+  }
+
   const activityPanel = jsxs('div', {
     className: 'border-b border-(--ui-stroke-secondary)',
     children: [
-      jsxs('button', {
-        type: 'button',
-        'aria-expanded': activityOpen,
-        'aria-controls': `group-activity:${group}`,
-        title: activityOpen ? 'Hide room activity' : 'Show room activity',
-        className:
-          'flex w-full items-center gap-1.5 px-2.5 py-1 text-left text-[0.7rem] text-(--ui-text-quaternary) transition-colors hover:text-foreground',
-        onClick: () => setActivityOpen(prev => !prev),
+      jsxs('div', {
+        className: 'flex items-center gap-1',
         children: [
-          jsx(Codicon, {
-            name: activityOpen ? 'chevron-down' : 'chevron-right',
-            className: 'shrink-0 text-[0.65rem]'
+          jsxs('button', {
+            type: 'button',
+            'aria-expanded': activityOpen,
+            'aria-controls': `group-activity:${group}`,
+            title: activityOpen ? 'Hide room activity' : 'Show room activity',
+            className:
+              'flex min-w-0 flex-1 items-center gap-1.5 px-2.5 py-1 text-left text-[0.7rem] text-(--ui-text-quaternary) transition-colors hover:text-foreground',
+            onClick: () => setActivityOpen(prev => !prev),
+            children: [
+              jsx(Codicon, {
+                name: activityOpen ? 'chevron-down' : 'chevron-right',
+                className: 'shrink-0 text-[0.65rem]'
+              }),
+              jsx('span', { className: 'shrink-0 font-medium', children: 'Activity' }),
+              latestActivity
+                ? jsx('span', {
+                    className: 'min-w-0 flex-1 truncate',
+                    children: `${groupActivityLabel(latestActivity)} · ${relativeTime(latestActivity.at)}`
+                  })
+                : null
+            ]
           }),
-          jsx('span', { className: 'shrink-0 font-medium', children: 'Activity' }),
-          latestActivity
-            ? jsx('span', {
-                className: 'min-w-0 flex-1 truncate',
-                children: `${groupActivityLabel(latestActivity)} · ${relativeTime(latestActivity.at)}`
+          room.running
+            ? jsx('button', {
+                type: 'button',
+                title: 'Stop this run — interrupts the member on turn and holds the rest',
+                className:
+                  'inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-[0.7rem] font-medium text-(--ui-accent) transition-colors hover:bg-(--chrome-action-hover)',
+                onClick: () => void stopRoomRun(),
+                children: [
+                  jsx(Codicon, { name: 'debug-stop', className: 'shrink-0 text-[0.75rem]' }),
+                  'Stop'
+                ]
               })
             : null
         ]
@@ -13405,7 +13640,20 @@ function GroupChatWorkspace({ group, members, onBack, visible = true }) {
                         jsx('span', {
                           className: 'shrink-0 text-[0.625rem] text-(--ui-text-quaternary)',
                           children: relativeTime(event.at)
-                        })
+                        }),
+                        event.kind === 'working'
+                          ? jsx('button', {
+                              type: 'button',
+                              title: 'Stop this run — interrupts the member on turn and holds the rest',
+                              className:
+                                'inline-flex shrink-0 items-center gap-0.5 rounded px-1 py-px text-[0.65rem] font-medium text-(--ui-accent) transition-colors hover:bg-(--chrome-action-hover)',
+                              onClick: () => void stopRoomRun(),
+                              children: [
+                                jsx(Codicon, { name: 'debug-stop', className: 'shrink-0 text-[0.7rem]' }),
+                                'Stop'
+                              ]
+                            })
+                          : null
                       ]
                     }, `${event.at}:${i}`)
                   )
@@ -14193,7 +14441,9 @@ function BotsHomeView() {
                   variant: 'secondary',
                   size: 'sm',
                   className: 'mt-5',
-                  onClick: () => void openRosterBot(bot),
+                  // The home's button names the continuous chat itself — an
+                  // explicit ask, unlike a row click that returns to open tabs.
+                  onClick: () => void openRosterBot(bot, { canonical: true }),
                   children: 'Open chat'
                 })
           ]
@@ -14282,6 +14532,7 @@ function botsHomeMayOpen(explicit) {
     $botsPaneVisible.get() &&
     !$groupChatWorkspace.get() &&
     !$openBotChat.get() &&
+    !botOpenInFlight &&
     (explicit || !sessionOwnsWorkspace())
   )
 }
@@ -14450,7 +14701,7 @@ function openGroupChat(group) {
   // A room selection supersedes any bot-open transition still hydrating.
   // The in-flight host navigation may complete underneath this workspace,
   // but it may not later close or visually steal the room the user chose.
-  botOpenGeneration += 1
+  cancelBotOpen()
   $groupNeedsYou.set({ ...$groupNeedsYou.get(), [group]: false })
   const ownerKey = groupWorkspaceOwnerKey(group)
   setBotsWorkspaceOwner(ownerKey, null, 'New group conversations start in the group composer.')
@@ -15770,6 +16021,13 @@ export default {
         if (botChatOwnsWorkspace()) {
           unregisterRoutines ??= registerRoutinesPane()
         } else if (unregisterRoutines) {
+          // Clicking the Cronjobs tile moves focus onto the tile itself, which
+          // drops bot-chat workspace ownership for a beat. While Bot Mode is
+          // still on screen and the tile is the one holding focus, keep it —
+          // a pane must never unregister itself out from under its own click.
+          // Leaving Bot Mode ($botsPaneVisible false) still unregisters.
+          const $self = host.paneVisibility(`${ID}:routines`)
+          if ($botsPaneVisible.get() && $self && typeof $self.get === 'function' && $self.get()) return
           unregisterRoutines()
           unregisterRoutines = null
         }
@@ -15797,7 +16055,7 @@ export default {
           // workspace token too; this plugin generation prevents that expected
           // cancellation from repainting Bots home or showing an error after
           // the user deliberately returned to Sessions.
-          botOpenGeneration += 1
+          cancelBotOpen()
           host.setWorkspaceScope?.('sessions')
         }
         // A generic composer has no stored-session owner, so passive sync
@@ -15870,6 +16128,14 @@ export default {
               const owned = [claim.openedSessionId, claim.openedRegistryId].filter(Boolean)
 
               if (!owned.includes(stored)) {
+                return
+              }
+
+              // A claim without a registry id is a fronted non-canonical tab
+              // (focusExistingBotTab / the draft fallback): re-resolving the
+              // canonical chat here would open the Bot Chat the user has
+              // closed. Its tile recovers on the next send like any tab.
+              if (!claim.openedRegistryId) {
                 return
               }
 
