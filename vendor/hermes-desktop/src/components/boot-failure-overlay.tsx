@@ -166,8 +166,9 @@ export function BootFailureOverlay() {
   // Gateway settings panel — password shows the credential form, OAuth shows
   // the sign-in button + paste fallback (same source as Settings, no parallel
   // copy to drift). Remote browsers cannot reach the proxy's loopback redirect,
-  // so the paste affordance must live in exactly one place. Clear only this
-  // gateway's stale auth first so reconnect doesn't disturb other saved gateways.
+  // so the paste affordance must live in exactly one place. (Upstream now also
+  // drives cloud sign-in directly here; on Web the embedded panel is the single
+  // login surface, so the overlay only clears stale auth before routing.)
   const signInRemote = async () => {
     if (!remoteReauth) {
       return
