@@ -6,11 +6,11 @@
 ## 1. Subtree 基准（Baseline）
 
 - 上游仓库：https://github.com/NousResearch/hermes-agent.git
-- 基准提交：`74ec63fe18fec174299af2371febd122e6dd5c42`(上游 **main** HEAD，2026-08-27)
+- 基准提交：`8c098e9e819169879a7b2f74990e83b5d39696c8`(上游 **main** HEAD，2026-08-28)
 - vendor/hermes-desktop：上游 `apps/desktop`（含 src/ 渲染层、scripts/、vite.config.ts 等）
 - vendor/hermes-shared：上游 `apps/shared`（`@hermes/shared` 源码）
 - 引入方式：`git subtree add --squash`（对过滤提交执行，见 §2）
-- 当前子树 split：hermes-desktop: `7589b80baec32ec03b5bd578016b3e3c10b3e243`；hermes-shared: `69f50840b697b1b0c6b9f1f31077aa12efd72cf8`
+- 当前子树 split：hermes-desktop: `28f9d54cac35c9dc53bf9197c823ed283de81e4a`；hermes-shared: `efc5c20d74499a70e6c739275c6e8d458e9507f3`
 
 ### 2. 引入方式说明（重要）
 
@@ -82,6 +82,7 @@ ref 保护——HEAD 树不变（含补丁），其相对锚点 delta = 恰好�
   - 改动：signInRemote 统一路由到嵌入式 Gateway settings 视图（setView('connect')）——M5 起密码 reauth 如此；M6 起 OAuth reauth 同样如此（paste 提示只在 Settings/首启表单一处，无第三份并行副本）
   - 原因：Web 端 reauth 的唯一入口是设置面板里的凭据表单/登录按钮（远端浏览器够不到代理 loopback，必须经 paste）
   - 同步注意：上游若改 reauth 动作列表，保留该路由；已删除 overlay 内直连 OAuth 弹窗路径
+  - v2026.8.28 同步：上游 signInRemote 增加 cloud 直连登录流（desktop.cloud.status/login/agentSignIn + 成功后 reload）。Web 不接入：云模式桌面专属（Web 无 desktop.cloud 表面），仍统一路由到嵌入式 Gateway settings 面板；冲突解法见文件内注释
 
 - vendor/hermes-desktop/src/i18n/en.ts / zh.ts / types.ts
   - 改动：settings.gateway 与 install 两节新增 authUsername / authPassword（install 另有 authNeedsPassword，M5）；新增 authPasteHint / authPastePlaceholder / authPasteSubmit（M6，两节同键）；types.ts 同步声明
