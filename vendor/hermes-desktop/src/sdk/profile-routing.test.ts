@@ -20,18 +20,27 @@ vi.mock('@/store/system-actions', () => ({ runGatewayRestart: vi.fn() }))
 vi.mock('@/store/session', async () => {
   const { atom } = await import('nanostores')
 
+  type LineageRow = { _lineage_root_id?: null | string; id: string }
+
   return {
     $activeSessionId: atom(null),
     $connection: atom(null),
+    $cronSessions: atom([]),
     $currentCwd: atom(''),
     $currentModel: atom(''),
     $gatewayState: atom('open'),
     $messages: atom([]),
+    $messagingSessions: atom([]),
     $selectedStoredSessionId: atom(null),
     $sessions: atom([]),
+    $unreadFinishedSessionIds: atom([]),
+    lineageAliases: (storedId: string) => [storedId],
     rememberedSessionProfile: (_sessions: unknown, _sessionId: null | string, activeProfile: null | string) =>
       (activeProfile ?? '').trim() || 'default',
     requestSessionResume: vi.fn(),
+    sessionMatchesStoredId: (session: LineageRow, storedSessionId: string) =>
+      session.id === storedSessionId || session._lineage_root_id === storedSessionId,
+    sessionPinId: (session: LineageRow) => session._lineage_root_id ?? session.id,
     setSessionOwnerHint: vi.fn(),
     setResumeExhaustedSessionId: vi.fn()
   }
@@ -40,11 +49,16 @@ vi.mock('@/store/session-states', async () => {
   const { atom } = await import('nanostores')
 
   return {
+    $attentionSessionIds: atom([]),
+    $draftSessionIds: atom([]),
     $focusedRuntimeId: atom(null),
     $focusedSessionState: atom(null),
     $focusedStoredSessionId: atom(null),
     $sessionTiles: atom([]),
     $sessionStates: atom({}),
+    $stalledSessionIds: atom([]),
+    $workingSessionIds: atom([]),
+    dropTilesForProfile: vi.fn(),
     sessionTileDelegate: vi.fn(() => null)
   }
 })
@@ -68,6 +82,7 @@ vi.mock('@/store/profile', async () => {
     $gatewaySwapTarget: atom(null),
     $hydrationSyncProfile: atom(null),
     $profiles: profiles,
+    $showAllProfiles: atom(false),
     ensureGatewayAgent: vi.fn(),
     ensureGatewayProfile: vi.fn(),
     newSessionInAgent: vi.fn(),
@@ -84,6 +99,7 @@ vi.mock('@/store/gateway', async () => {
 
   return {
     $gateway: atom(null),
+    activeGateway: vi.fn(() => null),
     activeGatewayConnectionId: vi.fn(() => 'local'),
     ensureGatewayForAgent: vi.fn(),
     openGatewayForAgent: vi.fn(),
@@ -137,6 +153,8 @@ const {
   $sessionTiles,
   sessionTileDelegate
 } = await import('@/store/session-states')
+
+const { dropTilesForProfile } = await import('@/store/session-states')
 
 const { setWorkspaceScope } = await import('@/components/pane-shell/workspace-scope')
 
@@ -201,6 +219,9 @@ describe('connection-aware plugin host APIs', () => {
     // The rail paints from $profiles; skipping the refresh leaves a stale
     // badge whose click hot-loops against the deletion guard (#88769).
     expect(refreshProfiles).toHaveBeenCalled()
+    // A leftover Bot Mode tile would restore on relaunch and dial the deleted
+    // profile's backend, re-creating its HERMES_HOME (#94235).
+    expect(dropTilesForProfile).toHaveBeenCalledWith('worker', undefined)
   })
 
   it('pins an ambient SSH profile delete to the active connection and target profile', async () => {
@@ -355,6 +376,11 @@ describe('connection-aware plugin host APIs', () => {
       profile: 'worker'
     })
     expect(retireLocalProfileGateways).not.toHaveBeenCalled()
+    expect(dropTilesForProfile).toHaveBeenCalledWith('worker', {
+      connectionId: 'source-a',
+      profile: 'worker',
+      targetProfile: 'backend-worker'
+    })
   })
 
   it('rejects a remote deletion route without a connection id', async () => {
@@ -400,6 +426,11 @@ describe('connection-aware plugin host APIs', () => {
     expect(deleteProfile).toHaveBeenCalledWith('backend-worker', {
       connectionId: 'source-local',
       profile: 'worker'
+    })
+    expect(dropTilesForProfile).toHaveBeenCalledWith('worker', {
+      connectionId: 'source-local',
+      profile: 'worker',
+      targetProfile: 'backend-worker'
     })
   })
 
