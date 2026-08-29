@@ -130,6 +130,7 @@ export class DeniedAdapter {
       clientPlacement: false,
       controlDrag: false,
       nativeDrag: false,
+      solid: false,
       workspaceTransfer: false,
     },
     async open(): Promise<{ ok: boolean }> {
@@ -141,7 +142,13 @@ export class DeniedAdapter {
     setIgnoreMouse(_ignore: boolean): void {
       // no-op
     },
-    moveBy(_delta: { height: number; width: number; x: number; y: number }): void {
+    beginMove(): void {
+      // no-op
+    },
+    endMove(): void {
+      // no-op
+    },
+    moveBy(_delta: { height: number; width: number }): void {
       // no-op
     },
     setWorkspaceTransfer(_transferring: boolean): void {

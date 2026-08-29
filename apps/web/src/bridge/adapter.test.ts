@@ -107,8 +107,11 @@ describe('buildWebBridge / installWebBridge', () => {
       clientPlacement: false,
       controlDrag: false,
       nativeDrag: false,
+      solid: false,
       workspaceTransfer: false,
     })
+    expect(typeof bridge.hud?.beginMove).toBe('function')
+    expect(typeof bridge.hud?.endMove).toBe('function')
     expect(typeof bridge.hud?.setWorkspaceTransfer).toBe('function')
     expect(typeof bridge.hud?.resetLayout).toBe('function')
     expect(typeof bridge.hud?.onGameOverlay(() => undefined)).toBe('function')
