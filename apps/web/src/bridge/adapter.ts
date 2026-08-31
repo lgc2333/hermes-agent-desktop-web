@@ -155,6 +155,10 @@ export function buildWebBridge(
     petOverlay: denied.petOverlay,
     hud: denied.hud,
     quickEntry: denied.quickEntry,
+    // 上游 2026-08-31 新增：MCP OAuth 对远程后端的本机 loopback 回调监听。
+    // 浏览器不能 bind TCP 端口、gateway REST 无等价端点 → 类 3 拒绝面；渲染层
+    // mcp-setup.tsx 对 listen() 抛错已有 legacy gateway 监听回退。
+    mcpOauth: denied.mcpOauth,
     // ADR-0022：语音放行——requestMicrophoneAccess 从 denied 切到浏览器等价
     // （getUserMedia 原生处理权限）；denied.ts 保留拒绝实现便于隔离测试。
     requestMicrophoneAccess: () => browser.requestMicrophoneAccess(),

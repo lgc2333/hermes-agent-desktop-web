@@ -96,6 +96,18 @@ describe('buildWebBridge / installWebBridge', () => {
     )
   })
 
+  it('denied mcpOauth rejects listen/wait so the renderer falls back to the legacy gateway listener flow', async () => {
+    const bridge = buildWebBridge()
+
+    await expect(bridge.mcpOauth!.listen()).rejects.toThrow(
+      /not available in the browser/,
+    )
+    await expect(bridge.mcpOauth!.wait('x')).rejects.toThrow(
+      /not available in the browser/,
+    )
+    await expect(bridge.mcpOauth!.cancel('x')).resolves.toBe(false)
+  })
+
   it('subscription members return unsubscribe functions', () => {
     const bridge = buildWebBridge()
 

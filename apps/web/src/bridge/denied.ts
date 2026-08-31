@@ -393,6 +393,28 @@ export class DeniedAdapter {
     // no-op
   }
 
+  // ── MCP OAuth 回调监听（上游 2026-08-31：hermesDesktop.mcpOauth）──────────
+  // 桌面在用户本机 loopback 起一次性 HTTP 监听接收 provider 重定向；浏览器
+  // 不能 bind TCP 端口、代理机器也不是用户浏览器所在机器，gateway REST 无
+  // 等价端点 → 类 3 拒绝面。mcp-setup.tsx 对 listen() 失败已有 legacy 回退
+  // （gateway 侧 loopback 监听 + mcp.servers.oauth.poll 轮询），拒绝即走回
+  // 退路径，语义安全。
+
+  mcpOauth = {
+    async listen(): Promise<{ id: string; redirectUri: string }> {
+      throw UNAVAILABLE('MCP OAuth loopback callback listener')
+    },
+    async wait(
+      _id: string,
+      _timeoutMs?: number,
+    ): Promise<{ code: null | string; error: null | string; state: null | string }> {
+      throw UNAVAILABLE('MCP OAuth loopback callback listener')
+    },
+    async cancel(_id: string): Promise<boolean> {
+      return false
+    },
+  }
+
   // ── bootstrap ────────────────────────────────────────────────────────────
 
   async continueBootstrapLocal(): Promise<{ ok: boolean }> {
