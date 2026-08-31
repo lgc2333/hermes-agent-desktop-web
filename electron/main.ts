@@ -246,6 +246,7 @@ import {
   waitForManagedSshBootstrapFence,
   waitForManagedUpdateOperations
 } from './managed-ssh-update'
+import { registerMcpOauthCallbackIpc } from './mcp-oauth-callback-ipc'
 import { createMediaProtocolHandler, MEDIA_PROTOCOL } from './media-protocol'
 import {
   oauthGuardMayHardFail,
@@ -11150,7 +11151,8 @@ async function ensureRegistryBackend(connectionId, profile, managedUpdateCorrela
       return {
         ...primaryDescriptor,
         profile: profileKey,
-        connectionId: id
+        connectionId: id,
+        sharedRemote: true
       }
     }
   }
@@ -16840,6 +16842,10 @@ registerFsIpc({
 
 // Git-driven features (worktrees, review pane, repo scan) — see git-ipc.ts.
 registerGitIpc({ resolveGitBinary, resolveGhBinary })
+
+// Client-side loopback callback for MCP OAuth against remote backends — see
+// mcp-oauth-callback-ipc.ts.
+registerMcpOauthCallbackIpc()
 
 // Embedded terminal PTY host (hermes:terminal:*) — see terminal-ipc.ts.
 const terminalIpc = registerTerminalIpc({
