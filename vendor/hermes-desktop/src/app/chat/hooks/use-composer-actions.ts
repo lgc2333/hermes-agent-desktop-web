@@ -518,7 +518,7 @@ export function useComposerActions({
       try {
         // ADR-0020: Web 桥面 saveImageFile 保留 File 引用（拖入图片原样保留，
         // 零常驻字节）或把粘贴 Blob 落 OPFS；桌面端无该表面，回落旧的
-        // bytes → saveImageBuffer 路径（行为不变）。
+        // bytes → saveImageBuffer 路径（行为不变；上游已加 name 可选参，一并对齐）。
         const savedPath = await (window.hermesDesktop?.saveImageFile
           ? window.hermesDesktop.saveImageFile(
               blob,
@@ -527,7 +527,8 @@ export function useComposerActions({
           : (async () => {
               const buffer = await blob.arrayBuffer()
               const data = new Uint8Array(buffer)
-              return (await window.hermesDesktop?.saveImageBuffer(data, blobExtension(blob))) ?? ''
+              const name = blob instanceof File ? blob.name : undefined
+              return (await window.hermesDesktop?.saveImageBuffer(data, blobExtension(blob), name)) ?? ''
             })())
 
         if (!savedPath) {
