@@ -42,6 +42,18 @@ export function buildWebBridge(
     revalidateConnection: () => gateway.revalidateConnection(),
     touchBackend: () => gateway.touchBackend(),
     getGatewayWsUrl: () => gateway.getGatewayWsUrl(),
+    // ADR / bridge policy：pool 限值是桌面本地主进程概念（设备级 RAM↔切换速度
+    // 权衡，主进程权威且持久化，无 gateway REST / 浏览器等价）。Web 无本地 pool，
+    // 恒返回默认值；set 为无操作回读（渲染层 Settings 行可渲染、可保存不抛错，
+    // 但远程网关的 pool 不受影响）。语义权威 = vendor store/pool-limits.ts 头注。
+    getPoolLimits: async () => ({ maxBackends: 3, idleMs: 10 * 60_000 }),
+    setPoolLimits: async (limits) => ({
+      ok: true,
+      limits: {
+        maxBackends: limits.maxBackends ?? 3,
+        idleMs: limits.idleMs ?? 10 * 60_000,
+      },
+    }),
 
     // ── REST（类 2）────────────────────────────────────────────────────────
     api: <T>(request: HermesApiRequest) => gateway.api<T>(request),

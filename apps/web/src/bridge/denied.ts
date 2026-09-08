@@ -274,6 +274,9 @@ export class DeniedAdapter {
   // ── 终端 ─────────────────────────────────────────────────────────────────
 
   terminal = {
+    async attach(_id: string): Promise<boolean> {
+      return false
+    },
     async cwd(_id: string): Promise<string | null> {
       return null
     },

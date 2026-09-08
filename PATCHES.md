@@ -6,11 +6,11 @@
 ## 1. Subtree 基准（Baseline）
 
 - 上游仓库：https://github.com/NousResearch/hermes-agent.git
-- 基准提交：`18c904807033cf44cc381e380e5075a9d1ea5c42`(上游 **main** HEAD，2026-09-01)
+- 基准提交：`866332bfb52c46e543143b2620a9aeee8bce9c77`(上游 **main** HEAD，2026-09-08)
 - vendor/hermes-desktop：上游 `apps/desktop`（含 src/ 渲染层、scripts/、vite.config.ts 等）
 - vendor/hermes-shared：上游 `apps/shared`（`@hermes/shared` 源码）
 - 引入方式：`git subtree add --squash`（对过滤提交执行，见 §2）
-- 当前子树 split：hermes-desktop: `c08cac537a69436a3395db8eee8b3fcdba172154`；hermes-shared: `2f110720f385951ed6d35a03413caed122c52484`
+- 当前子树 split：hermes-desktop: `9cd3c1a9ccdd15f5294a86eec343dedb0b631cb9`；hermes-shared: `2f110720f385951ed6d35a03413caed122c52484`
 
 ### 2. 引入方式说明（重要）
 
@@ -155,6 +155,12 @@ ref 保护——HEAD 树不变（含补丁），其相对锚点 delta = 恰好�
     vendor/hermes-desktop/src/global.d.ts（本身是 §4 登记的 vendor 改动）为准。
   - 同步注意：上游若增改 hermesDesktop 表面，桥层（adapter.ts +
     browser/gateway/denied）须同步适配，typecheck 兜底。
+  - 2026-09-08 同步：上游 `global.d.ts` 新增**必填** `getPoolLimits`/
+    `setPoolLimits`（池限值，桌面主进程本地概念）+ `capturePreview?`（可选，
+    Electron-only in-app guest 裁剪）。`capturePreview?` 可选、Web 不实现（渲染层
+    optional-chain 兜底）；`getPoolLimits`/`setPoolLimits` 必填——Web 无本地 pool、
+    无 gateway REST 等价，adapter.ts 按"拒绝类默认值/no-op 回读"实现（语义权威 =
+    vendor store/pool-limits.ts 头注），已提交。
 
 ## 6. 同步后必做
 
