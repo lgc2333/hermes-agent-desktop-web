@@ -17,19 +17,25 @@
  *     此前 denied 返回 false 会吞掉渲染层的下载 fallback）；
  *   - getOnBattery/onBatteryChanged：navigator.getBattery（无 API 时恒 AC）。
  *   - saveImageFile / saveImageBuffer / readFileDataUrl / releaseBlobFile：
- *     附件字节存储二分（ADR-0020，见下方实现注释）。
+ *     附件字节存储二分（ADR-0020，见下方实现注释）；
+ *   - savePastedText：大段纯文本粘贴 → `.txt` 虚拟附件（文本落 OPFS，
+ *     与附件同链路，见下方实现注释）。
  */
 
 import type {
   DesktopMarketplaceSearchItem,
   DesktopMarketplaceThemeResult,
-  HermesNotification,
   HermesSelectPathsOptions,
 } from '@/global'
 
 import { OpfsBlobStore } from './blob-store'
 import type { AttachmentBlobStore } from './blob-store'
 import { fetchMarketplaceThemes, searchMarketplaceThemes } from './vscode-marketplace'
+
+// 上游 2026-09-12：`HermesNotification` 从 global.d.ts 迁到
+// electron/notification-types.ts（electron 侧，在 '@' 别名树之外）。通知负载
+// 形状本就由桥面签名定义 → 从桥成员派生，零复制，随上游同步自动对齐。
+type HermesNotification = Parameters<Window['hermesDesktop']['notify']>[0]
 
 function safeLocalStorageSet(key: string, value: string): void {
   try {
@@ -553,6 +559,29 @@ export class BrowserAdapter {
     }
   }
 
+  /**
+   * 大段纯文本粘贴 → `.txt` 附件（上游 2026-09-12 新增**必填**桥面
+   * `savePastedText`）。桌面主进程写 userData/composer-pastes/ 并返回本地
+   * 路径；浏览器没有 gateway 侧路径 → 与保存附件同款：文本落 OPFS
+   * web-blobs/，返回虚拟路径（干净 basename，ADR-0020/0024）。渲染层随后走
+   * 同一条 `@file:` 附件链路（提交时经 readFileDataUrl 读回 data_url）。
+   * 失败返回 ''（渲染层退回内联粘贴，与桌面写盘失败同语义）。
+   */
+  async savePastedText(text: string): Promise<string> {
+    try {
+      if (!text) {
+        return ''
+      }
+
+      return await this.saveImageFile(
+        new Blob([text], { type: 'text/plain' }),
+        pastedTextFileName(),
+      )
+    } catch {
+      return ''
+    }
+  }
+
   /** 保存图片字节（保持签名，兼容 HTML 预览调用方）：bytes → Blob → OPFS 写。 */
   async saveImageBuffer(data: ArrayBuffer | Uint8Array, ext: string): Promise<string> {
     try {
@@ -656,6 +685,21 @@ function blobToDataUrl(blob: Blob): Promise<string> {
     reader.onerror = () => reject(reader.error ?? new Error('blob read failed'))
     reader.readAsDataURL(blob)
   })
+}
+
+/**
+ * 大段粘贴的落盘文件名，镜像桌面 composer-paste.ts 的
+ * `pasted_content_<时间戳>_<随机>.txt`（时间戳 ISO → 文件系统安全字符）。
+ */
+function pastedTextFileName(): string {
+  const stamp = new Date()
+    .toISOString()
+    .replace(/[:.]/g, '-')
+    .replace('T', '_')
+    .replace('Z', '')
+  const random = Math.random().toString(16).slice(2, 8).padEnd(6, '0')
+
+  return `pasted_content_${stamp}_${random}.txt`
 }
 
 /**

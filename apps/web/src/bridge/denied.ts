@@ -263,10 +263,6 @@ export class DeniedAdapter {
     return ''
   }
 
-  async agentPluginsRoot(): Promise<string> {
-    return ''
-  }
-
   async renamePath(_path: string, _newName: string): Promise<{ path: string }> {
     throw UNAVAILABLE('file renaming')
   }

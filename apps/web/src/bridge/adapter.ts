@@ -179,6 +179,9 @@ export function buildWebBridge(
     saveImageFromUrl: (url) => browser.saveImageFromUrl(url),
     saveImageBuffer: (data, ext) => browser.saveImageBuffer(data, ext),
     saveClipboardImage: () => browser.saveClipboardImage(),
+    // 上游 2026-09-12 新增**必填** savePastedText：大段粘贴 → `.txt` 附件。
+    // 浏览器等价实现（文本落 OPFS + 虚拟路径，见 browser.ts）。
+    savePastedText: (text) => browser.savePastedText(text),
     // ADR-0020 附件字节存储：File 引用 / OPFS 落盘（见 browser.ts）。
     normalizePreviewTarget: (target) => denied.normalizePreviewTarget(target),
     watchPreviewFile: (url) => denied.watchPreviewFile(url),
@@ -186,7 +189,10 @@ export function buildWebBridge(
     revealPath: (path) => denied.revealPath(path),
     openDir: (path) => denied.openDir(path),
     desktopPluginsRoot: () => denied.desktopPluginsRoot(),
-    agentPluginsRoot: () => denied.agentPluginsRoot(),
+    // 上游 2026-09-12：`agentPluginsRoot?` 删除，代之以可选
+    // `reconcileDesktopPlugins?`（把统一包里的 desktop 半重拷到 app 级 root，
+    // Electron 主进程文件操作）。Web 无桌面主进程/插件 root，无浏览器等价
+    // → 不实现（vendor 侧全部 optional-chain，缺省即跳过）。
     renamePath: (path, newName) => denied.renamePath(path, newName),
     // trashPath 摘除（global.d.ts 可选）：浏览器无回收站语义，渲染层
     // desktop-fs.trashDesktopPath 已有 !desktop.trashPath 兜底抛错。

@@ -159,6 +159,27 @@ describe('browserAdapter 附件存储（ADR-0020）', () => {
     expect(await adapter.readFileDataUrl(path)).toBe('data:image/png;base64,AQID')
   })
 
+  it('savePastedText 写 OPFS 并返回虚拟路径（干净 .txt 名，读回原文）', async () => {
+    const store = new MemoryBlobStore()
+    const adapter = makeAdapter(store)
+
+    const path = await adapter.savePastedText('hello paste')
+    // web-blob://attach/<id>/pasted_content_<时间戳>_<随机>.txt：Blob id 在独立
+    // 路径段，末段即上传给 gateway 的干净文件名。
+    expect(path).toMatch(/^web-blob:\/\/attach\/\d+\/pasted_content_[\w-]+\.txt$/)
+    expect(store.names()).toHaveLength(1)
+
+    const dataUrl = await adapter.readFileDataUrl(path)
+    expect(dataUrl.startsWith('data:text/plain;base64,')).toBe(true)
+    expect(atob(dataUrl.split(',')[1])).toBe('hello paste')
+  })
+
+  it('savePastedText 对空文本返回空串（渲染层退回内联粘贴）', async () => {
+    const adapter = makeAdapter()
+
+    expect(await adapter.savePastedText('')).toBe('')
+  })
+
   it('页面载入初始化：构造时清空 web-blobs/ 目录（上一页残留不泄漏）', async () => {
     const store = new MemoryBlobStore()
     store.write('stale-from-previous-page.bin', new Blob(['x']))

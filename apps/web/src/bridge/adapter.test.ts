@@ -23,6 +23,8 @@ describe('buildWebBridge / installWebBridge', () => {
     expect(typeof bridge.git!.review.list).toBe('function')
     expect(typeof bridge.terminal.start).toBe('function')
     expect(typeof bridge.saveGatewayFile).toBe('function')
+    // 上游 2026-09-12 新增必填 savePastedText：桥面必须给出实现（不是 undefined）。
+    expect(typeof bridge.savePastedText).toBe('function')
   })
 
   it('bridge satisfies the global type contract (compile-time check)', () => {

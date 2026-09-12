@@ -6,11 +6,11 @@
 ## 1. Subtree 基准（Baseline）
 
 - 上游仓库：https://github.com/NousResearch/hermes-agent.git
-- 基准提交：`866332bfb52c46e543143b2620a9aeee8bce9c77`(上游 **main** HEAD，2026-09-08)
+- 基准提交：`d62716c7043e57ef7a29e81a02ddbc19334e29df`(上游 **main** HEAD，2026-09-12)
 - vendor/hermes-desktop：上游 `apps/desktop`（含 src/ 渲染层、scripts/、vite.config.ts 等）
 - vendor/hermes-shared：上游 `apps/shared`（`@hermes/shared` 源码）
 - 引入方式：`git subtree add --squash`（对过滤提交执行，见 §2）
-- 当前子树 split：hermes-desktop: `9cd3c1a9ccdd15f5294a86eec343dedb0b631cb9`；hermes-shared: `2f110720f385951ed6d35a03413caed122c52484`
+- 当前子树 split：hermes-desktop: `3f639c9e056a3d48ea04af292ffec12ded12bac7`；hermes-shared: `3bb72f780d992344fc17603326cb1e503b10f07d`
 
 ### 2. 引入方式说明（重要）
 
@@ -161,6 +161,18 @@ ref 保护——HEAD 树不变（含补丁），其相对锚点 delta = 恰好�
     optional-chain 兜底）；`getPoolLimits`/`setPoolLimits` 必填——Web 无本地 pool、
     无 gateway REST 等价，adapter.ts 按"拒绝类默认值/no-op 回读"实现（语义权威 =
     vendor store/pool-limits.ts 头注），已提交。
+  - 2026-09-13 同步：上游新增**必填** `savePastedText(text)`（大段粘贴 → `.txt`
+    附件，桌面写 userData 返回本地路径）——浏览器有等价实现路径（附件字节模型
+    ADR-0020/0024）→ browser.ts `savePastedText`：文本落 OPFS + 返回
+    `web-blob://attach/<id>/pasted_content_….txt` 虚拟路径（干净上传名），已实现。
+    同时上游删除 `agentPluginsRoot?`、改可选 `reconcileDesktopPlugins?`（Electron
+    主进程重拷插件 root）→ 不实现（optional-chain 安全），adapter/denied 内的
+    `agentPluginsRoot` 已删（否则字面量多余属性报错）。新增可选
+    `introReveal?`/`chatOnboarding?`/`getMachineProfile?`/`guestOnboardingEnabled?`/
+    `skipIntro?` 均不实现（Electron 窗口/主进程面）。类型迁移：
+    `HermesNotification` 移到 `vendor/hermes-desktop/electron/notification-types.ts`
+    （在 `@` 别名树外）→ 桥面从成员派生
+    `Parameters<Window['hermesDesktop']['notify']>[0]`，勿再 `from '@/global'` 导入。
 
 ## 6. 同步后必做
 
