@@ -367,6 +367,24 @@
       }
     },
     {
+      "name": "client.capabilities",
+      "summary": "What the calling client handles, sent once per connection (after gateway.ready); returns the server\u2192client request methods this backend may send.",
+      "params": [
+        {
+          "name": "params",
+          "schema": {
+            "$ref": "#/components/schemas/ClientCapabilitiesParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/ClientCapabilitiesResult"
+        }
+      }
+    },
+    {
       "name": "clipboard.paste",
       "summary": "Save the host clipboard image into the session and queue it for the next turn.",
       "params": [
@@ -529,8 +547,26 @@
       }
     },
     {
+      "name": "connection.respond",
+      "summary": "Per-target outcomes from the card, and an optional Continue.",
+      "params": [
+        {
+          "name": "params",
+          "schema": {
+            "$ref": "#/components/schemas/ConnectionRespondParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/ConnectionRespondResult"
+        }
+      }
+    },
+    {
       "name": "connectors.connect",
-      "summary": "Start (or re-initiate) authorization for named connectors; returns per-connector links/status.",
+      "summary": "Start (or re-initiate) authorization for named connectors on the session's connection operation.",
       "params": [
         {
           "name": "params",
@@ -561,6 +597,42 @@
         "name": "result",
         "schema": {
           "$ref": "#/components/schemas/ConnectorsListResult"
+        }
+      }
+    },
+    {
+      "name": "connectors.operation.status",
+      "summary": "The current snapshot of one open operation on an owned session.",
+      "params": [
+        {
+          "name": "params",
+          "schema": {
+            "$ref": "#/components/schemas/ConnectionOperationParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/ConnectionOperationStatus"
+        }
+      }
+    },
+    {
+      "name": "connectors.operation.wake",
+      "summary": "The browser leg came back (hermes://connections/done): read the accounts now, not at the next tick.",
+      "params": [
+        {
+          "name": "params",
+          "schema": {
+            "$ref": "#/components/schemas/ConnectionOperationParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/ConnectionWakeResult"
         }
       }
     },
@@ -1916,7 +1988,7 @@
     },
     {
       "name": "plugins.manage",
-      "summary": "Plugins Hub backend: list installed plugins, toggle, git-install or re-pin a catalog install.",
+      "summary": "Plugins Hub backend: list installed plugins, toggle, git-install, re-pin a catalog install, or remove a user install.",
       "params": [
         {
           "name": "params",
@@ -4108,6 +4180,18 @@
             ],
             "default": null,
             "title": "Catalog Sha"
+          },
+          "catalog_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Catalog Version"
           },
           "update_available": {
             "anyOf": [
@@ -7083,6 +7167,35 @@
         "title": "CliExecResult",
         "type": "object"
       },
+      "ClientCapabilitiesParams": {
+        "additionalProperties": false,
+        "properties": {
+          "server_requests": {
+            "default": false,
+            "title": "Server Requests",
+            "type": "boolean"
+          }
+        },
+        "title": "ClientCapabilitiesParams",
+        "type": "object"
+      },
+      "ClientCapabilitiesResult": {
+        "additionalProperties": false,
+        "properties": {
+          "server_requests": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Server Requests",
+            "type": "array"
+          }
+        },
+        "required": [
+          "server_requests"
+        ],
+        "title": "ClientCapabilitiesResult",
+        "type": "object"
+      },
       "ClipboardPasteParams": {
         "additionalProperties": false,
         "properties": {
@@ -7520,6 +7633,7 @@
       },
       "CompleteSlashParams": {
         "additionalProperties": false,
+        "description": "``session_id`` binds skill completions to that session's profile and workspace (project skills).",
         "properties": {
           "text": {
             "anyOf": [
@@ -7532,6 +7646,18 @@
             ],
             "default": null,
             "title": "Text"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Session Id"
           }
         },
         "title": "CompleteSlashParams",
@@ -8196,16 +8322,63 @@
         "title": "ConfigShowResult",
         "type": "object"
       },
-      "ConnectorConnectEntry": {
-        "additionalProperties": true,
-        "description": "``tools/connections_tool.py`` per-connector authorization outcome.",
+      "ConnectionActor": {
+        "description": "``tools/connectors/contract.py::Actor``.",
+        "enum": [
+          "user",
+          "backend_watcher",
+          "clock"
+        ],
+        "title": "ConnectionActor",
+        "type": "string"
+      },
+      "ConnectionAnswer": {
+        "additionalProperties": false,
+        "description": "The card's answer: per-target outcomes and an optional Continue\n(``settled_by: \"continue\"``). Settlement is derived from target states afterwards.",
         "properties": {
-          "connector": {
-            "default": "",
-            "title": "Connector",
+          "targets": {
+            "items": {
+              "$ref": "#/components/schemas/ConnectionAnswerTarget"
+            },
+            "title": "Targets",
+            "type": "array"
+          },
+          "settled_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConnectionSettleReason"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "title": "ConnectionAnswer",
+        "type": "object"
+      },
+      "ConnectionAnswerStatus": {
+        "description": "What the card says about one row: ``tools/connectors/mcp.py::apply_answer``.",
+        "enum": [
+          "approved",
+          "skipped"
+        ],
+        "title": "ConnectionAnswerStatus",
+        "type": "string"
+      },
+      "ConnectionAnswerTarget": {
+        "additionalProperties": false,
+        "description": "One row's answer from the card. ``env`` carries the credential values an install asked for\nthrough ``required_env``.",
+        "properties": {
+          "name": {
+            "title": "Name",
             "type": "string"
           },
           "status": {
+            "$ref": "#/components/schemas/ConnectionAnswerStatus"
+          },
+          "detail": {
             "anyOf": [
               {
                 "type": "string"
@@ -8215,7 +8388,175 @@
               }
             ],
             "default": null,
-            "title": "Status"
+            "title": "Detail"
+          },
+          "env": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Env"
+          }
+        },
+        "required": [
+          "name",
+          "status"
+        ],
+        "title": "ConnectionAnswerTarget",
+        "type": "object"
+      },
+      "ConnectionOperationParams": {
+        "additionalProperties": false,
+        "properties": {
+          "profile": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Profile"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "op_id": {
+            "title": "Op Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "op_id"
+        ],
+        "title": "ConnectionOperationParams",
+        "type": "object"
+      },
+      "ConnectionOperationStatus": {
+        "additionalProperties": false,
+        "description": "``methods_connectors._operation_view``: the operation's full snapshot.",
+        "properties": {
+          "op_id": {
+            "title": "Op Id",
+            "type": "string"
+          },
+          "seq": {
+            "title": "Seq",
+            "type": "integer"
+          },
+          "deadline_at": {
+            "title": "Deadline At",
+            "type": "number"
+          },
+          "settled": {
+            "title": "Settled",
+            "type": "boolean"
+          },
+          "settled_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Settled At"
+          },
+          "settled_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConnectionSettleReason"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "targets": {
+            "items": {
+              "$ref": "#/components/schemas/ConnectionOperationTarget"
+            },
+            "title": "Targets",
+            "type": "array"
+          }
+        },
+        "required": [
+          "op_id",
+          "seq",
+          "deadline_at",
+          "settled",
+          "targets"
+        ],
+        "title": "ConnectionOperationStatus",
+        "type": "object"
+      },
+      "ConnectionOperationTarget": {
+        "additionalProperties": false,
+        "description": "``Target.snapshot``: the link minted up front rides here, never in the model result. ``extra``\nkeys a leg records (``tools``, ``hint``) are typed here as they appear.",
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ConnectionTargetKind"
+          },
+          "action": {
+            "$ref": "#/components/schemas/ConnectionTargetAction"
+          },
+          "state": {
+            "$ref": "#/components/schemas/ConnectionTargetState"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Detail"
+          },
+          "instructions": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Instructions"
+          },
+          "discovery_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Discovery Error"
           },
           "connect_url": {
             "anyOf": [
@@ -8229,7 +8570,7 @@
             "default": null,
             "title": "Connect Url"
           },
-          "note": {
+          "connection_id": {
             "anyOf": [
               {
                 "type": "string"
@@ -8239,9 +8580,9 @@
               }
             ],
             "default": null,
-            "title": "Note"
+            "title": "Connection Id"
           },
-          "instruction": {
+          "attempt": {
             "anyOf": [
               {
                 "type": "string"
@@ -8251,10 +8592,382 @@
               }
             ],
             "default": null,
-            "title": "Instruction"
+            "title": "Attempt"
+          },
+          "required_env": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ConnectionTargetEnvField"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Required Env"
+          },
+          "tools": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Tools"
+          },
+          "hint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Hint"
           }
         },
-        "title": "ConnectorConnectEntry",
+        "required": [
+          "name",
+          "kind",
+          "action",
+          "state"
+        ],
+        "title": "ConnectionOperationTarget",
+        "type": "object"
+      },
+      "ConnectionRequestPayload": {
+        "additionalProperties": false,
+        "description": "``ConnectionOperation.request_payload``: opens the card; also the ``pending_connection`` resume\nsnapshot so a client that missed the event restores the card with the server's deadline.",
+        "properties": {
+          "op_id": {
+            "title": "Op Id",
+            "type": "string"
+          },
+          "seq": {
+            "title": "Seq",
+            "type": "integer"
+          },
+          "deadline_at": {
+            "title": "Deadline At",
+            "type": "number"
+          },
+          "timeout_seconds": {
+            "title": "Timeout Seconds",
+            "type": "number"
+          },
+          "targets": {
+            "items": {
+              "$ref": "#/components/schemas/ConnectionOperationTarget"
+            },
+            "title": "Targets",
+            "type": "array"
+          },
+          "tool_call_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Tool Call Id"
+          }
+        },
+        "required": [
+          "op_id",
+          "seq",
+          "deadline_at",
+          "timeout_seconds",
+          "targets"
+        ],
+        "title": "ConnectionRequestPayload",
+        "type": "object"
+      },
+      "ConnectionRespondParams": {
+        "additionalProperties": false,
+        "properties": {
+          "profile": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Profile"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "op_id": {
+            "title": "Op Id",
+            "type": "string"
+          },
+          "result": {
+            "$ref": "#/components/schemas/ConnectionAnswer"
+          }
+        },
+        "required": [
+          "session_id",
+          "op_id",
+          "result"
+        ],
+        "title": "ConnectionRespondParams",
+        "type": "object"
+      },
+      "ConnectionRespondResult": {
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "settled": {
+            "title": "Settled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "status",
+          "settled"
+        ],
+        "title": "ConnectionRespondResult",
+        "type": "object"
+      },
+      "ConnectionSettleReason": {
+        "description": "``tools/connectors/contract.py::SettleReason``.",
+        "enum": [
+          "all_resolved",
+          "continue",
+          "deadline",
+          "interrupt",
+          "unavailable"
+        ],
+        "title": "ConnectionSettleReason",
+        "type": "string"
+      },
+      "ConnectionTargetAction": {
+        "enum": [
+          "authorize",
+          "connect",
+          "enable",
+          "install",
+          "reconnect"
+        ],
+        "title": "ConnectionTargetAction",
+        "type": "string"
+      },
+      "ConnectionTargetEnvField": {
+        "additionalProperties": false,
+        "description": "One credential an MCP install still needs; the card renders a field per entry and sends the\nvalues back with the approval.",
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "required": {
+            "title": "Required",
+            "type": "boolean"
+          },
+          "secret": {
+            "title": "Secret",
+            "type": "boolean"
+          },
+          "default": {
+            "type": "string",
+            "title": "Default"
+          },
+          "prompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Prompt"
+          }
+        },
+        "required": [
+          "name",
+          "required",
+          "secret",
+          "default"
+        ],
+        "title": "ConnectionTargetEnvField",
+        "type": "object"
+      },
+      "ConnectionTargetKind": {
+        "enum": [
+          "connector",
+          "mcp"
+        ],
+        "title": "ConnectionTargetKind",
+        "type": "string"
+      },
+      "ConnectionTargetState": {
+        "description": "``tools/connectors/contract.py::TargetState``.",
+        "enum": [
+          "pending",
+          "initiated",
+          "connected",
+          "skipped",
+          "failed",
+          "expired",
+          "unavailable",
+          "not_connected"
+        ],
+        "title": "ConnectionTargetState",
+        "type": "string"
+      },
+      "ConnectionUpdatePayload": {
+        "additionalProperties": false,
+        "description": "``methods_connectors._connection_update``: one target transition (``target``/``from``/``to``/\n``actor``) or the settlement (none of those), with the full snapshot.",
+        "properties": {
+          "op_id": {
+            "title": "Op Id",
+            "type": "string"
+          },
+          "seq": {
+            "title": "Seq",
+            "type": "integer"
+          },
+          "deadline_at": {
+            "title": "Deadline At",
+            "type": "number"
+          },
+          "settled": {
+            "title": "Settled",
+            "type": "boolean"
+          },
+          "settled_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Settled At"
+          },
+          "settled_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConnectionSettleReason"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "targets": {
+            "items": {
+              "$ref": "#/components/schemas/ConnectionOperationTarget"
+            },
+            "title": "Targets",
+            "type": "array"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Target"
+          },
+          "from": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConnectionTargetState"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "to": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConnectionTargetState"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "actor": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConnectionActor"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Detail"
+          }
+        },
+        "required": [
+          "op_id",
+          "seq",
+          "deadline_at",
+          "settled",
+          "targets"
+        ],
+        "title": "ConnectionUpdatePayload",
+        "type": "object"
+      },
+      "ConnectionWakeResult": {
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "ConnectionWakeResult",
         "type": "object"
       },
       "ConnectorRow": {
@@ -8371,23 +9084,85 @@
       },
       "ConnectorsConnectResult": {
         "additionalProperties": false,
+        "description": "The operation the connect opened (or re-minted on): ``tools/connectors/managed.py``\n``_off_desktop_result`` / ``methods_connectors._reissue``. ``status``/``note`` ride along from\nthe tool result when the call ran through ``manage_connections``.",
         "properties": {
-          "results": {
+          "op_id": {
+            "title": "Op Id",
+            "type": "string"
+          },
+          "seq": {
+            "title": "Seq",
+            "type": "integer"
+          },
+          "deadline_at": {
+            "title": "Deadline At",
+            "type": "number"
+          },
+          "settled": {
+            "title": "Settled",
+            "type": "boolean"
+          },
+          "settled_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Settled At"
+          },
+          "settled_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConnectionSettleReason"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "targets": {
             "items": {
-              "$ref": "#/components/schemas/ConnectorConnectEntry"
+              "$ref": "#/components/schemas/ConnectionOperationTarget"
             },
-            "title": "Results",
+            "title": "Targets",
             "type": "array"
           },
-          "summary": {
-            "additionalProperties": true,
-            "title": "Summary",
-            "type": "object"
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Status"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Note"
           }
         },
         "required": [
-          "results",
-          "summary"
+          "op_id",
+          "seq",
+          "deadline_at",
+          "settled",
+          "targets"
         ],
         "title": "ConnectorsConnectResult",
         "type": "object"
@@ -8467,6 +9242,46 @@
           "tokens"
         ],
         "title": "ContextCategory",
+        "type": "object"
+      },
+      "ContextFileSource": {
+        "additionalProperties": false,
+        "description": "One row of ``agent.context_file_sources.list_context_file_sources``.",
+        "properties": {
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "chars": {
+            "title": "Chars",
+            "type": "integer"
+          },
+          "est_tokens": {
+            "title": "Est Tokens",
+            "type": "integer"
+          },
+          "loaded": {
+            "title": "Loaded",
+            "type": "boolean"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label",
+          "path",
+          "chars",
+          "est_tokens",
+          "loaded",
+          "status"
+        ],
+        "title": "ContextFileSource",
         "type": "object"
       },
       "ControllerScope": {
@@ -9684,7 +10499,7 @@
       },
       "ErrorSurface": {
         "additionalProperties": true,
-        "description": "``agent/error_surface.py::_surface`` \u2014 advisory {layer, code, retryable} (+ identity, + auth hint).",
+        "description": "``agent/error_surface.py::_surface`` \u2014 advisory {layer, code, retryable} (+ identity, + auth hint,\n+ ``resets_at`` epoch seconds when the provider named when its limit lifts).",
         "properties": {
           "layer": {
             "title": "Layer",
@@ -9721,6 +10536,18 @@
             ],
             "default": null,
             "title": "Model"
+          },
+          "resets_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resets At"
           }
         },
         "required": [
@@ -12065,6 +12892,31 @@
             "title": "User",
             "type": "string"
           },
+          "display_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Display Kind"
+          },
+          "display_metadata": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Display Metadata"
+          },
           "corrections": {
             "anyOf": [
               {
@@ -13244,6 +14096,18 @@
             ],
             "default": null,
             "title": "Error"
+          },
+          "iss": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Iss"
           }
         },
         "required": [
@@ -13532,6 +14396,7 @@
           "disabled",
           "connecting",
           "failed",
+          "lazy",
           "configured"
         ],
         "title": "McpRuntimeStatus",
@@ -14063,56 +14928,6 @@
           "oauth_needed"
         ],
         "title": "McpServersTestResult",
-        "type": "object"
-      },
-      "McpSetupRequestParams": {
-        "additionalProperties": false,
-        "properties": {
-          "session_id": {
-            "title": "Session Id",
-            "type": "string"
-          },
-          "server": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Server"
-          },
-          "action": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Action"
-          },
-          "reason": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Reason"
-          }
-        },
-        "required": [
-          "session_id"
-        ],
-        "title": "McpSetupRequestParams",
         "type": "object"
       },
       "MessageCompletePayload": {
@@ -17357,7 +18172,8 @@
           "list",
           "toggle",
           "install",
-          "update"
+          "update",
+          "remove"
         ],
         "title": "PluginsAction",
         "type": "string"
@@ -17387,7 +18203,7 @@
       },
       "PluginsManageParams": {
         "additionalProperties": false,
-        "description": "``toggle``: ``key``/``name`` + ``enable``; ``install``: ``identifier``/``repo`` or ``catalog_name``\n(+ ``force``, ``enable``, ``ref``); ``update``: ``name``.",
+        "description": "``toggle``: ``key``/``name`` + ``enable``; ``install``: ``identifier``/``repo`` or ``catalog_name``\n(+ ``force``, ``enable``, ``ref``); ``update``: ``name``; ``remove``: ``name`` (user installs only).",
         "properties": {
           "profile": {
             "anyOf": [
@@ -17507,7 +18323,7 @@
       },
       "PluginsManageResult": {
         "additionalProperties": false,
-        "description": "``list`` \u2192 ``plugins`` + counts; ``toggle`` \u2192 ``ok``/``unchanged``/``name``/``plugin``;\n``install`` \u2192 ``hermes_cli.plugins_cmd.dashboard_install_plugin``'s ok payload; ``update`` \u2192\n``ok``/``unchanged``/``sha``.",
+        "description": "``list`` \u2192 ``plugins`` + counts; ``toggle`` \u2192 ``ok``/``unchanged``/``name``/``plugin``;\n``install`` \u2192 ``hermes_cli.plugins_cmd.dashboard_install_plugin``'s ok payload; ``update`` \u2192\n``ok``/``unchanged``/``sha``; ``remove`` \u2192 ``ok``/``name``.",
         "properties": {
           "plugins": {
             "anyOf": [
@@ -18083,6 +18899,30 @@
             "default": null,
             "title": "Exit Code"
           },
+          "exited_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Exited At"
+          },
+          "completion_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Completion Reason"
+          },
           "detached": {
             "anyOf": [
               {
@@ -18392,7 +19232,7 @@
       },
       "ProfileMirrored": {
         "additionalProperties": false,
-        "description": "What was copied from the launch profile; ``auth`` is ``\"shared\"`` under ``share_auth``.",
+        "description": "What was copied from the launch profile.",
         "properties": {
           "env": {
             "default": false,
@@ -18400,17 +19240,9 @@
             "type": "boolean"
           },
           "auth": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "const": "shared",
-                "type": "string"
-              }
-            ],
             "default": false,
-            "title": "Auth"
+            "title": "Auth",
+            "type": "boolean"
           },
           "model_inherited": {
             "default": false,
@@ -20108,6 +20940,13 @@
             },
             "title": "Previewsessions",
             "type": "array"
+          },
+          "sessionIds": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Sessionids",
+            "type": "array"
           }
         },
         "required": [
@@ -21221,6 +22060,18 @@
             ],
             "default": null,
             "title": "Voice Context"
+          },
+          "title_preview": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Title Preview"
           },
           "truncate_before_user_ordinal": {
             "anyOf": [
@@ -23372,6 +24223,17 @@
             "default": null,
             "title": "Open Requests"
           },
+          "pending_connection": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConnectionRequestPayload"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
           "todo_state": {
             "anyOf": [
               {
@@ -23902,7 +24764,7 @@
       },
       "SessionContextBreakdownResult": {
         "additionalProperties": false,
-        "description": "``agent.context_breakdown.compute_session_context_breakdown`` (empty categories before the agent builds).",
+        "description": "``agent.context_breakdown.compute_session_context_breakdown`` (empty categories before the agent builds)\nplus the per-file context manifest (empty until the agent exists).",
         "properties": {
           "categories": {
             "items": {
@@ -23938,6 +24800,14 @@
           "model": {
             "title": "Model",
             "type": "string"
+          },
+          "context_files": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ContextFileSource"
+            },
+            "title": "Context Files",
+            "type": "array"
           }
         },
         "required": [
@@ -24515,6 +25385,11 @@
           "reasoning_effort": {
             "default": "",
             "title": "Reasoning Effort",
+            "type": "string"
+          },
+          "reasoning_effort_wire": {
+            "default": "",
+            "title": "Reasoning Effort Wire",
             "type": "string"
           },
           "service_tier": {
@@ -25367,6 +26242,11 @@
             "title": "Reasoning Effort",
             "type": "string"
           },
+          "reasoning_effort_wire": {
+            "default": "",
+            "title": "Reasoning Effort Wire",
+            "type": "string"
+          },
           "service_tier": {
             "default": "",
             "title": "Service Tier",
@@ -26005,6 +26885,17 @@
             ],
             "default": null,
             "title": "Open Requests"
+          },
+          "pending_connection": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConnectionRequestPayload"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
           },
           "todo_state": {
             "anyOf": [
@@ -26690,6 +27581,42 @@
             "default": "",
             "title": "Error",
             "type": "string"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Error Code"
+          },
+          "retryable": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Retryable"
+          },
+          "retry_after": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Retry After"
           },
           "finished_at": {
             "title": "Finished At",
@@ -27466,7 +28393,21 @@
       },
       "SkillsReloadParams": {
         "additionalProperties": false,
-        "properties": {},
+        "description": "``session_id`` binds the rescan to that session's profile and workspace (project skills).",
+        "properties": {
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Session Id"
+          }
+        },
         "title": "SkillsReloadParams",
         "type": "object"
       },
@@ -29433,6 +30374,26 @@
         "title": "SubscriptionUpgradeResult",
         "type": "object"
       },
+      "SudoRequestParams": {
+        "additionalProperties": false,
+        "description": "Original command, redacted server-side before any password-injection rewrite.",
+        "properties": {
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "command": {
+            "default": "",
+            "title": "Command",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id"
+        ],
+        "title": "SudoRequestParams",
+        "type": "object"
+      },
       "SystemBatteryParams": {
         "additionalProperties": false,
         "properties": {
@@ -30925,7 +31886,7 @@
       },
       "ValueResult": {
         "additionalProperties": false,
-        "description": "The answer to any one-string prompt (sudo, secret, vault prompts, desktop bridges,\nmcp.setup): ``''`` means skipped / declined.",
+        "description": "The answer to any one-string prompt (sudo, secret, vault prompts, desktop bridges):\n``''`` means skipped / declined.",
         "properties": {
           "value": {
             "title": "Value",
@@ -32856,24 +33817,6 @@
       }
     },
     {
-      "name": "mcp.setup",
-      "summary": "Consent card for installing / enabling / authorising an MCP server.",
-      "params": [
-        {
-          "name": "params",
-          "schema": {
-            "$ref": "#/components/schemas/McpSetupRequestParams"
-          }
-        }
-      ],
-      "result": {
-        "name": "result",
-        "schema": {
-          "$ref": "#/components/schemas/ValueResult"
-        }
-      }
-    },
-    {
       "name": "preview.act",
       "summary": "Click / type / scroll / annotate inside the in-app browser preview.",
       "params": [
@@ -32934,7 +33877,7 @@
         {
           "name": "params",
           "schema": {
-            "$ref": "#/components/schemas/EmptyRequestParams"
+            "$ref": "#/components/schemas/SudoRequestParams"
           }
         }
       ],
@@ -33147,6 +34090,30 @@
           "name": "payload",
           "schema": {
             "$ref": "#/components/schemas/SideAgentCompletePayload"
+          }
+        }
+      ]
+    },
+    {
+      "name": "connection.request",
+      "summary": "A connection operation opened on this session; the desktop renders its card.",
+      "params": [
+        {
+          "name": "payload",
+          "schema": {
+            "$ref": "#/components/schemas/ConnectionRequestPayload"
+          }
+        }
+      ]
+    },
+    {
+      "name": "connection.update",
+      "summary": "One transition or the settlement of an open connection operation.",
+      "params": [
+        {
+          "name": "payload",
+          "schema": {
+            "$ref": "#/components/schemas/ConnectionUpdatePayload"
           }
         }
       ]
