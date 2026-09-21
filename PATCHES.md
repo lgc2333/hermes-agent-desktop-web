@@ -81,8 +81,9 @@ ref 保护——HEAD 树不变（含补丁），其相对锚点 delta = 恰好�
 - vendor/hermes-desktop/src/components/boot-failure-overlay.tsx
   - 改动：signInRemote 统一路由到嵌入式 Gateway settings 视图（setView('connect')）——M5 起密码 reauth 如此；M6 起 OAuth reauth 同样如此（paste 提示只在 Settings/首启表单一处，无第三份并行副本）
   - 原因：Web 端 reauth 的唯一入口是设置面板里的凭据表单/登录按钮（远端浏览器够不到代理 loopback，必须经 paste）
-  - 同步注意：上游若改 reauth 动作列表，保留该路由；已删除 overlay 内直连 OAuth 弹窗路径
-  - v2026.8.28 同步：上游 signInRemote 增加 cloud 直连登录流（desktop.cloud.status/login/agentSignIn + 成功后 reload）。Web 不接入：云模式桌面专属（Web 无 desktop.cloud 表面），仍统一路由到嵌入式 Gateway settings 面板；冲突解法见文件内注释
+  - 同步注意：上游若改 reauth 动作列表（如新增 cloud 直连登录流），保留该路由——
+    Web 无 desktop.cloud 表面，一律走嵌入式 Gateway settings 面板；已删除 overlay
+    内直连 OAuth 弹窗路径
 
 - vendor/hermes-desktop/src/i18n/en.ts / zh.ts / types.ts
   - 改动：settings.gateway 与 install 两节新增 authUsername / authPassword（install 另有 authNeedsPassword，M5）；新增 authPasteHint / authPastePlaceholder / authPasteSubmit（M6，两节同键）；types.ts 同步声明
@@ -93,7 +94,6 @@ ref 保护——HEAD 树不变（含补丁），其相对锚点 delta = 恰好�
   - 改动：`'view.findInPage': openFindBar` 改为条件展开——`import.meta.env.VITE_WEB_BUILD === '1'`（Web 构建时 vite define 注入，见 apps/web/vite.config.ts）时不注册该 handler
   - 原因：Web 端 find 桥面为拒绝类（denied，ADR-0010/0011），命中会 preventDefault + 打开无功能 find-bar、吞掉浏览器原生查找；handler 缺失 → dispatch 走 "无 handler → return"（不 preventDefault），浏览器原生查找（Ctrl/Cmd+F）接管（ADR-0019）。重绑/多绑定语义自动正确：任何 combo 命中 view.findInPage 都无效，mod+f 改绑其他动作照常执行
   - 同步注意：桌面构建不读 VITE_WEB_BUILD，行为不变；上游若重构 handlersRef 或 view.findInPage 接线，按"Web 构建不注册该 handler"语义恢复
-  - v2026.8.16 同步：上游给桌面 handler 内加了 overlay 路由抑制（`isOverlayView` + `appViewForPath`），已并入 Web 条件展开的桌面分支（Web 分支不注册，无 overlay 冲突）
 
 - vendor/hermes-desktop/src/global.d.ts
   - 改动：`hermesDesktop` 表面新增可选 `saveImageFile(blob, name)` 与 `releaseBlobFile(filePath)`（ADR-0020 附件字节存储二分：File 引用 / OPFS）。桌面端 main 进程不注册（保持可选），Web 桥面 adapter.ts 实现
@@ -144,7 +144,7 @@ ref 保护——HEAD 树不变（含补丁），其相对锚点 delta = 恰好�
     （不复制）。vite.config.ts 头注已说明：subtree pull 除路径常量外无需对账。
   - 同步注意：上游若移动目录或改入口模块名（如 src/debug/dev-only.ts），
     更新三处配置的路径常量与别名即可。
-  - driver.js 别名（2026-08-19 同步起）：上游 tour 功能 import
+  - driver.js 别名：上游 tour 功能 import
     `driver.js/dist/driver.js.iife.js?raw`，但该包 exports map 不暴露此 dist
     文件；上游在 vendored vite.config.ts 用 resolve.alias 指到真实 sibling，
     我们 apps/web/vite.config.ts 同样需镜像该别名（+ optimizeDeps.exclude）。
@@ -154,33 +154,16 @@ ref 保护——HEAD 树不变（含补丁），其相对锚点 delta = 恰好�
   - WebCapabilityAdapter 实现 window.hermesDesktop 表面，签名以
     vendor/hermes-desktop/src/global.d.ts（本身是 §4 登记的 vendor 改动）为准。
   - 同步注意：上游若增改 hermesDesktop 表面，桥层（adapter.ts +
-    browser/gateway/denied）须同步适配，typecheck 兜底。
-  - 2026-09-08 同步：上游 `global.d.ts` 新增**必填** `getPoolLimits`/
-    `setPoolLimits`（池限值，桌面主进程本地概念）+ `capturePreview?`（可选，
-    Electron-only in-app guest 裁剪）。`capturePreview?` 可选、Web 不实现（渲染层
-    optional-chain 兜底）；`getPoolLimits`/`setPoolLimits` 必填——Web 无本地 pool、
-    无 gateway REST 等价，adapter.ts 按"拒绝类默认值/no-op 回读"实现（语义权威 =
-    vendor store/pool-limits.ts 头注），已提交。
-  - 2026-09-13 同步：上游新增**必填** `savePastedText(text)`（大段粘贴 → `.txt`
-    附件，桌面写 userData 返回本地路径）——浏览器有等价实现路径（附件字节模型
-    ADR-0020/0024）→ browser.ts `savePastedText`：文本落 OPFS + 返回
-    `web-blob://attach/<id>/pasted_content_….txt` 虚拟路径（干净上传名），已实现。
-    同时上游删除 `agentPluginsRoot?`、改可选 `reconcileDesktopPlugins?`（Electron
-    主进程重拷插件 root）→ 不实现（optional-chain 安全），adapter/denied 内的
-    `agentPluginsRoot` 已删（否则字面量多余属性报错）。新增可选
-    `introReveal?`/`chatOnboarding?`/`getMachineProfile?`/`guestOnboardingEnabled?`/
-    `skipIntro?` 均不实现（Electron 窗口/主进程面）。类型迁移：
-    `HermesNotification` 移到 `vendor/hermes-desktop/electron/notification-types.ts`
-    （在 `@` 别名树外）→ 桥面从成员派生
-    `Parameters<Window['hermesDesktop']['notify']>[0]`，勿再 `from '@/global'` 导入。
-  - 2026-09-22 同步：上游 `src/api/config.ts` 配置写改为**按读取来源绑定路由**
-    （`bindConfigReadOrigin` / `resolveConfigWriteScope`），写请求的
-    `window.hermesDesktop.api` 调用新增作用域字段
-    `connectionId` / `profile` / `priority`。`HermesApiRequest` 签名未变
-    （三字段早已可选）→ 桥层零改动；Web `webApi`（rest.ts）经
-    `getConnectionById` 未命中回落主连接，单网关拓扑下行为不变。
-    上游同时新增 `dbus-native`（仅 `electron/notification-linux.ts` 用，
-    Web 不加载）→ 桥层无需登记。
+    browser/gateway/denied）须同步适配，typecheck 兜底。表面取舍约定：
+    **可选**面（`?`，Electron 窗口/主进程专属）一律不实现，渲染层
+    optional-chain 兜底；**必填**面 Web 有等价路径就实现（如 `savePastedText`
+    → 文本落 OPFS + 返回 `web-blob://` 虚拟路径），无等价路径按拒绝类默认值 /
+    no-op 回读（如 `getPoolLimits`/`setPoolLimits`，语义权威 =
+    vendor store/pool-limits.ts 头注）。
+  - 桥面类型从成员派生，勿直接 import vendor 内部类型：`HermesNotification`
+    在 `vendor/hermes-desktop/electron/notification-types.ts`（`@` 别名树外）
+    → 用 `Parameters<Window['hermesDesktop']['notify']>[0]`，勿
+    `from '@/global'` 导入。
 
 ## 6. 同步后必做
 
