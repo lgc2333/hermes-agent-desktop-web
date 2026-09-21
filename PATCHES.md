@@ -6,11 +6,11 @@
 ## 1. Subtree 基准（Baseline）
 
 - 上游仓库：https://github.com/NousResearch/hermes-agent.git
-- 基准提交：`7b660e66ee3d9c0efb7b4b8cac2f4a8b3ab479fc`(上游 **main** HEAD，2026-09-21)
+- 基准提交：`6a4d5e33ce3ed31eea9c25eb411da302ff752a9c`(上游 **main** HEAD，2026-09-22)
 - vendor/hermes-desktop：上游 `apps/desktop`（含 src/ 渲染层、scripts/、vite.config.ts 等）
 - vendor/hermes-shared：上游 `apps/shared`（`@hermes/shared` 源码）
 - 引入方式：`git subtree add --squash`（对过滤提交执行，见 §2）
-- 当前子树 split：hermes-desktop: `8ab461cbea99d2e63393f3b01f32f06cb91f2b71`；hermes-shared: `3a10ca561bac1abe4a74f69f1d155f97b2d09bb0`
+- 当前子树 split：hermes-desktop: `69813ac175c358ceca845a7987dfd275bc4590b3`；hermes-shared: `0d05267615b96b37194e39b54943a0484909b126`
 
 ### 2. 引入方式说明（重要）
 
@@ -173,6 +173,14 @@ ref 保护——HEAD 树不变（含补丁），其相对锚点 delta = 恰好�
     `HermesNotification` 移到 `vendor/hermes-desktop/electron/notification-types.ts`
     （在 `@` 别名树外）→ 桥面从成员派生
     `Parameters<Window['hermesDesktop']['notify']>[0]`，勿再 `from '@/global'` 导入。
+  - 2026-09-22 同步：上游 `src/api/config.ts` 配置写改为**按读取来源绑定路由**
+    （`bindConfigReadOrigin` / `resolveConfigWriteScope`），写请求的
+    `window.hermesDesktop.api` 调用新增作用域字段
+    `connectionId` / `profile` / `priority`。`HermesApiRequest` 签名未变
+    （三字段早已可选）→ 桥层零改动；Web `webApi`（rest.ts）经
+    `getConnectionById` 未命中回落主连接，单网关拓扑下行为不变。
+    上游同时新增 `dbus-native`（仅 `electron/notification-linux.ts` 用，
+    Web 不加载）→ 桥层无需登记。
 
 ## 6. 同步后必做
 
