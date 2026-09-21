@@ -183,9 +183,6 @@ export class RemoteFsGit {
           path: repoPath,
         }),
 
-      // 与 desktop remote 一致：远程 gateway 无 PR-comment 路由，降级为纯 URL。
-      fetchPrComment: async () => null,
-
       createPr: (repoPath) => this.gitPost('review/create-pr', { path: repoPath }),
     },
 

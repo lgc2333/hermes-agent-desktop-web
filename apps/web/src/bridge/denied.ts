@@ -406,7 +406,12 @@ export class DeniedAdapter {
     async wait(
       _id: string,
       _timeoutMs?: number,
-    ): Promise<{ code: null | string; error: null | string; state: null | string }> {
+    ): Promise<{
+      code: null | string
+      error: null | string
+      iss: null | string
+      state: null | string
+    }> {
       throw UNAVAILABLE('MCP OAuth loopback callback listener')
     },
     async cancel(_id: string): Promise<boolean> {

@@ -183,13 +183,17 @@ export function writeProfilePreference(name: string | null): void {
 
 // ── Default profile route preference (DesktopProfileRoute) ─────────────────
 
-export function readDefaultProfileRoute(): import('@/global').DesktopProfileRoute | null {
+export function readDefaultProfileRoute():
+  import('@/global').DesktopProfileRoute | null {
   try {
     const raw = window.localStorage.getItem(DEFAULT_PROFILE_ROUTE_KEY)
+
     if (!raw) {
       return null
     }
+
     const parsed = JSON.parse(raw) as import('@/global').DesktopProfileRoute
+
     return typeof parsed?.profile === 'string'
       ? { connectionId: parsed.connectionId ?? null, profile: parsed.profile }
       : null

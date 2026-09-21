@@ -1196,16 +1196,10 @@ describe('gatewayAdapter fs/git REST parity (remote-mode members, ADR-0010)', ()
     })
   })
 
-  it('git.scanRepos is a no-op [] and review.fetchPrComment resolves null (no requests)', async () => {
+  it('git.scanRepos is a no-op [] (no requests)', async () => {
     const adapter = new GatewayAdapter()
 
     expect(await adapter.git!.scanRepos(['/home'])).toEqual([])
-    expect(
-      await adapter.git!.review.fetchPrComment(
-        '/repo',
-        'https://github.com/x/y/pull/1',
-      ),
-    ).toBeNull()
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
