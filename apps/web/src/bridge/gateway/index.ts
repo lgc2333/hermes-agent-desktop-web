@@ -105,6 +105,9 @@ export class GatewayAdapter {
   // Web 无后端子进程 → 桥内保存完成后自广播，驱动渲染层 use-gateway-boot
   // 的 softSwitch 重拨（否则修复连接后 boot-failure 覆盖层永不关闭）。
   private readonly connectionAppliedListeners = new Set<() => void>()
+  private readonly defaultProfileChangedListeners = new Set<
+    (route: import('@/global').DesktopProfileRoute | null) => void
+  >()
   // 上游 sync 2026-08-27：connections.onChanged(cb) 订阅者（ removed / saved /
   // updated 推送）。桌面由 main 进程在注册表变更时发 IPC；Web 的注册表本身在
   // 浏览器 localStorage（ADR-0002），桥内写操作完成后自广播即浏览器等价语义。
@@ -501,6 +504,36 @@ export class GatewayAdapter {
     writeProfilePreference(name)
 
     return { profile: name }
+  }
+
+  async getDefaultProfile(): Promise<import('@/global').DesktopProfileRoute | null> {
+    return import('../registry').then((m) => m.readDefaultProfileRoute())
+  }
+
+  async setDefaultProfile(
+    route: import('@/global').DesktopProfileRoute,
+  ): Promise<import('@/global').DesktopProfileRoute> {
+    const { writeDefaultProfileRoute } = await import('../registry')
+    writeDefaultProfileRoute(route)
+    this.defaultProfileChangedListeners.forEach((listener) => {
+      try {
+        listener(route)
+      } catch {
+        // ignore listener failures
+      }
+    })
+
+    return route
+  }
+
+  onDefaultProfileChanged(
+    callback: (route: import('@/global').DesktopProfileRoute | null) => void,
+  ): () => void {
+    this.defaultProfileChangedListeners.add(callback)
+
+    return () => {
+      this.defaultProfileChangedListeners.delete(callback)
+    }
   }
 
   // ── v2 连接注册表（M2 起做 UI；这里提供最小可用存储面）────────────────────

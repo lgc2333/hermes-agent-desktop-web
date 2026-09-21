@@ -13,6 +13,7 @@
 
 const CONNECTIONS_KEY = 'hermes-web.connections.v1'
 const PROFILE_KEY = 'hermes-web.profile.v1'
+const DEFAULT_PROFILE_ROUTE_KEY = 'hermes-web.default-profile-route.v1'
 
 export const DEFAULT_CONNECTION_ID = 'local'
 
@@ -174,6 +175,37 @@ export function writeProfilePreference(name: string | null): void {
       window.localStorage.setItem(PROFILE_KEY, name)
     } else {
       window.localStorage.removeItem(PROFILE_KEY)
+    }
+  } catch {
+    // ignore — preference is best-effort
+  }
+}
+
+// ── Default profile route preference (DesktopProfileRoute) ─────────────────
+
+export function readDefaultProfileRoute(): import('@/global').DesktopProfileRoute | null {
+  try {
+    const raw = window.localStorage.getItem(DEFAULT_PROFILE_ROUTE_KEY)
+    if (!raw) {
+      return null
+    }
+    const parsed = JSON.parse(raw) as import('@/global').DesktopProfileRoute
+    return typeof parsed?.profile === 'string'
+      ? { connectionId: parsed.connectionId ?? null, profile: parsed.profile }
+      : null
+  } catch {
+    return null
+  }
+}
+
+export function writeDefaultProfileRoute(
+  route: import('@/global').DesktopProfileRoute | null,
+): void {
+  try {
+    if (route && typeof route.profile === 'string') {
+      window.localStorage.setItem(DEFAULT_PROFILE_ROUTE_KEY, JSON.stringify(route))
+    } else {
+      window.localStorage.removeItem(DEFAULT_PROFILE_ROUTE_KEY)
     }
   } catch {
     // ignore — preference is best-effort

@@ -105,6 +105,9 @@ export function buildWebBridge(
       agentSignIn: async () => ({ baseUrl: '', connected: false }),
     },
     profile: {
+      getDefault: () => gateway.getDefaultProfile(),
+      setDefault: (route) => gateway.setDefaultProfile(route),
+      onDefaultChanged: (cb) => gateway.onDefaultProfileChanged(cb),
       get: () => gateway.getProfile(),
       remember: (name) => gateway.rememberProfile(name),
       set: (name) => gateway.setProfile(name),
@@ -159,10 +162,16 @@ export function buildWebBridge(
     openSessionWindow: (sessionId, opts) => browser.openSessionWindow(sessionId, opts),
     openSessionInTerminal: (sessionId, opts) =>
       denied.openSessionInTerminal(sessionId, opts),
-    openWindow: () => browser.openWindow(),
+    openWindow: (options) => browser.openWindow(options),
     openBrowserWindow: (tabId) => browser.openBrowserWindow(tabId),
     onBrowserPopoutClosed: (cb) => browser.onBrowserPopoutClosed(cb),
     claimAmbientCue: (key) => denied.claimAmbientCue(key),
+    windowControls: {
+      custom: false,
+      minimize: () => undefined,
+      toggleMaximize: () => undefined,
+      close: () => undefined,
+    },
     wakeIndicator: denied.wakeIndicator,
     petOverlay: denied.petOverlay,
     hud: denied.hud,

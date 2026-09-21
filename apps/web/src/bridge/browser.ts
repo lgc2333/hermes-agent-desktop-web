@@ -213,7 +213,9 @@ export class BrowserAdapter {
     return { ok: true }
   }
 
-  async openWindow(): Promise<{ error?: string; ok: boolean }> {
+  async openWindow(
+    _options?: import('@/global').DesktopProfileRoute,
+  ): Promise<{ error?: string; ok: boolean }> {
     const win = window.open(this.windowBaseUrl(), '_blank')
 
     if (!win) {
