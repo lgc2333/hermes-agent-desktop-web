@@ -3,6 +3,8 @@
 本文件登记所有对 vendor 目录的原位改动、subtree 基准与同步流程。
 原则（AGENTS.md 规则「vendor 纪律」）：vendor 内原位修改收敛到最少文件；能新加文件就不改旧文件。
 
+**PATCHES.md 只写「后续同步必须注意」的内容，禁止写同步日志 / 更新日志**：某次同步做了什么由 `docs/sync/` 记录，PATCHES.md 不重述变更、不写「X 日同步：上游改了 Y」这类流水。登记一条之前先问：后续同步（或改这块代码的人）是否必须知道它？否则不写。
+
 ## 1. Subtree 基准（Baseline）
 
 - 上游仓库：https://github.com/NousResearch/hermes-agent.git
