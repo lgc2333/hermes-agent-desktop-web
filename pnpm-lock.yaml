@@ -117,6 +117,9 @@ importers:
       '@nous-research/ui':
         specifier: 0.18.2
         version: 0.18.2(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(motion@12.42.2(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      '@novnc/novnc':
+        specifier: 1.7.0
+        version: 1.7.0
       '@streamdown/code':
         specifier: 1.1.1
         version: 1.1.1(react@19.2.7)
@@ -1306,6 +1309,9 @@ packages:
         optional: true
       three:
         optional: true
+
+  '@novnc/novnc@1.7.0':
+    resolution: {integrity: sha512-ucEJOx4T2avIRCleodk7YobZj5O2Ga2AeLfQ69A/yjG9HHba2+PDgwSkN3FttrmG+70ZGx21sElNFouK13RzyA==}
 
   '@npmcli/agent@2.2.2':
     resolution: {integrity: sha512-OrcNPXdpSl9UX7qPVRWbmWMCSXrcDa2M9DvrbOTj7ao1S4PlqVFYv9/yLKMkrJKZ/V5A/kDBC690or307i26Og==}
@@ -7537,6 +7543,8 @@ snapshots:
     transitivePeerDependencies:
       - '@types/react'
       - '@types/react-dom'
+
+  '@novnc/novnc@1.7.0': {}
 
   '@npmcli/agent@2.2.2(supports-color@10.2.2)':
     dependencies:
