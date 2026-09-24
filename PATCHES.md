@@ -8,11 +8,11 @@
 ## 1. Subtree 基准（Baseline）
 
 - 上游仓库：https://github.com/NousResearch/hermes-agent.git
-- 基准提交：`6a4d5e33ce3ed31eea9c25eb411da302ff752a9c`(上游 **main** HEAD，2026-09-22)
+- 基准提交：`f97608f178d1ffeca59860195ab7da295f7c8e5f`(上游 tag **v2026.9.24** = v0.21.5，2026-09-24)
 - vendor/hermes-desktop：上游 `apps/desktop`（含 src/ 渲染层、scripts/、vite.config.ts 等）
 - vendor/hermes-shared：上游 `apps/shared`（`@hermes/shared` 源码）
 - 引入方式：`git subtree add --squash`（对过滤提交执行，见 §2）
-- 当前子树 split：hermes-desktop: `69813ac175c358ceca845a7987dfd275bc4590b3`；hermes-shared: `0d05267615b96b37194e39b54943a0484909b126`
+- 当前子树 split：hermes-desktop: `0acd97a9347d54bc2bdb57cbf18908c4e59c7ba5`；hermes-shared: `3fd5ce3c5d08146ef041463a43b57636e299df70`
 
 ### 2. 引入方式说明（重要）
 
@@ -198,6 +198,9 @@ ref 保护——HEAD 树不变（含补丁），其相对锚点 delta = 恰好�
   (denied.ts/adapter.ts)须同步类型。
 - **vendor 测试 import 子树外 fixtures** 会破坏 typecheck(已用 tsconfig
   `exclude: vendor/**/*.test.*` 隔离)。
+- **本机同步只需 lockfile**: 依赖有增删时跑 `pnpm install --lockfile-only`
+  (秒级;重跑无 diff 即一致),不要跑全量 `pnpm install` —— 全量在本机曾于
+  link 阶段卡死(事件循环空转、无 IO/socket、非交互等待)。CI 自行全量安装。
 
 ## 8. 同步记录
 
