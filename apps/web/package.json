@@ -29,6 +29,7 @@
     "@types/ws": "8.18.1",
     "@vitejs/plugin-react": "6.0.3",
     "bippy": "0.5.43",
+    "lucide-react": "0.577.0",
     "playwright": "^1.62.1",
     "typescript": "6.0.3",
     "vite": "8.2.0",

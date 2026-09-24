@@ -126,6 +126,17 @@ ref 保护——HEAD 树不变（含补丁），其相对锚点 delta = 恰好�
   - 同步注意：subtree pull 后若上游改 vendor/hermes-desktop/index.html，
     直接照抄 vendor 版即可（Web 侧无差异需保留）。
 
+- apps/web/package.json
+  - 上游 `apps/desktop` 源码会 import 只由**上游其他 workspace** 声明、靠 monorepo 根
+    npm 扁平提升才可见的包（phantom dep，如上游 `web/package.json` 的
+    `lucide-react@0.577.0`）。本仓库只 vendoring apps/desktop|shared → 缺包时
+    typecheck / build / e2e 全红（2026-09-24 同步时
+    `components/onboarding-chat/cards/setup.tsx` 首次命中）。已在 apps/web
+    devDependencies 显式补齐（版本对齐上游）。
+  - 同步注意：vendor 源码报 `Cannot find module '<pkg>'` 时，用
+    `gh api 'search/code?q=repo:NousResearch/hermes-agent+filename:package.json+<pkg>'`
+    查上游声明处，按上游版本补进 apps/web——**不改 vendor 的 package.json**。
+
 - apps/web/src/main.tsx
   - Web 入口：装桥（installWebBridge）→ import vendor 渲染树 + web.css，
     顺序即桥先于渲染层就位。
