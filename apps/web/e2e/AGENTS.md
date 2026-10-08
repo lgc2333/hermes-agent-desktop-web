@@ -60,4 +60,15 @@ pnpm --filter @hermes-web/web exec playwright test e2e/ui.e2e.ts   # 单个
 spec 覆盖：`smoke`（boot）、`oauth`（桥层 native OAuth + chat + 刷新 + 登出）、`oauth-paste`（ADR-0017 paste-back）、
 `ui`（设置页 Sign in + chat + 刷新）、`composer-overflow`、`reconnect`（A 断连重连 / B 代理重启会话保留 / C 断连发送反馈）、
 `boot-failure`（overlay + Use local gateway / Repair / Logs 隐藏 + mode 卡只留 remote）、`find`（ADR-0019 Ctrl+F）、
-`attach`（ADR-0020 文件拖入落盘）、`responsive`（移动视口设置页 + 状态栏可读）、`dev-remote`（无 mock boot 恢复）。
+`attach`（ADR-0020 文件拖入落盘）、`responsive`（移动视口设置页 + 状态栏可读）、`dev-remote`（无 mock boot 恢复）、
+`links`（ADR-0028 Web 端链接默认落外部浏览器 + 无假失败弹窗）。
+
+## 坑
+
+- **vendor/ 改动不被运行中的 Vite 感知**：`vendor/` 在 Vite root（`apps/web`）之外，chokidar 不 watch →
+  改完 `vendor/hermes-desktop` 必须**重启 Vite**，否则一直跑打补丁前的转换结果。
+- **残留 worker 进程复用端口**：上一轮跑挂的 Vite 继续占着 `27100 + w`，新 worker 静默连上它 → 同样跑旧代码。
+  起跑前清干净：`pgrep -af "[v]ite"`（别写 `pgrep -f vite`，会匹配到自身命令行把自己杀掉）。
+- **常驻版本通知浮层**：mock 自报 `desktop_contract: 1` < 要求 `REQUIRED_BACKEND_CONTRACT`(8) → boot 后顶部居中常驻
+  一条 toast（`durationMs: 0`，不自动消失），正好压住聊天区顶部；在该区域点击会一直超时。先页内关掉它
+  （`links.e2e.ts#dismissNotices`：按 `/dismiss notification|关闭通知/i` 找 button 后 `.click()`）。

@@ -78,6 +78,12 @@ _Avoid_: 不支持的能力（与"未实现"混淆）
 **Feature gate（已退役）**:
 用字面 `if (false)` 关闭功能入口而保留其代码的机制；gates.ts 已删（ADR-0009），Web 不再做可配置开关系统，入口按能力分类决定（browser/gateway/denied）。
 
+**Link target（链接落点）**:
+一次链接点击落到哪里：内置预览面板，或系统浏览器。桌面端默认内置预览（⌘/Ctrl 点击或
+设置项「始终在外部浏览器中打开链接」走外部）；Web 端默认恒为系统浏览器——内置预览面板
+渲染 Electron `<webview>`、Web 桥归 denied 空实现，是无出口的死面板（ADR-0028）。
+_Avoid_: 外部浏览器（只说一端时）、新标签页（实现细节）
+
 **Registry-scoped connection（注册表作用域拨号）**:
 按注册表里**指定的一条 Connection**（而非当前 primary）解析出的连接视图：带上
 `connectionId` 与 `registryScoped` 标志，供次级/兄弟窗口拨到正确的 Target。与 primary

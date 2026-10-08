@@ -224,6 +224,15 @@ const REPLY = [
   'You can now send another message.',
 ].join('')
 
+// ADR-0028 e2e：prompt 带 `link-probe` 时回一条含 markdown 外链的消息，供链接
+// 落点验收（links.e2e.ts）。链接目标由该 spec 用 context 级路由兜住，不依赖外网。
+const LINK_PROBE_REPLY =
+  'Here is the link you asked for: [Hermes docs](https://link-target.test/docs)'
+
+function replyFor(userText) {
+  return /link-probe/.test(userText) ? LINK_PROBE_REPLY : REPLY
+}
+
 const STREAM_WORD_MS = 40
 
 function streamTurn(socket, session, userText) {
@@ -253,7 +262,8 @@ function streamTurn(socket, session, userText) {
 
   push('message.start', {})
 
-  const words = REPLY.split(' ')
+  const reply = replyFor(userText)
+  const words = reply.split(' ')
   let i = 0
 
   const tick = () => {
@@ -262,7 +272,7 @@ function streamTurn(socket, session, userText) {
     }
 
     if (i >= words.length) {
-      const full = REPLY
+      const full = reply
       session.messages.push({
         role: 'assistant',
         text: full,

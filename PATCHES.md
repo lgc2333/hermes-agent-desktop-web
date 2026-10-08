@@ -117,6 +117,11 @@ ref 保护——HEAD 树不变（含补丁），其相对锚点 delta = 恰好�
   - 原因：ADR-0022 桥优先级——Web 桥面返回同源代理流 URL；桌面无该表面时零回归
   - 同步注意：上游若改 resolveMediaPlaybackSrc 分支结构，保留"桥委托 + null/缺省回退"语义
 
+- vendor/hermes-desktop/src/store/external-links.ts
+  - 改动：`$alwaysExternalLinks` 默认值改为 `import.meta.env.VITE_WEB_BUILD === '1'`（Web 构建默认开启；`storage` 事件的回落值同款）
+  - 原因：Web 端内置预览面板渲染 Electron `<webview>`、preview 桥面归 denied → 默认"点击开内置预览"等于打开一个永远空白的面板；该设置短路在 `openLink` 的修饰键判定之前，开启即"一切链接点击一律外部"（ADR-0028）
+  - 同步注意：上游若改该 store 的默认值/持久化键，按「Web 构建默认 true、桌面默认 false」恢复；设置行保持可见，用户关掉后回到上游语义
+
 ## 5. 需注意的上游联动
 
 非 vendor 但依赖 vendor/上游结构、subtree pull 后需核对的 Web 侧文件：

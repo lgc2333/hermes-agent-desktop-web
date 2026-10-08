@@ -294,15 +294,47 @@ export class BrowserAdapter {
   }
 
   /**
-   * 开同源新 tab + 拦截广播（openExternal / openPreviewInBrowser 共用）。
-   * 浏览器拦下新标签（无用户手势 / 弹窗设置）时 `window.open` 返回 null ——
-   * 桌面端对 `shell.openExternal` 失败会广播 onExternalOpenFailed，这里是等价物。
+   * 开新 tab + 拦截广播（openExternal / openPreviewInBrowser 共用）。
+   *
+   * 不能直接用 `window.open(url, '_blank', 'noopener,noreferrer')`：按规范带
+   * `noopener` 时它恒返回 null（Chromium 154/155 实测），"成功打开"与"被弹窗
+   * 拦截"因此无法区分，每次点击都误报 onExternalOpenFailed（ADR-0028）。改为：
+   *   1. 先开 about:blank 拿 handle —— 返回 null 才是真被拦（无手势 / 弹窗设置）；
+   *   2. `win.opener = null` —— 等价 noopener 隔离（目标页拿不到可用 opener）；
+   *   3. 在空文档注入 `rel="noreferrer"` 锚点并 click()（同窗口导航，非新弹窗）
+   *      —— 实测目标站收不到 Referer，对齐桌面 shell.openExternal 的语义。
    */
   private openAndReport(url: string): void {
-    const win = window.open(url, '_blank', 'noopener,noreferrer')
+    const win = window.open('about:blank', '_blank')
 
     if (!win) {
       this.notifyExternalOpenFailed(url)
+
+      return
+    }
+
+    this.navigateOpenedTab(win, url)
+  }
+
+  /**
+   * 让已开的空 tab 导航到 url（见 openAndReport）。空文档不可写时（老浏览器 /
+   * 测试桩）退回 `location.replace`：落点仍正确，只是会带上来源页 Referer。
+   */
+  private navigateOpenedTab(win: Window, url: string): void {
+    try {
+      win.opener = null
+
+      const anchor = win.document.createElement('a')
+      anchor.href = url
+      anchor.rel = 'noreferrer'
+      win.document.body.appendChild(anchor)
+      anchor.click()
+    } catch {
+      try {
+        win.location.replace(url)
+      } catch {
+        // 目标页已在新 tab 里，浏览器自行处理，无需额外动作。
+      }
     }
   }
 

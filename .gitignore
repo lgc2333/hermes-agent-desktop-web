@@ -8,6 +8,9 @@ dist/
 dist-ssr/
 release/
 coverage/
+# Playwright artifacts (e2e runs leave these; never commit them)
+test-results/
+playwright-report/
 
 # --- Temp (per system AGENTS.md) ---
 temp/

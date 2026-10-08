@@ -12,6 +12,9 @@ export default defineConfig({
   // 与 vite.config.ts 同源，保证测试看到构建期同一版本串（ADR-0026）。
   define: {
     __HERMES_WEB_VERSION__: JSON.stringify(webVersionString(import.meta.dirname)),
+    // Web 构建标记（同 vite.config.ts）：vendor 的 Web 分支据此生效（ADR-0019 find
+    // 热键、ADR-0028 链接默认落点）——缺它单测会静默跑桌面语义。
+    'import.meta.env.VITE_WEB_BUILD': JSON.stringify('1'),
   },
   resolve: {
     alias: {

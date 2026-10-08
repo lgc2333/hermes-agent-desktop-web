@@ -405,6 +405,58 @@ describe('browserAdapter — A/C 组新增面', () => {
     }
   })
 
+  it('openExternal 走 about:blank + rel=noreferrer 锚点导航（ADR-0028）', async () => {
+    const adapter = makeAdapter()
+    const doc = document.implementation.createHTMLDocument('blank')
+    const opened = {
+      document: doc,
+      location: { replace: vi.fn() },
+      opener: {} as unknown,
+    }
+    const openMock = vi.fn(() => opened)
+    const click = vi
+      .spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(() => {})
+
+    vi.stubGlobal('open', openMock)
+
+    try {
+      await adapter.openExternal('https://example.com/deep')
+
+      // 第一步必须开 about:blank：带 noopener 的形态恒返回 null，无法区分
+      // "已打开"与"被拦截"（Chromium 实测）。
+      expect(openMock).toHaveBeenCalledWith('about:blank', '_blank')
+      // opener 隔离 + 同窗口锚点导航（rel=noreferrer → 目标站收不到 Referer）。
+      expect(opened.opener).toBeNull()
+      expect(opened.location.replace).not.toHaveBeenCalled()
+
+      const anchor = doc.querySelector('a')
+      expect(anchor?.getAttribute('href')).toBe('https://example.com/deep')
+      expect(anchor?.getAttribute('rel')).toBe('noreferrer')
+      expect(click).toHaveBeenCalledTimes(1)
+    } finally {
+      click.mockRestore()
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('空文档不可写时退回 location.replace（落点不变）', async () => {
+    const adapter = makeAdapter()
+    const replace = vi.fn()
+
+    vi.stubGlobal(
+      'open',
+      vi.fn(() => ({ document: null, location: { replace }, opener: {} })),
+    )
+
+    try {
+      await adapter.openExternal('https://example.com/fallback')
+      expect(replace).toHaveBeenCalledWith('https://example.com/fallback')
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('onExternalOpenFailed 在 window.open 被拦时广播 URL', async () => {
     const adapter = makeAdapter()
     const seen: { url: string }[] = []
@@ -444,15 +496,21 @@ describe('browserAdapter — A/C 组新增面', () => {
     const seen: unknown[] = []
     adapter.onExternalOpenFailed((payload) => seen.push(payload))
 
+    const doc = document.implementation.createHTMLDocument('blank')
+    const click = vi
+      .spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(() => {})
+
     vi.stubGlobal(
       'open',
-      vi.fn(() => ({ closed: false })),
+      vi.fn(() => ({ document: doc, location: { replace: vi.fn() }, opener: {} })),
     )
 
     try {
       await adapter.openExternal('https://example.com/ok')
       expect(seen).toEqual([])
     } finally {
+      click.mockRestore()
       vi.unstubAllGlobals()
     }
   })
