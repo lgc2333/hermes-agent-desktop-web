@@ -9,7 +9,7 @@ import { webVersionString } from './scripts/build-version.mjs'
 const root = path.resolve(import.meta.dirname, '../..')
 
 export default defineConfig({
-  // 与 vite.config.ts 同源（ADR-0014），保证测试看到构建期同一版本串。
+  // 与 vite.config.ts 同源，保证测试看到构建期同一版本串（ADR-0026）。
   define: {
     __HERMES_WEB_VERSION__: JSON.stringify(webVersionString(import.meta.dirname)),
   },

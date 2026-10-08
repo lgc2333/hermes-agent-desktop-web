@@ -63,11 +63,37 @@ do
 done
 
 echo ""
+echo "==> 记录版本标识的上游分量（apps/web/package.json#upstream）"
+# WEB_VERSION = <项目版本 apps/web/package.json#version>+<上游版本>：release tag 用
+# tag 名，追 main 用上游提交的 7 位短 hash。落盘而非构建期读 git —— Docker 构建
+# .dockerignore 排除 .git（见 apps/web/scripts/build-version.mjs）。
+if git rev-parse --verify --quiet "refs/tags/$REF" >/dev/null; then
+  UPSTREAM_REF="$REF"
+else
+  UPSTREAM_REF="$(git rev-parse --short=7 "$FETCH_HEAD")"
+fi
+node -e '
+const fs = require("node:fs")
+const file = "apps/web/package.json"
+const pkg = JSON.parse(fs.readFileSync(file, "utf8"))
+const upstream = { ref: process.argv[1], commit: process.argv[2] }
+const out = {}
+for (const [key, value] of Object.entries(pkg)) {
+  out[key] = value
+  if (key === "version") out.upstream = upstream
+}
+if (!out.upstream) out.upstream = upstream
+fs.writeFileSync(file, JSON.stringify(out, null, 2) + "\n")
+' "$UPSTREAM_REF" "$FETCH_HEAD"
+echo "    apps/web/package.json#upstream.ref = $UPSTREAM_REF"
+
+echo ""
 echo "==> 同步完成。请手动："
-echo "    1) 更新 PATCHES.md §1 基准 SHA 为 $FETCH_HEAD"
-echo "    2) pnpm install && pnpm --filter @hermes-web/web typecheck"
-echo "    3) 检查冲突并按 PATCHES.md §4 登记原位改动"
-echo "    4) 清理：浅取给本地留了 shallow 边界与上游 tag 引用（squash 后不需要，"
+echo "    1) 更新 PATCHES.md §1 基准 SHA 为 $FETCH_HEAD（上游版本分量 $UPSTREAM_REF 已写入）"
+echo "    2) 更新 PATCHES.md §1 基准 tag 为 $REF（追 main 时注明是提交而非 release）"
+echo "    3) pnpm install && pnpm --filter @hermes-web/web typecheck"
+echo "    4) 检查冲突并按 PATCHES.md §4 登记原位改动"
+echo "    5) 清理：浅取给本地留了 shallow 边界与上游 tag 引用（squash 后不需要，"
 echo "       留着会使仓库保持 shallow 且体积膨胀）。完事后："
 echo "          git update-ref -d refs/tags/$REF; rm -f .git/shallow; git gc"
 echo "       注意：过滤提交已由 refs/subtree-anchors/ 保护，任何 gc 都不会回收；"

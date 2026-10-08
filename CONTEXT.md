@@ -129,5 +129,5 @@ _Avoid_: 隧道（已不需要）、登录流程（太泛）
 _Avoid_: localhost（上游明确拒绝）、"可配置的允许列表"（不存在）
 
 **发布 tag**:
-发布点的 git tag，携带完整版本标识 `v<桌面版本>+web.<Web项目版本>`（如 v0.17.0+web.0.1.0），与客户端自报版本 WEB_VERSION 完全一致；构建脚本对已含 `+web.` 的 tag 直接使用、不再重复拼装（ADR-0018）。桌面版本须对映 vendor/hermes-desktop/package.json，Web 项目版本对映 apps/web/package.json。
-_Avoid_: 纯项目版本 tag（ADR-0014 旧示例）、版本号（不指 tag 时）
+发布点的 git tag，携带完整版本标识 `v<项目版本>+<上游版本>`（如 v0.4.22+v0.21.6；追 main 的同步点用 7 位短 hash，如 v0.4.22+818c13b），与客户端自报版本 WEB_VERSION 完全一致（ADR-0026）。上游分量 = apps/web/package.json#upstream.ref（同步脚本写入），项目版本 = apps/web/package.json#version。
+_Avoid_: 桌面版本分量（上游 2026-10-08 起 `apps/desktop/package.json` version 变占位符 0.0.0，已无来源）、`+web.` 前缀（旧方案）、版本号（不指 tag 时）

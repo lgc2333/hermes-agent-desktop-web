@@ -53,7 +53,7 @@ export default defineConfig(({ command }) => ({
   // no copy to reconcile after a subtree pull.
   publicDir: path.join(vendorDesktop, 'public'),
   plugins: [react(), tailwindcss()],
-  // ADR-0014：构建期注入客户端版本标识（上游桌面版本 + 项目版本）。
+  // ADR-0026：构建期注入客户端版本标识（项目版本 + 上游同步点）。
   define: {
     __HERMES_WEB_VERSION__: JSON.stringify(webVersionString(import.meta.dirname)),
     // ADR-0019：Web 构建标记——vendor use-keybinds 据此让 view.findInPage

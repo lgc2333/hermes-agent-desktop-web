@@ -1,6 +1,6 @@
 # 0018 — 发布 tag 携带完整版本标识（v<桌面版本>+web.<Web项目版本>）
 
-**Status**: accepted
+**Status**: superseded by ADR-0026
 
 **Context**:
 

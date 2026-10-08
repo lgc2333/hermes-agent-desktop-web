@@ -1,6 +1,6 @@
 # 0014 — Web 构建版本标识：上游桌面版本 + 项目版本
 
-**Status**: accepted
+**Status**: superseded by ADR-0026
 
 **Context**:
 

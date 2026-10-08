@@ -8,5 +8,5 @@ interface ImportMeta {
   readonly env: ImportMetaEnv
 }
 
-// 构建期注入（vite/vitest define，ADR-0014）：<桌面版本>+web.<项目版本>。
+// 构建期注入（vite/vitest define）：<项目版本>+<上游版本 | 7 位短 hash>。
 declare const __HERMES_WEB_VERSION__: string

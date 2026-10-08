@@ -1,24 +1,35 @@
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+
 import { describe, expect, it } from 'vitest'
-import { composeWebVersion } from './build-version.mjs'
 
-describe('composeWebVersion (ADR-0018)', () => {
-  // 完整组合版本 tag：已含 +web. → 原样返回，不再重复拼装。
-  it('returns a full-composed tag verbatim (no duplicate +web.)', () => {
-    expect(composeWebVersion('0.17.0', '0.17.0+web.0.1.0')).toBe('0.17.0+web.0.1.0')
+import { composeWebVersion, webVersionString } from './build-version.mjs'
+
+const webRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+
+describe('composeWebVersion', () => {
+  // 同步到上游 release tag → 上游分量保留 tag 的 v（tag 形态 v<项目版本>+v<上游版本>）。
+  it('composes the upstream release tag as the upstream component', () => {
+    expect(composeWebVersion('0.4.22', 'v0.21.6')).toBe('0.4.22+v0.21.6')
   })
 
-  // 纯项目版本 tag（ADR-0014 旧示例，向后兼容）→ 照常拼装。
-  it('composes a bare web-version tag with the +web. prefix', () => {
-    expect(composeWebVersion('0.17.0', '0.1.0')).toBe('0.17.0+web.0.1.0')
+  // 同步到 main → 上游提交的 7 位短 hash（sync-upstream.sh 用 --short=7）。
+  it('composes a 7-char upstream commit hash', () => {
+    expect(composeWebVersion('0.4.22', '818c13b')).toBe('0.4.22+818c13b')
   })
 
-  // 无 tag 分支：commit hash 标识。
-  it('composes a commit-hash identifier', () => {
-    expect(composeWebVersion('0.17.0', 'gd8aa0fe')).toBe('0.17.0+web.gd8aa0fe')
+  // upstream.ref 缺失 → unknown 兜底（不应发生）。
+  it('falls back to the unknown marker', () => {
+    expect(composeWebVersion('0.4.22', 'unknown')).toBe('0.4.22+unknown')
   })
+})
 
-  // 无 git 分支：package.json 版本。
-  it('composes a package.json version identifier', () => {
-    expect(composeWebVersion('0.17.0', '0.1.0')).toBe('0.17.0+web.0.1.0')
+describe('webVersionString', () => {
+  // 真实仓库：HEAD 未打 tag → package.json 的 version + upstream.ref；
+  // 发布点（HEAD 打了 tag）→ tag 剥前导 v 后的完整标识。
+  it('follows the <project version>+<upstream tag | hash> shape', () => {
+    expect(webVersionString(webRoot)).toMatch(
+      /^\d+\.\d+\.\d+\+(?:v\d+\.\d+\.\d+|[0-9a-f]{7}|unknown)$/,
+    )
   })
 })

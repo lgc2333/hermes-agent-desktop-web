@@ -1,68 +1,59 @@
 /**
- * Web 构建版本计算（ADR-0014）。
+ * Web 构建版本计算。
  *
- * WEB_VERSION = <上游桌面版本>+web.<项目标识>：
- *   - 上游版本构建时读 vendor/hermes-desktop/package.json（subtree 同步后自动跟随）；
- *   - 项目标识解析阶梯（用户决策）：
- *       1. HEAD 恰好打了 tag（发布点）→ 见「发布 tag」两种形态（ADR-0018）：
- *          a. 完整组合版本 tag（v0.17.0+web.0.1.0）→ 已含 +web.，直接使用
- *             （剥前导 v），不再重复拼装；
- *          b. 纯项目版本 tag（v0.1.0，ADR-0014 旧示例，向后兼容）→ 用 tag
- *             版本号作项目标识拼装；
- *       2. 否则有 git 检出 → 短 commit hash（g<sha>，精确到构建）；
- *       3. 无 git（Docker 构建，.dockerignore 排除 .git）→ 退回
- *          apps/web/package.json 版本号。
- * vite.config.ts 与 vitest.config.ts 共用，保证构建与测试看到同一字符串。
+ * WEB_VERSION = <项目版本>+<上游版本>：
+ *   - 项目版本 = apps/web/package.json 的 version（发布时 bump）；
+ *   - 上游版本 = apps/web/package.json 的 `upstream.ref`（由同步脚本写入，见
+ *     scripts/sync-upstream.sh）：
+ *       同步到上游 release tag → tag 名（如 v0.21.6）；
+ *       同步到 main（上游尚未发 release）→ 上游提交的 7 位短 hash（如 818c13be）。
+ *     必须落盘：Docker 构建 .dockerignore 排除 .git，构建期拿不到 tag/hash。
+ *   - HEAD 恰好打了 tag（发布点，形如 v0.4.22+v0.21.6）→ 直接用 tag（剥前导
+ *     v），与 package.json 拼出的自报值逐字一致。
+ *
+ * 上游 2026-10-08 起把 apps/desktop/package.json 的 version 改成占位符 0.0.0
+ * （真版本由构建 stamp 注入，见 PATCHES.md §7）→ 旧公式「<桌面版本>+web.<项目
+ * 标识>」（ADR-0014/0018，均已 superseded）失去版本来源，故改为以项目版本为主、
+ * 上游同步点作 build metadata（ADR-0026）。
+ *
+ * vite.config.ts 与 vitest.config.ts 共用本模块，保证构建与测试看到同一字符串。
  */
 import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 
-function gitInfo(repoRoot) {
-  // HEAD 精确打 tag → 发布版本号；否则 → 短 hash；无 git → null。
+/** upstream.ref 缺失时的兜底标识（正常由同步脚本写入，不应发生）。 */
+const UNKNOWN_UPSTREAM = 'unknown'
+
+/** HEAD 精确打 tag → 发布标识（剥前导 v）；未打 tag / 非 git 检出 → null。 */
+function exactTag(repoRoot) {
   try {
     const tag = execFileSync('git', ['describe', '--exact-match', '--tags', 'HEAD'], {
       cwd: repoRoot,
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
     }).trim()
-    if (tag) return { tag: tag.replace(/^v/, '') }
+
+    return tag ? tag.replace(/^v/, '') : null
   } catch {
-    // 未打 tag → 落 hash 分支
+    // 未打 tag / 无 git 检出 → 走 package.json 分支
+    return null
   }
-  try {
-    const hash = execFileSync('git', ['rev-parse', '--short', 'HEAD'], {
-      cwd: repoRoot,
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-    }).trim()
-    if (hash) return { hash }
-  } catch {
-    // 非 git 检出（如 Docker 构建）→ null
-  }
-  return null
 }
 
-/**
- * 拼装 WEB_VERSION（ADR-0018）：projectId 已含 "+web."（完整组合版本 tag，
- * 如 0.17.0+web.0.1.0）→ 直接返回；否则补 "+web." 前缀（纯项目版本 tag /
- * g<sha> / package.json 版本）。
- */
-export function composeWebVersion(desktopVersion, projectId) {
-  if (projectId.includes('+web.')) return projectId
-  return `${desktopVersion}+web.${projectId}`
+/** 拼装 WEB_VERSION：<项目版本>+<上游 release tag | 7 位短 hash>。 */
+export function composeWebVersion(projectVersion, upstreamRef) {
+  return `${projectVersion}+${upstreamRef}`
 }
 
 export function webVersionString(webRoot) {
-  const repoRoot = path.resolve(webRoot, '../..')
-  const desktopPkg = JSON.parse(
-    fs.readFileSync(
-      path.join(repoRoot, 'vendor', 'hermes-desktop', 'package.json'),
-      'utf8',
-    ),
-  )
+  const tagged = exactTag(path.resolve(webRoot, '../..'))
+
+  if (tagged) {
+    return tagged
+  }
+
   const webPkg = JSON.parse(fs.readFileSync(path.join(webRoot, 'package.json'), 'utf8'))
-  const git = gitInfo(repoRoot)
-  const projectId = git?.tag ?? (git?.hash ? `g${git.hash}` : webPkg.version)
-  return composeWebVersion(desktopPkg.version, projectId)
+
+  return composeWebVersion(webPkg.version, webPkg.upstream?.ref ?? UNKNOWN_UPSTREAM)
 }

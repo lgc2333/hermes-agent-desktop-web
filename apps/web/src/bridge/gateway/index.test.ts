@@ -1421,10 +1421,12 @@ describe('m5 password login ("dashboard login", proxy mode)', () => {
   })
 })
 
-describe('wEB_VERSION (build-injected client identity, ADR-0014)', () => {
-  // 项目标识：HEAD 打 tag → 版本号；否则 → g<短sha>（无 git 时退回项目版本号）。
-  it('follows the <desktop version>+web.<tag version | g<sha>> shape', () => {
-    expect(WEB_VERSION).toMatch(/^\d+\.\d+\.\d+\+web\.(?:g[0-9a-f]+|\d+\.\d+\.\d+)$/)
+describe('web version identity (build-injected WEB_VERSION)', () => {
+  // <项目版本>+<上游 release tag | 7 位短 hash>（无上游信息时 unknown 兜底）。
+  it('follows the <project version>+<upstream tag | hash> shape', () => {
+    expect(WEB_VERSION).toMatch(
+      /^\d+\.\d+\.\d+\+(?:v\d+\.\d+\.\d+|[0-9a-f]{7}|unknown)$/,
+    )
   })
 })
 
