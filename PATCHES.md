@@ -3,7 +3,7 @@
 本文件登记所有对 vendor 目录的原位改动、subtree 基准与同步流程。
 原则（AGENTS.md 规则「vendor 纪律」）：vendor 内原位修改收敛到最少文件；能新加文件就不改旧文件。
 
-**PATCHES.md 只写「后续同步必须注意」的内容，禁止写同步日志 / 更新日志**：某次同步做了什么由 `docs/sync/` 记录，PATCHES.md 不重述变更、不写「X 日同步：上游改了 Y」这类流水。登记一条之前先问：后续同步（或改这块代码的人）是否必须知道它？否则不写。
+**重要！重要！写文件前必看**：PATCHES.md 只写「后续同步必须注意」的内容，禁止写同步日志 / 更新日志：某次同步做了什么由 `docs/sync/` 记录，PATCHES.md 不重述变更、**不写「X 日同步：上游改了 Y」这类流水**。登记一条之前先问：后续同步（或改这块代码的人）是否必须知道它？否则不写。
 
 ## 1. Subtree 基准（Baseline）
 
@@ -240,6 +240,10 @@ ref 保护——HEAD 树不变（含补丁），其相对锚点 delta = 恰好�
   「上游桌面版本」失去来源,ADR-0018 的 `v<桌面版本>+web.<项目版本>` tag 语义受影响
   → 需用户决策新的版本来源(勿擅自发明;见 docs/sync/2026-10-08-1.md)。
 - **Electron DOM augmentation 进 web typecheck**(见 §5 bridge 条目)。
+- **e2e 别拿状态栏文本当就绪锚点**:状态栏标签是上游可改的 i18n 文案(2026-10-08
+  gateway 项 `Gateway` → `Backend`,见 `src/lib/gateway-health-pill.ts`),硬编码
+  `waitForBodyText(page,'Gateway')` 会随上游改名集体超时。用
+  `waitForGatewayStatus()`(判 `[data-slot="statusbar"]` 文本)。
 
 ## 8. 同步记录
 

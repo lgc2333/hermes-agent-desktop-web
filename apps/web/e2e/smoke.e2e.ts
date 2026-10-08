@@ -1,6 +1,6 @@
 import { test, expect } from './fixtures'
 import { startMock, stopByPort, waitForHttp } from './helpers/topology'
-import { waitForReady, waitFor } from './helpers/bridge'
+import { waitForReady, waitForGatewayStatus } from './helpers/bridge'
 
 // Reference migration (vitest describe/it → playwright test + step).
 // See e2e/AGENTS.md; the per-worker `stack` fixture supplies ports + targets,
@@ -16,10 +16,7 @@ test.describe('smoke: app boots against the per-worker token-mock topology', () 
     expect(await page.evaluate(() => !!(window as any).hermesDesktop)).toBe(true)
 
     // Gateway status appears in the status bar once booted/reconciled.
-    await waitFor(page, () => document.body.innerText.includes('Gateway'), {
-      timeout: 15000,
-      label: 'Gateway status',
-    })
+    await waitForGatewayStatus(page, 15000)
 
     stopByPort(stack.tokenPort)
   })

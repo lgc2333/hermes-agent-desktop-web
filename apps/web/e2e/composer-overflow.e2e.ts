@@ -1,6 +1,11 @@
 import { test, expect } from './fixtures'
 import { startMock, stopByPort, waitForHttp } from './helpers/topology'
-import { waitForReady, waitForBodyText, gotoHash } from './helpers/bridge'
+import {
+  waitForReady,
+  waitForBodyText,
+  waitForGatewayStatus,
+  gotoHash,
+} from './helpers/bridge'
 import { sendChat } from './helpers/chat'
 
 // Regression for the mobile composer overflow fix (apps/web/src/web.css §6b).
@@ -18,7 +23,7 @@ test.describe('composer: mobile right-hand controls stay inside the surface', ()
     await waitForHttp(`${stack.tokenTarget}/api/status`)
     await page.goto(stack.appUrl)
     await waitForReady(page)
-    await waitForBodyText(page, 'Gateway', { timeout: 60000, label: 'Gateway ready' })
+    await waitForGatewayStatus(page)
     // 落到聊天页使 composer 挂载。
     await gotoHash(page, '#/')
     await sendChat(page, 'hi')

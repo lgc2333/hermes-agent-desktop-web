@@ -58,6 +58,25 @@ export async function waitForBodyText(
 }
 
 /**
+ * Wait until the status bar has painted its gateway/backend health pill — the
+ * readiness proxy for "booted and reconciled against the gateway".
+ * Upstream 2026-10-08 moved the pill to src/lib/gateway-health-pill.ts and
+ * relabelled it `Gateway` → `Backend`, so match either label rather than the
+ * old hardcoded string.
+ */
+export async function waitForGatewayStatus(page: Page, timeout = 60000): Promise<void> {
+  await waitFor(
+    page,
+    () => {
+      const bar = document.querySelector('[data-slot="statusbar"]')
+      const text = bar?.textContent ?? ''
+      return /Backend|Gateway/.test(text) ? true : null
+    },
+    { timeout, label: 'gateway status pill' },
+  )
+}
+
+/**
  * Poll an async (Node-side) fn until it returns truthy. Use for checks that
  *  cannot be expressed as a serializable page expression (e.g. `getConfig`).
  */
