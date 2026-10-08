@@ -54,6 +54,9 @@ A 组（真实现，多数归桥面三分法的 **gateway** 类）：
   `repoNameFromUrl(gitUrl)`（desktop-plugin-install.ts:392，**仓库名**而非 subdir 名），
   但恒报 `agent:true` / `desktop:false` - 一条说明性 warning。效果：弹窗脱离
   `phase='error'`，agent 半可装，desktop 半恒不渲染（渲染层 `{probe.desktop && ...}` 门控）。
+  **与 ADR-0010 的关系**：严格按「浏览器不可实现 **且** remote gateway 不支持 → denied」
+  本应归 denied，这里是**有意偏离**——归 denied 会让整条插件安装链路继续死着（含本已
+  可用的 agent 半），「降级 + 一条显式 warning」的代价明显更小。
 
 B 组（不实现，但消掉死入口）：
 
