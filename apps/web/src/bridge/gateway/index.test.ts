@@ -1422,10 +1422,10 @@ describe('m5 password login ("dashboard login", proxy mode)', () => {
 })
 
 describe('web version identity (build-injected WEB_VERSION)', () => {
-  // <项目版本>+<上游 release tag | 7 位短 hash>（无上游信息时 unknown 兜底）。
-  it('follows the <project version>+<upstream tag | hash> shape', () => {
+  // v<项目版本>+<上游 release tag | 7 位短 hash>（无上游信息时 unknown 兜底）。
+  it('follows the v<project version>+<upstream tag | hash> shape', () => {
     expect(WEB_VERSION).toMatch(
-      /^\d+\.\d+\.\d+\+(?:v\d+\.\d+\.\d+|[0-9a-f]{7}|unknown)$/,
+      /^v\d+\.\d+\.\d+\+(?:v\d+\.\d+\.\d+|[0-9a-f]{7}|unknown)$/,
     )
   })
 })

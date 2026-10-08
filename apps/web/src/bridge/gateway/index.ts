@@ -74,12 +74,12 @@ import {
   wsUrlFor,
 } from './rest'
 
-// 构建期注入：<项目版本>+<上游版本 | 7 位短 hash>（上游分量 = 同步到的 release
+// 构建期注入：v<项目版本>+<上游版本 | 7 位短 hash>（上游分量 = 同步到的 release
 // tag 或追 main 的短 hash，落 apps/web/package.json#upstream，见
-// scripts/build-version.mjs 与 scripts/sync-upstream.sh）。无 define 的冷路径
-// 退回占位。
+// scripts/build-version.mjs 与 scripts/sync-upstream.sh）。带前导 v，与发布 tag
+// 逐字一致；无 define 的冷路径退回占位。
 export const WEB_VERSION =
-  typeof __HERMES_WEB_VERSION__ === 'string' ? __HERMES_WEB_VERSION__ : '0.0.0+unknown'
+  typeof __HERMES_WEB_VERSION__ === 'string' ? __HERMES_WEB_VERSION__ : 'v0.0.0+unknown'
 
 export type { BridgeApi } from './fs-git'
 // 保持 './gateway' 既有导入面（gateway.test.ts / adapter.ts）。

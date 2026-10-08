@@ -16,11 +16,14 @@
 
 **Decision**:
 
-- 版本标识 = **`<项目版本>+<上游版本>`**：
-  - 同步到上游 release tag → 上游分量用 tag 名（`0.4.22+v0.21.6`）；
-  - 追 main（上游未发 release）→ 上游分量用上游提交的 7 位短 hash（`0.4.22+818c13b`）。
-- 发布 tag = `v<项目版本>+<上游版本>`（如 `v0.4.22+v0.21.6`），与客户端自报版本
-  `WEB_VERSION` 逐字一致（tag 剥前导 `v`）；HEAD 恰好打了 tag 时以 tag 为准。
+- 版本标识 = **`v<项目版本>+<上游版本>`**（**带前导 `v`**，与发布 tag 同形）：
+  - 同步到上游 release tag → 上游分量用 tag 名（`v0.4.22+v0.21.6`）；
+  - 追 main（上游未发 release）→ 上游分量用上游提交的 7 位短 hash（`v0.4.22+818c13b`）。
+- 发布 tag 与客户端自报版本 `WEB_VERSION` **逐字一致**（都带前导 `v`）；HEAD 恰好打了
+  tag 时以 tag 原文为准。`apps/web/package.json#version` 保持**纯 semver**（`0.4.22`，
+  该字段不接受前导 v），前导 `v` 只由 `build-version.mjs#composeWebVersion` 拼上；
+  渲染层显示时自己也会补 `v`（`version-details.tsx` 的 `v${shortVersion(...)}`，
+  `shortVersion` 先剥前导 v）→ 不会出现 `vv`。
 - 上游分量落 `apps/web/package.json#upstream`（`ref` + `commit`），**由
   `scripts/sync-upstream.sh` 在每次同步末尾自动写入**；`build-version.mjs` 读它而非
   vendor 的 `package.json`。项目版本仍对映 `apps/web/package.json#version`（发布时 bump）。
