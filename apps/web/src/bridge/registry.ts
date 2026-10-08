@@ -200,6 +200,15 @@ export function hasConnection(id: string): boolean {
 }
 
 /**
+ * 未知连接 id 的统一报错（上游 `registryDialConnectionId` 文案）。三处共用
+ * （setPrimaryConnection / setLastUsedConnection / gateway 的 registry 路由），
+ * 免得文案漂移——测试与 ADR 都引这句原文。
+ */
+export function unknownConnectionIdError(id: string): Error {
+  return new Error(`No connection with id "${String(id ?? '')}".`)
+}
+
+/**
  * 切换 primary。**只改 primary**（上游 `setPrimaryConnection`
  * connection-registry.ts:1561-1567 同款）：`lastUsed` 由渲染层在成功切换后
  * 单独调 `setLastUsed` 记录（store/connections.ts:176-190），不在这里代劳。
@@ -207,7 +216,7 @@ export function hasConnection(id: string): boolean {
  */
 export function setPrimaryConnection(id: string): WebConnectionsStore {
   if (!hasConnection(id)) {
-    throw new Error(`No connection with id "${String(id ?? '')}".`)
+    throw unknownConnectionIdError(id)
   }
 
   const registry = loadRegistry()
@@ -238,7 +247,7 @@ export function setLaunchMode(mode: string): WebConnectionsStore {
  */
 export function setLastUsedConnection(id: string): WebConnectionsStore {
   if (!hasConnection(id)) {
-    throw new Error(`No connection with id "${String(id ?? '')}".`)
+    throw unknownConnectionIdError(id)
   }
 
   const registry = loadRegistry()

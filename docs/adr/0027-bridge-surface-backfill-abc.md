@@ -34,7 +34,8 @@ A 组（真实现，多数归桥面三分法的 **gateway** 类）：
   与实现**自相矛盾**，按实现取齐。`getGatewayWsUrlFor` 走 `{ok:false, error}` 不抛
   （上游 `gatewayWsUrlIpcResult` 同款）——静默回落会把请求拨到错误的 Target 却自称是
   另一条连接，正是审计里的原症状。`getConnectionFor` 的 `profile` 空值填 `'default'`
-  （上游 main.ts:15554 同款）。
+  （上游 main.ts:15554 同款）；payload 里的 `priority`（`global.d.ts:49`）**有意忽略**
+  ——它只影响桌面端本地后端池的前/后台拨号，Web 没有池（`getConnection` 恒走注册表）。
 - `getAgentRoster`：上游 `buildAgentRoster` **纯函数移植**到 `bridge/gateway/roster.ts`
   （install_id 折叠、`@name-device` 重名去重、canonical 选择按 local<ssh<remote<cloud 优先
   级 + primary 偏好），枚举腿走逐条注册连接 `GET /api/profiles` + `GET /api/status`。
@@ -81,7 +82,8 @@ C 组（低成本补齐）：
   `setPrimaryConnection` **只改 primary、不写 lastUsed**——上游 lastUsed 由渲染层成功切换
   后单独记（store/connections.ts:176-190），真正同时设两者的是 Apply 路径
   `reconcileAppliedGlobalConnection`（connection-registry.ts:1590-1652），而 Web 的 Apply
-  是原地改写当前 primary 记录（id 不变），不需要重指。
+  是原地改写当前 primary 记录（id 不变），不需要重指。删掉 lastUsed 指向的连接时回落
+  primary（registry.ts#removeConnection，上游 connection-registry.ts:1555 同款）。
 - `logLine` + `getRecentLogs`：**browser** 类内存环形缓冲（500 行；模块级，跨
   `BrowserAdapter` 实例共享，测试用 `resetLogRing()` 清），缓冲为空时回落 localStorage
   里的上次渲染错误快照（原行为保留）。错误边界的 `reportRendererError` 也写进同一缓冲
@@ -124,8 +126,10 @@ C 组（低成本补齐）：
 - 联合花名册每刷新一次要对每条注册连接各发 2 个请求（status + profiles），连接多时为 O(n)
   ——与桌面端逐连接枚举同代价，接受。
 - `launchMode` / `lastUsed` 落 localStorage 注册表；旧注册表读取时归一化，不需要版本迁移。
-- 桥面「类 2（gateway）」新增 5 个成员，`adapter.ts` 仍保持「三分法」可读：新增面各自标注
-  归属类，未新增任何 feature gate。
+- 桥面「类 2（gateway）」新增 **8** 个成员：顶层 6 个（`getConnectionFor` /
+  `getGatewayWsUrlFor` / `getAgentRoster` / `recycleBackend` / `probePluginRepo` /
+  `probeLocalBackend`）+ `connections` 子面 2 个（`setLaunchMode` / `setLastUsed`）；
+  `adapter.ts` 仍保持「三分法」可读：新增面各自标注归属类，未新增任何 feature gate。
 - 本 ADR 只处置 A/B/C 三组；D 组 33 面（保持缺省即正确）不动。
 - **路由面与记账面一律严格**：`getConnectionFor` / `getGatewayWsUrlFor` 与
   `setPrimaryConnection` / `setLastUsed` 对未知 id 全部报错（上游同款）。

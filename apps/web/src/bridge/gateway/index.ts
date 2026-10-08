@@ -51,6 +51,7 @@ import {
   setLastUsedConnection,
   setLaunchMode,
   setPrimaryConnection,
+  unknownConnectionIdError,
   upsertConnection,
   writeProfilePreference,
 } from '../registry'
@@ -153,7 +154,7 @@ export class GatewayAdapter {
    */
   private resolveScopedConnection(id: string): WebConnectionRecord {
     if (!hasConnection(id)) {
-      throw new Error(`No connection with id "${String(id ?? '')}".`)
+      throw unknownConnectionIdError(id)
     }
 
     return getConnectionById(id)
