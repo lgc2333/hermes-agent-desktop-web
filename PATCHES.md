@@ -8,11 +8,11 @@
 ## 1. Subtree 基准（Baseline）
 
 - 上游仓库：https://github.com/NousResearch/hermes-agent.git
-- 基准提交：`f97608f178d1ffeca59860195ab7da295f7c8e5f`(上游 tag **v2026.9.24** = v0.21.5，2026-09-24)
+- 基准提交：`818c13be1dc4fd28987e1e881a9408224afd4535`(上游 tag **v0.21.6**，2026-10-08)
 - vendor/hermes-desktop：上游 `apps/desktop`（含 src/ 渲染层、scripts/、vite.config.ts 等）
 - vendor/hermes-shared：上游 `apps/shared`（`@hermes/shared` 源码）
 - 引入方式：`git subtree add --squash`（对过滤提交执行，见 §2）
-- 当前子树 split：hermes-desktop: `0acd97a9347d54bc2bdb57cbf18908c4e59c7ba5`；hermes-shared: `3fd5ce3c5d08146ef041463a43b57636e299df70`
+- 当前子树 split：hermes-desktop: `a0049d3a90bf22f91dcd6985bfe488d82a10905d`；hermes-shared: `9cdbbb8aa1ac1ca3f4597cb107b5bd010d76a0e8`
 
 ### 2. 引入方式说明（重要）
 
@@ -60,25 +60,25 @@ ref 保护——HEAD 树不变（含补丁），其相对锚点 delta = 恰好�
   - 原因：Tailwind v4 自动扫描只覆盖 vite root（apps/web），vendor 源码的类名不生成 CSS 规则（M0 验证时发现界面下半部无样式崩坏）；@source 让 Tailwind 扫描 vendor 源码
   - 同步注意：路径相对 styles.css（位于 vendor/hermes-desktop/src），指向 vendor 自身，subtree pull 后依旧有效；若上游改 styles.css 头部导致 @source 行丢失，按本条恢复
 
-- vendor/hermes-desktop/src/app/chat/index.tsx
-  - 改动：voice 配置 `enabled: false` 恢复为 `enabled: true`（附注释），去掉 Web 拒绝面关闭
-  - 原因：ADR-0022 语音入 Web 计划——上游 remote 模式原生支持语音，恢复 dictation pill（此前按产品范围关掉；如今流式 TTS + 听写 + 自动朗读已通 proxy 链路，麦克风门在 apps/web 桥层放行）
-  - 同步注意：上游若重构 voice 配置，按注释恢复（语义权威 = PATCHES.md §4 / ADR-0022）
+- vendor/hermes-desktop/src/components/remote-setup/fields.tsx
+  - 改动：OAuth 未连接时按 `isPassword` 分流——密码 provider 渲染用户名/密码表单（调 `setup.passwordSignIn`），非密码 provider 保持上游的登录按钮并追加 paste-back 区块（Textarea + 提交按钮，调 `setup.pasteSignIn`）；新增 authUsername/authPassword/pastedUrl 三个本地 state（M5/M6）
+  - 原因：Web 端没有 gateway 登录弹窗（桌面靠 Electron 登录窗口）；密码表单直接经代理 POST /auth/password-login，密码不落盘；远端部署 OAuth 够不到代理 loopback 回调，必须粘贴回跳（ADR-0017）。上游 2026-10-08 把首启/设置两处表单收敛成共享的 RemoteSetupFields，故 M5/M6 从原来的两份副本改为这一处
+  - 同步注意：上游若重构 RemoteSetupFields 的 auth 区块 JSX，按「密码 provider → 凭据表单 / 非密码 OAuth → 登录按钮 + paste 回退」语义恢复；i18n 键 authUsername/authPassword/authNeedsPassword/authPaste* 在 types.ts 已声明
+
+- vendor/hermes-desktop/src/components/remote-setup/use-remote-oauth.ts
+  - 改动：`RemoteOAuth` 新增 `pasteSubmitting` / `passwordSignIn(username, password)` / `pasteSignIn(pasted)` 三条 Web 专有腿（`RemoteOAuthOptions` 增可选 `passwordProvider`）；两者与 `signIn` 同款世代栅栏（targetSeq + loginSeq）并同样先走 `beforeOAuthLogin`（= 设置页的 saveConnectionConfig 预存，M7 语义）
+  - 原因：M5/M6 的登录腿需要与 OAuth 腿共享失败/通知/世代作废机制；`beforeOAuthLogin` 复用上游既有的「登录前预存连接」钩子，密码/粘贴同样受益（登录前注册表须指向真实 URL，否则白名单 ADR-0015 下转发 403 target not allowed）
+  - 同步注意：上游若重构 RemoteOAuth 的登录世代或 beforeOAuthLogin 调用点，按「先预存 → 登录 → 世代校验 → setOAuthConnected」语义恢复；桌面端不消费这三条腿
+
+- vendor/hermes-desktop/src/components/remote-setup/use-remote-setup.ts
+  - 改动：`RemoteSetup` 透出 `pasteSubmitting` / `passwordSignIn` / `pasteSignIn`；按 probe providers 计算 `passwordProvider`（`supportsPassword` 优先，否则首个 provider）传给 useRemoteOAuth
+  - 原因：M5 需要 provider 名才能 POST /auth/password-login（Web 桥 `passwordLoginConnectionConfig(url, provider, …)`）
+  - 同步注意：上游若改 probe 结果的 provider 形状，按「supportsPassword 优先 + 首个回退」恢复
 
 - vendor/hermes-desktop/src/global.d.ts
-  - 改动：新增 `DesktopPasswordLoginResult` 接口 + `hermesDesktop.passwordLoginConnectionConfig` 表面（M5 密码 "dashboard login"）；新增 `oauthPasteConnectionConfig(remoteUrl, pasted)` 表面（M6 paste-back，ADR-0017）
+  - 改动：新增 `DesktopPasswordLoginResult` 接口 + `hermesDesktop.passwordLoginConnectionConfig` 表面（M5 密码 "dashboard login"）；新增 `oauthPasteConnectionConfig(remoteUrl, pasted)` 表面（M6 paste-back，ADR-0017）。`oauthLoginConnectionConfig` 保持上游 2026-10-08 的新签名 `(remoteUrl, options?: DesktopOauthLoginOptions)` 并保留 paste 面（两处改动同段，合并时取上游签名 + 追加 paste）
   - 原因：Web 端密码门禁登录走代理 /api/proxy/session/login（ADR-0013）；远端部署 OAuth 需粘贴回跳（ADR-0017）。桌面端均不实现（桥面存在但桌面 main 进程不注册，渲染层仅在 Web 分支调用）
-  - 同步注意：上游若改动 hermesDesktop 表面或 oauth 登录签名，按 M5/M6 语义合并（该能力是 Web 专有扩展）
-
-- vendor/hermes-desktop/src/app/settings/gateway-settings.tsx
-  - 改动：oauth 分支按 isPasswordProvider 分流——未登录渲染用户名/密码表单（调 passwordLoginConnectionConfig），已登录保持原 pill + sign-out；新增 authUsername/authPassword 状态与 passwordSignIn 处理器（M5）。M6：OAuth 未连接时渲染 paste-back 区块（Textarea + 提交按钮，调 oauthPasteConnectionConfig），新增 pastedUrl/pasteSubmitting 状态与 pasteSignIn 处理器。M7 修复：passwordSignIn 发送凭证前先 saveConnectionConfig（与 OAuth signIn 同款）——表单 URL 若只是 meta 下发的显示级预填（defaultGatewayUrl），登录后注册表仍指向出厂 mock，白名单（ADR-0015）下所有 REST/WS 转发 403 target not allowed（清 cookie 重登"登录成功但没连上"根因）
-  - 原因：Web 端没有 gateway 登录弹窗（桌面靠 Electron partition cookie）；表单直接 POST /auth/password-login（经代理），密码不落盘；远端部署 OAuth 需粘贴回跳（ADR-0017）
-  - 同步注意：上游若重构 auth 区块 JSX/登录流，按 "密码 provider → 凭据表单 / OAuth → 登录按钮 + paste 回退" 语义恢复；passwordSignIn 的登录前 saveConnectionConfig 是 Web 专有修复（依赖 Web 桥 saveConnectionConfig 落盘 registry），上游无此语义；i18n 键 authUsername/authPassword/authPaste* 在 types.ts 已声明
-
-- vendor/hermes-desktop/src/components/first-run-remote-form.tsx
-  - 改动：同 gateway-settings——密码 provider 渲染用户名/密码表单（passwordSignIn，M5）；OAuth 未连接时渲染 paste-back 区块（M6）
-  - 原因：同上（首启表单与设置表单同源同语义）
-  - 同步注意：同上
+  - 同步注意：上游若改动 hermesDesktop 表面或 oauth 登录签名，按 M5/M6 语义合并（该能力是 Web 专有扩展）；`DesktopOauthLoginOptions` 由上游新增，合并时勿丢
 
 - vendor/hermes-desktop/src/components/boot-failure-overlay.tsx
   - 改动：signInRemote 统一路由到嵌入式 Gateway settings 视图（setView('connect')）——M5 起密码 reauth 如此；M6 起 OAuth reauth 同样如此（paste 提示只在 Settings/首启表单一处，无第三份并行副本）
@@ -124,7 +124,8 @@ ref 保护——HEAD 树不变（含补丁），其相对锚点 delta = 恰好�
 - apps/web/index.html
   - Web 构建入口。原为符号链接，实测后发现构建报错。
   - 同步注意：subtree pull 后若上游改 vendor/hermes-desktop/index.html，
-    直接照抄 vendor 版即可（Web 侧无差异需保留）。
+    直接照抄 vendor 版即可（Web 侧无差异需保留）。2026-10-08 上游删掉
+    `?win=intro` 预涂色例外（introReveal 面已删），本仓已照抄。
 
 - apps/web/package.json
   - 上游 `apps/desktop` 源码会 import 只由**上游其他 workspace** 声明、靠 monorepo 根
@@ -133,6 +134,9 @@ ref 保护——HEAD 树不变（含补丁），其相对锚点 delta = 恰好�
     typecheck / build / e2e 全红（2026-09-24 同步时
     `components/onboarding-chat/cards/setup.tsx` 首次命中）。已在 apps/web
     devDependencies 显式补齐（版本对齐上游）。
+  - 上游 2026-10-08 起 `apps/desktop/package.json` 自己声明了
+    `lucide-react@0.577.0` / `yaml@2.8.1` / `electron-updater@6.8.9` →
+    apps/web 的 lucide-react 补丁已冗余（保留无害，删除亦可）。
   - 同步注意：vendor 源码报 `Cannot find module '<pkg>'` 时，用
     `gh api 'search/code?q=repo:NousResearch/hermes-agent+filename:package.json+<pkg>'`
     查上游声明处，按上游版本补进 apps/web——**不改 vendor 的 package.json**。
@@ -177,6 +181,21 @@ ref 保护——HEAD 树不变（含补丁），其相对锚点 delta = 恰好�
     在 `vendor/hermes-desktop/electron/notification-types.ts`（`@` 别名树外）
     → 用 `Parameters<Window['hermesDesktop']['notify']>[0]`，勿
     `from '@/global'` 导入。
+  - 2026-10-08 上游新增/变更的**必填**面（桥层已适配，见同步记录）：
+    `updateHold`（recheck/quit/startAnyway，本地安装阻塞屏）、
+    `getSyncStatus`（pm/venv 回执，Web 恒 null）、`uninstall.openAppsSettings`、
+    `quickEntry.ackSubmit` / `onLateResult` 且 `quickEntry.submit` 改返回
+    `Promise<QuickEntrySubmitResult>`、`setKeepAwake` 参数由 boolean 改
+    `KeepAwakeMode`、`DesktopUninstallSummary` 增 `code_removal_allowed` /
+    `native_removal_instructions`、`DesktopBootstrapState` 增 `bundled`。
+    新**可选**面一律不实现（getEmbedHostOrigin / windowRelay / chatOnboarding.size /
+    claimStartupLatency / onExternalOpenFailed / freeTierChallenge / logLine /
+    agentPluginsRoot / probeLocalBackend / setPreviewGuestHidden / localSkin /
+    desktopMetrics / update.takePendingRun…）；`introReveal?` 与 `skipIntro?` 上游已删。
+  - Electron 的 DOM augmentation 会随 vendor global.d.ts 进入 web typecheck，
+    `document.createElement` 因此多出 `createElement('webview')` 重载，
+    `vi.spyOn(document, 'createElement')` 会解析到该单参签名
+    （adapter.test.ts 已就地 cast）。
 
 ## 6. 同步后必做
 
@@ -212,6 +231,15 @@ ref 保护——HEAD 树不变（含补丁），其相对锚点 delta = 恰好�
 - **本机同步只需 lockfile**: 依赖有增删时跑 `pnpm install --lockfile-only`
   (秒级;重跑无 diff 即一致),不要跑全量 `pnpm install` —— 全量在本机曾于
   link 阶段卡死(事件循环空转、无 IO/socket、非交互等待)。CI 自行全量安装。
+- **本机 vitest 全红 ≠ 代码坏**: 本机 Node 26 自带实验性 `localStorage`(未带
+  `--localstorage-file` 时为 undefined),遮蔽 jsdom 的实现 → 所有用
+  `window.localStorage` 的桥层测试报 `Cannot read properties of undefined
+(reading 'clear')`。本机只跑 typecheck/lint/build,单测与 e2e 以 CI(Node 22)为准。
+- **上游 desktop version 变占位符**(2026-10-08 起 `apps/desktop/package.json`
+  version = `0.0.0`,真版本改由构建 stamp / release channel 注入):ADR-0014 的
+  「上游桌面版本」失去来源,ADR-0018 的 `v<桌面版本>+web.<项目版本>` tag 语义受影响
+  → 需用户决策新的版本来源(勿擅自发明;见 docs/sync/2026-10-08-1.md)。
+- **Electron DOM augmentation 进 web typecheck**(见 §5 bridge 条目)。
 
 ## 8. 同步记录
 
