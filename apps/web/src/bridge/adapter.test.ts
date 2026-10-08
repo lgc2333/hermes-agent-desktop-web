@@ -57,17 +57,25 @@ describe('buildWebBridge / installWebBridge', () => {
     // jsdom 没有原生对话框：拦截 <input> 构造，捕获后手动派发 change 模拟选中。
     const createElement = document.createElement.bind(document)
     let captured: HTMLInputElement | null = null
-    const spy = vi
-      .spyOn(document, 'createElement')
-      .mockImplementation((tagName, options) => {
-        const el = createElement(tagName, options)
+    // Electron's DOM augmentation (pulled in by the vendored global.d.ts) adds a
+    // `createElement('webview')` overload, so vi.spyOn resolves the spy to that
+    // single signature. Re-type it to a plain mock so the implementation keeps
+    // the generic DOM signature this test needs.
+    const spy = vi.spyOn(document, 'createElement') as unknown as {
+      mockImplementation: (
+        impl: (tagName: string, options?: ElementCreationOptions) => HTMLElement,
+      ) => unknown
+      mockRestore: () => void
+    }
+    spy.mockImplementation((tagName: string, options?: ElementCreationOptions) => {
+      const el = createElement(tagName, options)
 
-        if (tagName === 'input') {
-          captured = el as HTMLInputElement
-        }
+      if (tagName === 'input') {
+        captured = el as HTMLInputElement
+      }
 
-        return el
-      })
+      return el
+    })
 
     try {
       const bridge = buildWebBridge()

@@ -122,6 +122,10 @@ export function buildWebBridge(
     resetBootstrap: () => denied.resetBootstrap(),
     repairBootstrap: () => denied.repairBootstrap(),
     cancelBootstrap: () => denied.cancelBootstrap(),
+    // 上游 2026-10-08 新增（拒绝类）：本地安装被 update-hold 阻塞时的阻塞屏
+    // 动作 + pm/venv 操作回执，均为 Electron 主进程 + 本地安装概念。
+    updateHold: denied.updateHold,
+    getSyncStatus: () => denied.getSyncStatus(),
 
     // ── 浏览器等价（类 1）──────────────────────────────────────────────────
     readClipboard: () => browser.readClipboard(),

@@ -59,6 +59,10 @@ export interface RemoteSetup {
   signIn: () => Promise<void>
   signOut: () => Promise<void>
   test: () => Promise<void>
+  // Web-only (M5/M6, PATCHES.md §4): credential-form and paste-back legs.
+  pasteSubmitting: boolean
+  passwordSignIn: (username: string, password: string) => Promise<void>
+  pasteSignIn: (pasted: string) => Promise<void>
 }
 
 function credentialsFrom(saved: Partial<RemoteCredentials> = {}): RemoteCredentials {
@@ -116,6 +120,12 @@ export function useRemoteSetup(options: RemoteSetupOptions): RemoteSetup {
 
   const { isPassword, providerLabel } = deriveRemoteAuthProviderShape(probe?.providers, t.boot.failure.identityProvider)
 
+  // Web-only (M5, PATCHES.md §4): the provider name the credential form signs in
+  // with — the gateway's password provider (first advertised as fallback).
+  const advertisedProviders = probe?.providers ?? []
+  const passwordProvider =
+    advertisedProviders.find(provider => provider.supportsPassword)?.name ?? advertisedProviders[0]?.name ?? ''
+
   const authResolved =
     manualAuth ||
     (probeStatus === 'done' && probe?.authMode !== 'unknown') ||
@@ -143,6 +153,7 @@ export function useRemoteSetup(options: RemoteSetupOptions): RemoteSetup {
     host,
     url,
     providerLabel,
+    passwordProvider,
     targetSeq,
     beforeOAuthLogin: (value: DesktopConnectionConfigInput): Promise<void> | undefined =>
       callbacks.current.beforeOAuthLogin?.(value),
@@ -205,6 +216,9 @@ export function useRemoteSetup(options: RemoteSetupOptions): RemoteSetup {
     reset,
     signIn: oauth.signIn,
     signOut: oauth.signOut,
-    test: connectionTest.test
+    test: connectionTest.test,
+    pasteSubmitting: oauth.pasteSubmitting,
+    passwordSignIn: oauth.passwordSignIn,
+    pasteSignIn: oauth.pasteSignIn
   }
 }

@@ -1,8 +1,10 @@
+import { useState } from 'react'
 import type { ReactElement, ReactNode } from 'react'
 
 import { ListRow, Pill } from '@/app/settings/primitives'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { useI18n } from '@/i18n'
 import { AlertCircle, Check, Loader2, LogIn } from '@/lib/icons'
 
@@ -50,6 +52,10 @@ export function RemoteSetupFields({
   const copy = firstRun ? t.install : g
   const { credentials, isPassword, providerLabel } = setup
   const urlTitle = registry ? t.settings.connections.urlTitle : copy.remoteUrlTitle
+  // Web-only (M5/M6, PATCHES.md §4): credential-form + paste-back draft state.
+  const [authUsername, setAuthUsername] = useState('')
+  const [authPassword, setAuthPassword] = useState('')
+  const [pastedUrl, setPastedUrl] = useState('')
 
   const authDescription = firstRun
     ? credentials.oauthConnected
@@ -121,6 +127,41 @@ export function RemoteSetupFields({
                 </Button>
               ) : null}
             </div>
+          ) : isPassword ? (
+            // M5 (PATCHES.md §4): a username/password gateway gets a credential
+            // form instead of the OAuth popup — the Web proxy holds the session.
+            <div className="grid gap-2">
+              <Input
+                aria-label={copy.authUsername}
+                autoComplete="username"
+                disabled={disabled || setup.signingIn}
+                onChange={event => setAuthUsername(event.target.value)}
+                placeholder={copy.authUsername}
+                value={authUsername}
+              />
+              <Input
+                aria-label={copy.authPassword}
+                autoComplete="current-password"
+                disabled={disabled || setup.signingIn}
+                onChange={event => setAuthPassword(event.target.value)}
+                onKeyDown={event => {
+                  if (event.key === 'Enter' && authUsername.trim() && authPassword) {
+                    void setup.passwordSignIn(authUsername, authPassword)
+                  }
+                }}
+                placeholder={copy.authPassword}
+                type="password"
+                value={authPassword}
+              />
+              <Button
+                disabled={disabled || setup.signingIn || !authUsername.trim() || !authPassword}
+                onClick={() => void setup.passwordSignIn(authUsername, authPassword)}
+                size="sm"
+              >
+                {setup.signingIn ? <Loader2 className="animate-spin" /> : <LogIn />}
+                {copy.signIn}
+              </Button>
+            </div>
           ) : (
             <Button
               disabled={disabled || setup.signingIn || !setup.payload.remoteUrl}
@@ -128,10 +169,35 @@ export function RemoteSetupFields({
               size="sm"
             >
               {setup.signingIn ? <Loader2 className="animate-spin" /> : <LogIn />}
-              {isPassword ? copy.signIn : copy.signInWith(providerLabel)}
+              {copy.signInWith(providerLabel)}
             </Button>
           )}
         </Field>
+      ) : null}
+      {/* ADR-0017 (PATCHES.md §4): tunnel-free fallback — a remote browser lands
+          on a failed 127.0.0.1 page after signing in (expected). Paste the
+          address-bar URL here; the proxy completes the same code exchange. */}
+      {!urlOnly && setup.authResolved && credentials.authMode === 'oauth' && !isPassword && !credentials.oauthConnected ? (
+        <div className="grid gap-2">
+          <span className="text-xs text-muted-foreground">{copy.authPasteHint}</span>
+          <Textarea
+            className="min-h-16 resize-y"
+            disabled={disabled || setup.pasteSubmitting}
+            onChange={event => setPastedUrl(event.target.value)}
+            placeholder={copy.authPastePlaceholder}
+            value={pastedUrl}
+          />
+          <Button
+            className="justify-self-start"
+            disabled={disabled || setup.pasteSubmitting || !setup.payload.remoteUrl || !pastedUrl.trim()}
+            onClick={() => void setup.pasteSignIn(pastedUrl)}
+            size="sm"
+            variant="outline"
+          >
+            {setup.pasteSubmitting ? <Loader2 className="animate-spin" /> : null}
+            {copy.authPasteSubmit}
+          </Button>
+        </div>
       ) : null}
       {!urlOnly && setup.authResolved && credentials.authMode === 'token' ? (
         <Field description={copy.tokenDesc} stacked={firstRun} title={copy.tokenTitle}>

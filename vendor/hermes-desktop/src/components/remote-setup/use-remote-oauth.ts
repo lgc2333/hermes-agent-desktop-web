@@ -10,6 +10,9 @@ interface RemoteOAuthOptions {
   host: RemoteSetupHost
   url: string
   providerLabel: string
+  // Web-only (M5, PATCHES.md §4): the provider name the credential form signs in
+  // with (the gateway's password provider). Ignored by the desktop shell.
+  passwordProvider?: string
   targetSeq: RefObject<number>
   beforeOAuthLogin: (payload: DesktopConnectionConfigInput) => Promise<void> | undefined
   setOAuthConnected: (connected: boolean) => void
@@ -38,6 +41,10 @@ export interface RemoteOAuth {
   clearSigningIn: () => void
   signIn: () => Promise<void>
   signOut: () => Promise<void>
+  // Web-only (M5/M6, PATCHES.md §4): credential-form and paste-back legs.
+  pasteSubmitting: boolean
+  passwordSignIn: (username: string, password: string) => Promise<void>
+  pasteSignIn: (pasted: string) => Promise<void>
 }
 
 /** OAuth leg of the remote editor: login/logout generations fenced by the probe target. */
@@ -49,6 +56,7 @@ export function useRemoteOAuth(options: RemoteOAuthOptions): RemoteOAuth {
     host,
     url,
     providerLabel,
+    passwordProvider,
     targetSeq,
     beforeOAuthLogin,
     setOAuthConnected,
@@ -60,11 +68,13 @@ export function useRemoteOAuth(options: RemoteOAuthOptions): RemoteOAuth {
   } = options
 
   const [signingIn, setSigningIn] = useState<boolean>(false)
+  const [pasteSubmitting, setPasteSubmitting] = useState<boolean>(false)
   const loginSeq = useRef<number>(0)
 
   const invalidateLogin = (): void => {
     loginSeq.current += 1
     setSigningIn(false)
+    setPasteSubmitting(false)
   }
 
   const clearSigningIn = (): void => {
@@ -159,5 +169,108 @@ export function useRemoteOAuth(options: RemoteOAuthOptions): RemoteOAuth {
     }
   }
 
-  return { signingIn, invalidateLogin, clearSigningIn, signIn, signOut }
+  // M5 (PATCHES.md §4): a username/password ("dashboard login") gateway signs in
+  // through a credential form instead of an OAuth redirect. The Web proxy holds
+  // the resulting gateway session cookie in memory (same lifecycle as OAuth
+  // tokens: lost on proxy restart, never on disk). Pre-saves through
+  // beforeOAuthLogin first — same reason as signIn (the persisted connection URL
+  // is what drives REST/WS forwarding).
+  const passwordSignIn = async (username: string, password: string): Promise<void> => {
+    if (!url || !username.trim() || !password || signingIn) {
+      return
+    }
+
+    const target: number = targetSeq.current
+    const seq: number = ++loginSeq.current
+    const current = (): boolean => target === targetSeq.current && seq === loginSeq.current
+    invalidateTest()
+    setSigningIn(true)
+
+    try {
+      await beforeOAuthLogin({ mode: 'remote', remoteAuthMode: 'oauth', remoteUrl: url })
+
+      if (!current()) {
+        return
+      }
+
+      const result = await window.hermesDesktop.passwordLoginConnectionConfig(
+        url,
+        passwordProvider ?? '',
+        username.trim(),
+        password
+      )
+
+      if (!current()) {
+        return
+      }
+
+      setOAuthConnected(Boolean(result.connected))
+
+      if (result.connected) {
+        notify({ kind: 'success', title: g.signedIn, message: g.connectedTo(providerLabel) })
+      } else {
+        reportError(t.boot.failure.signInIncompleteMessage, t.boot.failure.signInIncompleteTitle, 'warning')
+      }
+    } catch (err) {
+      if (current()) {
+        reportError(err, g.signInFailed)
+      }
+    } finally {
+      if (current()) {
+        setSigningIn(false)
+      }
+    }
+  }
+
+  // ADR-0017 (PATCHES.md §4): remote deployments — the browser lands on a failed
+  // 127.0.0.1 page after signing in (the proxy's loopback redirect is
+  // unreachable). The user pastes the address-bar URL here; the proxy completes
+  // the same code exchange as the popup callback.
+  const pasteSignIn = async (pasted: string): Promise<void> => {
+    if (!url || !pasted.trim() || pasteSubmitting) {
+      return
+    }
+
+    const target: number = targetSeq.current
+    const seq: number = ++loginSeq.current
+    const current = (): boolean => target === targetSeq.current && seq === loginSeq.current
+    invalidateTest()
+    setPasteSubmitting(true)
+
+    try {
+      await beforeOAuthLogin({ mode: 'remote', remoteAuthMode: 'oauth', remoteUrl: url })
+
+      if (!current()) {
+        return
+      }
+
+      const result = await window.hermesDesktop.oauthPasteConnectionConfig(url, pasted)
+
+      if (!current()) {
+        return
+      }
+
+      setOAuthConnected(Boolean(result.connected))
+
+      if (result.connected) {
+        notify({ kind: 'success', title: g.signedIn, message: g.connectedTo(providerLabel) })
+      } else {
+        reportError(
+          result.error ? `${t.boot.failure.signInIncompleteMessage}: ${result.error}` : t.boot.failure.signInIncompleteMessage,
+          t.boot.failure.signInIncompleteTitle,
+          'warning'
+        )
+      }
+    } catch (err) {
+      if (current()) {
+        reportError(err, g.signInFailed)
+      }
+    } finally {
+      if (current()) {
+        setPasteSubmitting(false)
+      }
+    }
+  }
+
+  return { signingIn, invalidateLogin, clearSigningIn, signIn, signOut, pasteSubmitting, passwordSignIn, pasteSignIn }
 }

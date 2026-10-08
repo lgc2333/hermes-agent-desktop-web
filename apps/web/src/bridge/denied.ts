@@ -45,7 +45,12 @@ import type {
   QuickEntryStatePush,
   QuickEntryStatus,
   QuickEntrySubmitPayload,
+  QuickEntrySubmitResult,
 } from '@/store/quick-entry'
+
+// 桥面类型从成员派生，勿直接 import vendor 内部类型（PATCHES.md §5）：
+// KeepAwakeMode 定义在 vendor electron/power-save.ts（@ 别名树外）。
+type KeepAwakeMode = Parameters<NonNullable<Window['hermesDesktop']['setKeepAwake']>>[0]
 
 function UNAVAILABLE(what: string) {
   return new Error(`Hermes Web: ${what} is not available in the browser`)
@@ -187,7 +192,15 @@ export class DeniedAdapter {
         shortcut: patch.shortcut ?? '',
       }
     },
-    submit(_payload: QuickEntrySubmitPayload): void {
+    async submit(_payload: QuickEntrySubmitPayload): Promise<QuickEntrySubmitResult> {
+      // 上游 2026-10-08 起 submit 返回投递结果（Web 无 quick window，恒 ok:false）。
+      return {
+        ok: false,
+        code: 'unavailable',
+        message: 'Hermes Web: the quick entry window is not available in the browser',
+      }
+    },
+    ackSubmit(_correlationId: string, _result: QuickEntrySubmitResult): void {
       // no-op
     },
     dismiss(): void {
@@ -199,6 +212,7 @@ export class DeniedAdapter {
     onState: noopUnsub,
     onSubmit: noopUnsub,
     onShown: noopUnsub,
+    onLateResult: noopUnsub,
   }
 
   // ── 语音 ─────────────────────────────────────────────────────────────────
@@ -326,8 +340,8 @@ export class DeniedAdapter {
     // no-op（Web 无桌面窗口玻璃面，拒绝）
   }
 
-  setKeepAwake(_on: boolean): void {
-    // no-op
+  setKeepAwake(_mode: KeepAwakeMode): void {
+    // no-op（上游 2026-10-08 起 setKeepAwake 收 KeepAwakeMode 而非 boolean）
   }
 
   setPreviewShortcutActive(_active: boolean): void {
@@ -360,6 +374,8 @@ export class DeniedAdapter {
   uninstall = {
     async summary(): Promise<DesktopUninstallSummary> {
       return {
+        code_removal_allowed: false,
+        native_removal_instructions: null,
         hermes_home: '',
         agent_installed: false,
         gui_installed: false,
@@ -372,6 +388,9 @@ export class DeniedAdapter {
     },
     async run(_mode: DesktopUninstallMode): Promise<DesktopUninstallResult> {
       return { ok: false, error: 'Hermes Web: nothing to uninstall' }
+    },
+    async openAppsSettings(): Promise<void> {
+      // no-op（浏览器无 OS「应用设置」面板）
     },
   }
 
@@ -435,6 +454,30 @@ export class DeniedAdapter {
 
   async cancelBootstrap(): Promise<{ cancelled: boolean; ok: boolean }> {
     return { ok: true, cancelled: true }
+  }
+
+  // ── 上游 2026-10-08 新增：本地安装面（拒绝类）─────────────────────────────
+  // updateHold：本地安装被「更早的更新」持有时的阻塞屏动作；getSyncStatus：
+  // pm/venv/插件操作的机器可读回执。两者都是 Electron 主进程 + 本地安装/
+  // pm 概念，浏览器与 remote gateway 均无等价（ADR-0010）→ 拒绝类。
+
+  updateHold = {
+    async recheck(): Promise<{ ok: boolean }> {
+      return { ok: false }
+    },
+    async quit(): Promise<{ ok: boolean }> {
+      return { ok: false }
+    },
+    async startAnyway(_request: {
+      confirmed: true
+      holdId: string
+    }): Promise<{ ok: boolean }> {
+      return { ok: false }
+    },
+  }
+
+  async getSyncStatus(): Promise<null> {
+    return null
   }
 
   // ── preview 变更通知（门控面，gateway.ts 提供实现，永不触发）──────────────

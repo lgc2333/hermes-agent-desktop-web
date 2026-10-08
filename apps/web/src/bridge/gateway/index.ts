@@ -687,6 +687,8 @@ export class GatewayAdapter {
       completedAt: null,
       setupChoice: null,
       unsupportedPlatform: null,
+      // Web 无打包产物（bundled install 是桌面 artifact 概念），恒 false。
+      bundled: false,
     }
   }
 
