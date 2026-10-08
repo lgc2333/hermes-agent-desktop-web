@@ -1490,3 +1490,260 @@ describe('gatewayAdapter.streamMediaUrl (ADR-0022)', () => {
     expect(await adapter.streamMediaUrl('/tmp/a.ogg')).toBeNull()
   })
 })
+
+/**
+ * A/C 组新增类 2 桥面（ADR-0027）：registry-scoped 拨号、后端重启、插件探测、
+ * 联合花名册、启动恢复策略、本地面探测。
+ */
+describe('gatewayAdapter — A/C 组新增面', () => {
+  const fetchMock = vi.fn()
+
+  beforeEach(() => {
+    window.localStorage.clear()
+    loadRegistry()
+    fetchMock.mockReset()
+    vi.stubGlobal('fetch', fetchMock)
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+  })
+
+  function seedRemote(id = 'prod', label = 'Prod') {
+    upsertConnection({
+      id,
+      label,
+      kind: 'remote',
+      url: `https://${id}.example`,
+      authMode: 'token',
+      token: `tok-${id}`,
+    })
+
+    return id
+  }
+
+  it('getConnectionFor resolves the registry connection and marks it registry-scoped', async () => {
+    const adapter = new GatewayAdapter()
+    seedRemote('prod')
+
+    const conn = await adapter.getConnectionFor({
+      connectionId: 'prod',
+      profile: 'research',
+    })
+
+    expect(conn.connectionId).toBe('prod')
+    expect(conn.registryScoped).toBe(true)
+    expect(conn.profile).toBe('research')
+    expect(conn.remoteHost).toBe('prod.example')
+    expect(conn.wsUrl).toContain(encodeURIComponent('https://prod.example'))
+  })
+
+  it('getConnectionFor fills the profile default and rejects an empty connectionId', async () => {
+    const adapter = new GatewayAdapter()
+    seedRemote('prod')
+
+    // profile 空值 → 'default'（上游 main.ts:15554 同款）。
+    expect((await adapter.getConnectionFor({ connectionId: 'prod' })).profile).toBe(
+      'default',
+    )
+
+    // 空 id 抛错（上游 registryDialConnectionId 同款，不委托 primary）。
+    await expect(adapter.getConnectionFor({ connectionId: '' })).rejects.toThrow(
+      /No connection with id ""\./,
+    )
+    await expect(adapter.getConnectionFor({})).rejects.toThrow(
+      /No connection with id ""\./,
+    )
+  })
+
+  it('getConnectionFor rejects an unknown connection id instead of mis-routing', async () => {
+    const adapter = new GatewayAdapter()
+
+    await expect(adapter.getConnectionFor({ connectionId: 'ghost' })).rejects.toThrow(
+      /No connection with id "ghost"\./,
+    )
+  })
+
+  it('getConnectionFor resolves the implicit `local` connection', async () => {
+    const adapter = new GatewayAdapter()
+    const conn = await adapter.getConnectionFor({ connectionId: 'local' })
+
+    expect(conn.connectionId).toBe('local')
+    expect(conn.registryScoped).toBe(true)
+  })
+
+  it('getGatewayWsUrlFor mints a registry-scoped ws url', async () => {
+    const adapter = new GatewayAdapter()
+    seedRemote('prod')
+
+    const result = await adapter.getGatewayWsUrlFor({ connectionId: 'prod' })
+
+    expect(typeof result).toBe('object')
+    const wsUrl =
+      typeof result === 'string'
+        ? result
+        : (result as { ok: true; wsUrl: string }).wsUrl
+    expect(wsUrl).toContain('/api/ws?token=tok-prod&target=')
+    expect(wsUrl).toContain(encodeURIComponent('https://prod.example'))
+  })
+
+  it('getGatewayWsUrlFor returns ok:false (never throws) for an unknown id', async () => {
+    const adapter = new GatewayAdapter()
+
+    expect(await adapter.getGatewayWsUrlFor({ connectionId: 'ghost' })).toEqual({
+      error: 'No connection with id "ghost".',
+      ok: false,
+    })
+    // 空 id 同样走 ok:false（上游 registryDialConnectionId + gatewayWsUrlIpcResult）。
+    expect(await adapter.getGatewayWsUrlFor({})).toEqual({
+      error: 'No connection with id "".',
+      ok: false,
+    })
+  })
+
+  it('recycleBackend POSTs /api/gateway/restart (with ?profile= when scoped)', async () => {
+    fetchMock.mockResolvedValue(jsonResponse(200, { ok: true }))
+    const adapter = new GatewayAdapter()
+
+    await expect(adapter.recycleBackend()).resolves.toEqual({ ok: true })
+
+    let [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe(`${window.location.origin}/api/gateway/restart`)
+    expect(init.method).toBe('POST')
+
+    fetchMock.mockClear()
+    fetchMock.mockResolvedValue(jsonResponse(200, { ok: true }))
+
+    await adapter.recycleBackend('research')
+
+    ;[url] = fetchMock.mock.calls[0]
+    expect(url).toBe(`${window.location.origin}/api/gateway/restart?profile=research`)
+  })
+
+  it('recycleBackend surfaces gateway failures to the caller', async () => {
+    fetchMock.mockResolvedValue(textResponse(500, 'nope'))
+    const adapter = new GatewayAdapter()
+
+    await expect(adapter.recycleBackend()).rejects.toThrow(/HTTP 500/)
+  })
+
+  it('recycleBackend reports ok:false when the gateway says so', async () => {
+    fetchMock.mockResolvedValue(jsonResponse(200, { ok: false }))
+    const adapter = new GatewayAdapter()
+
+    await expect(adapter.recycleBackend()).resolves.toEqual({ ok: false })
+  })
+
+  it('probeLocalBackend never claims a local install is needed', async () => {
+    const adapter = new GatewayAdapter()
+
+    expect(await adapter.probeLocalBackend()).toEqual({ bootstrapNeeded: false })
+  })
+
+  it('probePluginRepo reports agent-installable / desktop-never', async () => {
+    const adapter = new GatewayAdapter()
+    const result = await adapter.probePluginRepo({ identifier: 'owner/repo' })
+
+    expect(result.ok).toBe(true)
+    expect(result.agent).toBe(true)
+    expect(result.desktop).toBe(false)
+  })
+
+  it('connections.setLaunchMode / setLastUsed write through to the registry', async () => {
+    const adapter = new GatewayAdapter()
+    seedRemote('prod')
+
+    const launch = await adapter.connectionsSetLaunchMode('last-used')
+    expect(launch.ok).toBe(true)
+    expect(launch.registry.launchMode).toBe('last-used')
+
+    const used = await adapter.connectionsSetLastUsed('prod')
+    expect(used.registry.lastUsed).toBe('prod')
+  })
+
+  it('connections.list carries launchMode + lastUsed', async () => {
+    const adapter = new GatewayAdapter()
+    const registry = await adapter.connectionsList()
+
+    expect(registry.launchMode).toBe('primary')
+    expect(registry.lastUsed).toBe('local')
+  })
+
+  it('getAgentRoster unions /api/profiles across the registry', async () => {
+    const api = vi.fn(
+      async (request: { connectionId?: null | string; path: string }) => {
+        if (request.path === '/api/status') {
+          return { install_id: `id-${request.connectionId}` }
+        }
+
+        return request.connectionId === 'b'
+          ? { profiles: [{ name: 'research' }] }
+          : { profiles: [{ name: 'default' }] }
+      },
+    )
+    const adapter = new GatewayAdapter({ api: api as never })
+
+    upsertConnection({
+      id: 'b',
+      label: 'B',
+      kind: 'remote',
+      url: 'https://b.example',
+      authMode: 'token',
+      token: 't',
+    })
+    upsertConnection({
+      id: 'a',
+      label: 'A',
+      kind: 'remote',
+      url: 'https://a.example',
+      authMode: 'token',
+      token: 't',
+    })
+
+    const roster = await adapter.getAgentRoster()
+
+    expect(roster.primaryConnectionId).toBe('local')
+    // 每条连接都会播种内置 `default`（上游 parseProfiles 同款：默认 profile 恒存在）。
+    expect(roster.agents.map((a) => `${a.connectionId}/${a.profile}`)).toEqual([
+      'local/default',
+      'b/default',
+      'b/research',
+      'a/default',
+    ])
+    expect(roster.sources.map((s) => s.connectionId)).toEqual(['local', 'b', 'a'])
+    expect(roster.sources.every((s) => s.reachable)).toBe(true)
+  })
+
+  it('getAgentRoster reports an unreachable source without failing the roster', async () => {
+    const api = vi.fn(
+      async (request: { connectionId?: null | string; path: string }) => {
+        if (request.path === '/api/status') {
+          return {}
+        }
+
+        if (request.connectionId === 'dead') {
+          throw new Error('HTTP 503: nope')
+        }
+
+        return { profiles: [{ name: 'default' }] }
+      },
+    )
+    const adapter = new GatewayAdapter({ api: api as never })
+
+    upsertConnection({
+      id: 'dead',
+      label: 'Dead',
+      kind: 'remote',
+      url: 'https://dead.example',
+      authMode: 'token',
+      token: 't',
+    })
+
+    const roster = await adapter.getAgentRoster()
+    const dead = roster.sources.find((s) => s.connectionId === 'dead')
+
+    expect(dead).toMatchObject({ reachable: false, error: 'HTTP 503: nope' })
+    expect(roster.agents.some((a) => a.connectionId === 'local')).toBe(true)
+  })
+})

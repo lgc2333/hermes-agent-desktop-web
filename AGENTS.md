@@ -58,7 +58,8 @@ hermes-agent-desktop-web/
 │   │   │   ├── main.tsx        # 入口：装桥 → import web.css → 挂 vendor 渲染树
 │   │   │   ├── web.css         # Web 覆盖层（响应式 + 隐藏桌面专属 UI，非 vendor）
 │   │   │   └── bridge/         # WebCapabilityAdapter 三类：browser（浏览器等价）/
-│   │   │                       #   gateway（走代理 RPC：注册表/api 转发/OAuth/探测）/
+│   │   │                       #   gateway（走代理 RPC：注册表/api 转发/OAuth/探测/
+│   │   │                       #   roster.ts 联合花名册/plugin-probe.ts 插件探测降级）/
 │   │   │                       #   denied（拒绝类空实现）；registry.ts = 连接注册表
 │   │   ├── dev/                # dev.mjs（恒起代理；--no-mock 形态）+ mock-gateway.mjs（mock 后端）
 │   │   ├── e2e/                # Vitest + Playwright 客户端 e2e（*.e2e.ts；端口用 E2E_*_PORT，见 e2e/AGENTS.md）
@@ -76,7 +77,7 @@ hermes-agent-desktop-web/
 │   ├── hermes-desktop/         # 上游 apps/desktop（渲染层 src/ 是构建来源，别名 '@'）
 │   └── hermes-shared/          # 上游 apps/shared（@hermes/shared，JSON-RPC 客户端等）
 ├── scripts/sync-upstream.sh    # 上游同步（过滤提交法 subtree merge，PATCHES.md §2-3）
-├── research/upstream/          # 上游全量克隆（只读调研；不进构建/不走 sync）
+├── research/upstream/          # 上游全量克隆（只读调研；不进构建/不走 sync；可能不存在，源码权威是 vendor/）
 └── temp/                       # 临时/验收产物（gitignore）
 ```
 

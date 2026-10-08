@@ -151,6 +151,42 @@ describe('buildWebBridge / installWebBridge', () => {
     expect(typeof bridge.onBatteryChanged!(() => undefined)).toBe('function')
   })
 
+  it('exposes the A/C group surfaces added by ADR-0027', async () => {
+    const bridge = buildWebBridge()
+
+    // A 组：类 2 走代理，类 1 浏览器等价。
+    expect(typeof bridge.getConnectionFor).toBe('function')
+    expect(typeof bridge.getGatewayWsUrlFor).toBe('function')
+    expect(typeof bridge.getAgentRoster).toBe('function')
+    expect(typeof bridge.recycleBackend).toBe('function')
+    expect(typeof bridge.probeLocalBackend).toBe('function')
+    expect(typeof bridge.probePluginRepo).toBe('function')
+    expect(typeof bridge.getMachineProfile).toBe('function')
+
+    const profile = await bridge.getMachineProfile!()
+    expect(profile.locale).toBe(navigator.language)
+    expect(profile.platform).toBe('web')
+
+    expect(await bridge.probeLocalBackend!()).toEqual({ bootstrapNeeded: false })
+    expect((await bridge.probePluginRepo!({ identifier: 'owner/repo' })).agent).toBe(
+      true,
+    )
+
+    // C 组：浏览器等价面 + 注册表字段写入。
+    expect(await bridge.getEmbedHostOrigin!()).toBe(window.location.origin)
+    expect(bridge.localSkin).toBeNull()
+    expect(typeof bridge.contextMenuCopyImage).toBe('function')
+    expect(typeof bridge.logLine).toBe('function')
+    expect(typeof bridge.readFileDataUrlForAttach).toBe('function')
+    expect(typeof bridge.onExternalOpenFailed!(() => undefined)).toBe('function')
+    expect(typeof bridge.onNotificationActivate!(() => undefined)).toBe('function')
+    expect(typeof bridge.connections.setLaunchMode).toBe('function')
+    expect(typeof bridge.connections.setLastUsed).toBe('function')
+
+    const registry = await bridge.connections.setLaunchMode!('last-used')
+    expect(registry.registry.launchMode).toBe('last-used')
+  })
+
   describe('web multi-window = same-origin new tabs (web port of desktop openWindow / openSessionWindow)', () => {
     it('canOpenSessionWindow / canOpenNewWindow report true (bridge exposes the fns)', async () => {
       const bridge = buildWebBridge()

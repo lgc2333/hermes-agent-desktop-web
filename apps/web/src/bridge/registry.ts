@@ -31,6 +31,15 @@ export interface WebConnectionRecord {
 export interface WebConnectionsStore {
   version: 1
   primary: string
+  /**
+   * 启动恢复策略（镜像桌面 DesktopConnectionsRegistry.launchMode）：
+   * `primary` = 恒开 primary；`last-used` = 开上次成功打开的那条。
+   * Web 无「启动」概念（每次页面载入都从 primary 起），但设置页的
+   * Startup 开关需要可读可写（C 组，见 ADR-0027）。
+   */
+  launchMode: 'last-used' | 'primary'
+  /** 上次成功打开过的连接（launchMode='last-used' 的落点）。 */
+  lastUsed: string
   connections: WebConnectionRecord[]
 }
 
@@ -58,9 +67,26 @@ function readRaw(): WebConnectionsStore | null {
       return null
     }
 
-    const parsed = JSON.parse(raw) as WebConnectionsStore
+    const parsed = JSON.parse(raw) as Partial<WebConnectionsStore>
 
-    return parsed?.version === 1 && Array.isArray(parsed.connections) ? parsed : null
+    if (parsed?.version !== 1 || !Array.isArray(parsed.connections)) {
+      return null
+    }
+
+    // launchMode/lastUsed 是后加字段：旧注册表按桌面同款规则归一化
+    // （默认 primary；lastUsed 指向已不存在的连接时回落到 primary）。
+    const primary = String(parsed.primary ?? '')
+    const storedLastUsed = String(parsed.lastUsed ?? '')
+
+    return {
+      version: 1,
+      primary,
+      launchMode: parsed.launchMode === 'last-used' ? 'last-used' : 'primary',
+      lastUsed: parsed.connections.some((c) => c.id === storedLastUsed)
+        ? storedLastUsed
+        : primary,
+      connections: parsed.connections,
+    }
   } catch {
     return null
   }
@@ -85,6 +111,8 @@ export function loadRegistry(): WebConnectionsStore {
   const seeded: WebConnectionsStore = {
     version: 1,
     primary: DEFAULT_CONNECTION_ID,
+    launchMode: 'primary',
+    lastUsed: DEFAULT_CONNECTION_ID,
     connections: [defaultMockConnection()],
   }
   writeRaw(seeded)
@@ -144,16 +172,77 @@ export function removeConnection(id: string): WebConnectionsStore {
   if (registry.primary === id) {
     registry.primary = registry.connections[0]?.id ?? DEFAULT_CONNECTION_ID
   }
+
+  // 上游同款（connection-registry.ts:1555）：删掉 lastUsed 指向的连接时回落 primary。
+  if (registry.lastUsed === id) {
+    registry.lastUsed = registry.primary
+  }
   saveRegistry(registry)
 
   return registry
 }
 
+/**
+ * 注册表能否解析该 id —— 含**隐式** `local`（不在 connections 数组里，
+ * 由 `getConnectionById` 合成，见 DEFAULT_CONNECTION_ID）。
+ */
+export function hasConnection(id: string): boolean {
+  const normalized = String(id ?? '').trim()
+
+  if (!normalized) {
+    return false
+  }
+
+  return (
+    normalized === DEFAULT_CONNECTION_ID ||
+    loadRegistry().connections.some((c) => c.id === normalized)
+  )
+}
+
+/**
+ * 切换 primary。**只改 primary**（上游 `setPrimaryConnection`
+ * connection-registry.ts:1561-1567 同款）：`lastUsed` 由渲染层在成功切换后
+ * 单独调 `setLastUsed` 记录（store/connections.ts:176-190），不在这里代劳。
+ * 未知 id 抛错（上游同款），调用点都有 try/catch（connections-registry.tsx:444）。
+ */
 export function setPrimaryConnection(id: string): WebConnectionsStore {
+  if (!hasConnection(id)) {
+    throw new Error(`No connection with id "${String(id ?? '')}".`)
+  }
+
   const registry = loadRegistry()
-  registry.primary = registry.connections.some((c) => c.id === id)
-    ? id
-    : registry.primary
+  registry.primary = id
+  saveRegistry(registry)
+
+  return registry
+}
+
+/** 启动恢复策略（C 组）：`last-used` | `primary`；非法值抛错（上游同款）。 */
+export function setLaunchMode(mode: string): WebConnectionsStore {
+  const registry = loadRegistry()
+
+  if (mode !== 'last-used' && mode !== 'primary') {
+    throw new Error(`Unknown connection launch mode "${String(mode)}".`)
+  }
+
+  registry.launchMode = mode
+  saveRegistry(registry)
+
+  return registry
+}
+
+/**
+ * 记下最近成功打开的连接（`launchMode='last-used'` 的落点）。未知 id 抛错
+ * （上游 `setLastUsedConnection` connection-registry.ts:1570-1576 同款）；
+ * 渲染层调用点本就吞错（store/connections.ts:184-190），不会把成功切换判成失败。
+ */
+export function setLastUsedConnection(id: string): WebConnectionsStore {
+  if (!hasConnection(id)) {
+    throw new Error(`No connection with id "${String(id ?? '')}".`)
+  }
+
+  const registry = loadRegistry()
+  registry.lastUsed = id
   saveRegistry(registry)
 
   return registry

@@ -23,8 +23,10 @@
  */
 
 import type {
+  DesktopMachineProfile,
   DesktopMarketplaceSearchItem,
   DesktopMarketplaceThemeResult,
+  ExternalOpenFailedPayload,
   HermesSelectPathsOptions,
 } from '@/global'
 
@@ -36,6 +38,91 @@ import { fetchMarketplaceThemes, searchMarketplaceThemes } from './vscode-market
 // electron/notification-types.ts（electron 侧，在 '@' 别名树之外）。通知负载
 // 形状本就由桥面签名定义 → 从桥成员派生，零复制，随上游同步自动对齐。
 type HermesNotification = Parameters<Window['hermesDesktop']['notify']>[0]
+
+// ── 渲染层日志环形缓冲（`logLine` / `getRecentLogs`，C 组 + ADR-0027）────────
+// 桌面端 logLine 把行追加进 <HERMES_LOG>/desktop.log；浏览器没有日志文件，
+// 用内存环形缓冲承接（logLine + 错误边界的 reportRendererError 都写这里），
+// getRecentLogs 从同一处读回，诊断面板因此有内容而不是只有最后一条错误。
+// 注意：缓冲是**模块级**（跨 BrowserAdapter 实例共享）——生产只有一个桥实例，
+// 测试用 resetLogRing() 复位。
+const LOG_RING_MAX = 500
+const logRing: string[] = []
+
+/**
+ * 通知「点击激活」负载（上游 global.d.ts:631 `onNotificationActivate`）。
+ * `actionId` 恒不派发：页内 `new Notification` 没有按钮语义（那是 ServiceWorker
+ * `registration.showNotification` 的能力），见 onNotificationActivate 注释。
+ */
+export interface NotificationActivatePayload {
+  actionId?: string
+  activate?: string
+  notifyId?: string
+  tag?: string
+}
+
+/** 追加一行（超限丢弃最旧；`getRecentLogs` 与错误边界共用）。 */
+export function pushLogLine(line: string): void {
+  const text = String(line ?? '')
+
+  if (!text) {
+    return
+  }
+
+  logRing.push(text)
+
+  if (logRing.length > LOG_RING_MAX) {
+    logRing.splice(0, logRing.length - LOG_RING_MAX)
+  }
+}
+
+/** 测试用：清空环形缓冲。 */
+export function resetLogRing(): void {
+  logRing.length = 0
+}
+
+/**
+ * Web 的「平台」标识。`DesktopMachineProfile.platform` 是 NodeJS.Platform
+ * （封闭字面量联合），没有浏览器成员，且渲染层**从不读它**（唯一消费点是
+ * i18n/context.tsx:198 的 `machineProfile?.locale`）—— 这里显式声明一次，
+ * 避免在方法体里散布 `as unknown as`。
+ */
+const WEB_PLATFORM = 'web' as unknown as DesktopMachineProfile['platform']
+
+/**
+ * 图片 URL → PNG Blob（Chromium 的 `ClipboardItem` 只接受 image/png，
+ *  非 PNG 需 canvas 重编码）。同源图（附件走代理 REST / data: / web-blob:）
+ *  可行；跨域图被 CORS 挡住 → null（调用方静默，见 ADR-0027）。
+ */
+async function imageUrlToPngBlob(url: string): Promise<Blob | null> {
+  const res = await fetch(url, { signal: AbortSignal.timeout(30_000) })
+
+  if (!res.ok) {
+    return null
+  }
+
+  const blob = await res.blob()
+
+  if (blob.type === 'image/png') {
+    return blob
+  }
+
+  const bitmap = await createImageBitmap(blob)
+  const canvas = document.createElement('canvas')
+  canvas.width = bitmap.width
+  canvas.height = bitmap.height
+  const context = canvas.getContext('2d')
+
+  if (!context) {
+    return null
+  }
+
+  context.drawImage(bitmap, 0, 0)
+  bitmap.close()
+
+  return await new Promise<Blob | null>((resolve) =>
+    canvas.toBlob(resolve, 'image/png'),
+  )
+}
 
 function safeLocalStorageSet(key: string, value: string): void {
   try {
@@ -127,10 +214,35 @@ export class BrowserAdapter {
 
   private readonly blobStore: AttachmentBlobStore
 
+  /** 外部打开失败（弹窗被拦）订阅者 —— 见 onExternalOpenFailed。 */
+  private readonly externalOpenFailedListeners = new Set<
+    (payload: ExternalOpenFailedPayload) => void
+  >()
+
+  /** 通知点击激活订阅者 —— 见 onNotificationActivate（C 组）。 */
+  private readonly notificationActivateListeners = new Set<
+    (payload: NotificationActivatePayload) => void
+  >()
+
+  /** 最近一次右键手势命中的图片 URL（`contextMenuCopyImage` 的输入）。 */
+  private lastContextMenuImageUrl: string | null = null
+
   constructor(blobStore: AttachmentBlobStore = new OpfsBlobStore()) {
     this.blobStore = blobStore
     // 页面载入初始化：清空 web-blobs/ 目录（上一页残留附件，ADR-0020）。
     void this.blobStore.clearAll().catch(() => undefined)
+    // 图片右键「复制图片」需要「最后一次 contextmenu 手势下的图片」——桌面端
+    // 由 Chromium 在主进程侧记住坐标；浏览器侧自己记（capture 阶段，早于
+    // 渲染层自定义菜单的处理器，且不受 stopPropagation 影响）。
+    document.addEventListener('contextmenu', this.trackContextMenuImage, true)
+  }
+
+  private readonly trackContextMenuImage = (event: Event): void => {
+    const target = event.target
+    const image = target instanceof Element ? target.closest('img') : null
+    const src = image instanceof HTMLImageElement ? image.src.trim() : ''
+
+    this.lastContextMenuImageUrl = src || null
   }
 
   private browserPopoutChannel(): BroadcastChannel | null {
@@ -174,11 +286,109 @@ export class BrowserAdapter {
   }
 
   async openExternal(url: string): Promise<void> {
-    window.open(url, '_blank', 'noopener,noreferrer')
+    this.openAndReport(url)
   }
 
   async openPreviewInBrowser(url: string): Promise<void> {
-    window.open(url, '_blank', 'noopener,noreferrer')
+    this.openAndReport(url)
+  }
+
+  /**
+   * 开同源新 tab + 拦截广播（openExternal / openPreviewInBrowser 共用）。
+   * 浏览器拦下新标签（无用户手势 / 弹窗设置）时 `window.open` 返回 null ——
+   * 桌面端对 `shell.openExternal` 失败会广播 onExternalOpenFailed，这里是等价物。
+   */
+  private openAndReport(url: string): void {
+    const win = window.open(url, '_blank', 'noopener,noreferrer')
+
+    if (!win) {
+      this.notifyExternalOpenFailed(url)
+    }
+  }
+
+  // ── 外部打开失败（弹窗拦截）广播 + 图片右键复制 ─────────────────────────
+
+  private notifyExternalOpenFailed(url: string): void {
+    const payload: ExternalOpenFailedPayload = {
+      url,
+      message: 'Hermes Web: the browser blocked the new tab',
+    }
+
+    for (const listener of [...this.externalOpenFailedListeners]) {
+      try {
+        listener(payload)
+      } catch {
+        // 单个订阅者抛错不影响其它订阅者。
+      }
+    }
+  }
+
+  onExternalOpenFailed(
+    callback: (payload: ExternalOpenFailedPayload) => void,
+  ): () => void {
+    this.externalOpenFailedListeners.add(callback)
+
+    return () => {
+      this.externalOpenFailedListeners.delete(callback)
+    }
+  }
+
+  /**
+   * 图片右键「复制图片」（死菜单项的 Web 实现）：取最近一次 contextmenu 手势
+   * 命中的图片 → fetch 字节 → PNG → 写系统剪贴板。同源图可行（附件走同源代理
+   * REST / data: / web-blob:），跨域图被 CORS 挡住（新增代理字节端点会引入
+   * SSRF 面，ADR-0027 明确不做）→ 静默返回。
+   */
+  async contextMenuCopyImage(): Promise<void> {
+    const url = this.lastContextMenuImageUrl
+
+    if (!url) {
+      return
+    }
+
+    try {
+      const png = await imageUrlToPngBlob(url)
+
+      if (!png) {
+        return
+      }
+
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': png })])
+    } catch (error) {
+      // 无 ClipboardItem / 无权限 / 跨域 → best-effort，记一行日志便于诊断。
+      pushLogLine(
+        `[context-menu:copy-image] ${error instanceof Error ? error.message : String(error)}`,
+      )
+    }
+  }
+
+  /**
+   * 机器画像（首启 UI 语言推断）。渲染层只读 `locale`
+   * （i18n/context.tsx:198 → resolveInitialLocale）。浏览器没有桌面主进程的
+   * 机器事实：ageDays/model/username/release 留空，nvidia 恒 false，
+   * platform 标 'web'（DesktopMachineProfile.platform 是 NodeJS.Platform，
+   * Web 无此概念 → 断言转换）。
+   */
+  async getMachineProfile(): Promise<DesktopMachineProfile> {
+    return {
+      ageDays: null,
+      arch: '',
+      locale: navigator.language || '',
+      model: '',
+      nvidia: false,
+      platform: WEB_PLATFORM,
+      release: '',
+      username: '',
+    }
+  }
+
+  /**
+   * YouTube 嵌入包装页 origin：桌面是 file:// renderer 的 loopback 源；Web 页面
+   * 本身就是 http(s) origin（`hasHttpOrigin()` 为真 → 渲染层短路不调用），
+   * 实现只为把可选面补齐（返回值即当前 origin）。
+   */
+  async getEmbedHostOrigin(): Promise<string> {
+    return window.location.origin
   }
 
   // ── 窗口：用「新 tab」实现桌面「新窗口」语义 ───────────────────────────────
@@ -322,11 +532,7 @@ export class BrowserAdapter {
 
     try {
       if (Notification.permission === 'granted') {
-        void new Notification(payload.title ?? 'Hermes', {
-          body: payload.body,
-          silent: payload.silent ?? true,
-          tag: payload.tag,
-        })
+        this.displayNotification(payload)
 
         return true
       }
@@ -335,11 +541,7 @@ export class BrowserAdapter {
         const permission = await Notification.requestPermission()
 
         if (permission === 'granted') {
-          void new Notification(payload.title ?? 'Hermes', {
-            body: payload.body,
-            silent: payload.silent ?? true,
-            tag: payload.tag,
-          })
+          this.displayNotification(payload)
 
           return true
         }
@@ -349,6 +551,57 @@ export class BrowserAdapter {
     }
 
     return false
+  }
+
+  /**
+   * C 组：插件/会话通知的「点击激活」回调（上游可选面 onNotificationActivate）。
+   * 浏览器 Notification 只有点击一种交互（无 action 按钮语义，那是 ServiceWorker
+   * registration.showNotification 的能力）→ 只回传可跳转字段，actionId 恒不派发。
+   * 没有可跳转目标时不订阅 onclick，避免渲染层收到空 payload 白跑一次。
+   */
+  onNotificationActivate(
+    callback: (payload: NotificationActivatePayload) => void,
+  ): () => void {
+    this.notificationActivateListeners.add(callback)
+
+    return () => {
+      this.notificationActivateListeners.delete(callback)
+    }
+  }
+
+  private displayNotification(payload: HermesNotification): void {
+    const notification = new Notification(payload.title ?? 'Hermes', {
+      body: payload.body,
+      silent: payload.silent ?? true,
+      tag: payload.tag,
+    })
+
+    const activate = payload.activate
+    const notifyId = payload.notifyId
+    const tag = payload.tag
+
+    if (!activate && !notifyId) {
+      return
+    }
+
+    notification.onclick = () => {
+      // 点击即把窗口前置（桌面端点通知会聚焦主窗口）。
+      try {
+        window.focus()
+      } catch {
+        // 某些上下文禁止 focus —— 忽略。
+      }
+
+      for (const listener of [...this.notificationActivateListeners]) {
+        try {
+          listener({ activate, notifyId, tag })
+        } catch (error) {
+          pushLogLine(
+            `[notification:activate] ${error instanceof Error ? error.message : String(error)}`,
+          )
+        }
+      }
+    }
   }
 
   async selectPaths(options?: HermesSelectPathsOptions): Promise<string[]> {
@@ -433,9 +686,24 @@ export class BrowserAdapter {
       'hermes-web.last-renderer-error',
       JSON.stringify({ ...report, at: Date.now() }).slice(0, 4000),
     )
+    // 与 logLine 同一环形缓冲：诊断面板（getRecentLogs）能看到完整时间线。
+    pushLogLine(
+      `[renderer error:${report.label}] ${report.boundary}: ${report.message}`,
+    )
+  }
+
+  /** 桌面端把行追加进 desktop.log；Web 写内存环形缓冲（见 pushLogLine）。 */
+  logLine(line: string): void {
+    pushLogLine(line)
   }
 
   getRecentLogs(): { path: string; lines: string[] } {
+    // 环形缓冲是主来源（logLine + 错误边界都写这里）；冷启动且从未写过日志时
+    // 回落到上次错误记录的 localStorage 快照。
+    if (logRing.length > 0) {
+      return { path: 'memory://hermes-web.log', lines: [...logRing] }
+    }
+
     const raw = safeLocalStorageGet('hermes-web.last-renderer-error')
 
     return {

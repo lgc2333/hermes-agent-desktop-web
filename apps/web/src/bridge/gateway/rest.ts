@@ -57,7 +57,17 @@ export function wsUrlFor(conn: WebConnectionRecord): string {
 }
 
 /** HermesConnection 渲染层实读字段（handoff §2 已核实）。 */
-export function toHermesConnection(conn: WebConnectionRecord): HermesConnection {
+export function toHermesConnection(
+  conn: WebConnectionRecord,
+  opts: {
+    /** Registry-scoped route（getConnectionFor 显式解析的连接）。 */
+    connectionId?: string
+    profile?: null | string
+    registryScoped?: boolean
+  } = {},
+): HermesConnection {
+  const profile = String(opts.profile ?? '').trim()
+
   return {
     baseUrl: gatewayBaseUrl(),
     isFullscreen: false,
@@ -73,6 +83,11 @@ export function toHermesConnection(conn: WebConnectionRecord): HermesConnection 
     wsUrl: wsUrlFor(conn),
     logs: [],
     windowButtonPosition: null,
+    // getConnectionFor（registry-scoped）：带上连接身份 + profile，渲染层
+    // 据此判定「这是注册表路由」而不是 v1 别名（global.d.ts:1024）。
+    ...(opts.connectionId ? { connectionId: opts.connectionId } : {}),
+    ...(profile ? { profile } : {}),
+    ...(opts.registryScoped ? { registryScoped: true } : {}),
   }
 }
 

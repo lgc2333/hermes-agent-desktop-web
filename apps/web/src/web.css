@@ -109,3 +109,14 @@
   max-width: 48rem;
   margin-inline: auto;
 }
+
+/* 8. 设置页两个「桌面专有、浏览器无效」的行（B 组，见 ADR-0027）：
+  - advanced.disable-f12：可开可存但浏览器里拦不住 F12（DevTools 由浏览器管）；
+  - chat.attachment-size：只改渲染层内存值，刷新即回；真实上限在 gateway
+    常量（files.py：预览 512KiB / 源 64MiB），改它不会生效。
+  行 id 由 vendor settings-manifest.ts 的 settingElementId() 生成
+  （`setting-field-<view>.<kebab-key>`），dot 在 CSS 里需转义。 */
+#setting-field-advanced\.disable-f12,
+#setting-field-chat\.attachment-size {
+  display: none;
+}

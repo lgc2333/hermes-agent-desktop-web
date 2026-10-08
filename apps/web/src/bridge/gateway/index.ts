@@ -42,10 +42,14 @@ import type { GatewayWsUrlResult } from '@hermes/shared'
 import {
   DEFAULT_CONNECTION_ID,
   defaultMockConnection,
+  getConnectionById,
   getPrimaryConnection,
+  hasConnection,
   loadRegistry,
   readProfilePreference,
   removeConnection,
+  setLastUsedConnection,
+  setLaunchMode,
   setPrimaryConnection,
   upsertConnection,
   writeProfilePreference,
@@ -55,6 +59,10 @@ import type { WebConnectionRecord } from '../registry'
 import { GatewayFileDownloader } from './download'
 import { RemoteFsGit } from './fs-git'
 import { OauthBroker } from './oauth'
+import { probePluginRepoInBrowser } from './plugin-probe'
+import type { PluginProbeResult } from './plugin-probe'
+import { buildRosterPayload, enumerateRosterSources } from './roster'
+import type { DesktopAgentRosterPayload } from './roster'
 import {
   fetchProxyMeta,
   probeAuthProviders,
@@ -134,6 +142,118 @@ export class GatewayAdapter {
 
   async getGatewayWsUrl(): Promise<GatewayWsUrlResult> {
     return { ok: true, wsUrl: wsUrlFor(getPrimaryConnection()) }
+  }
+
+  /**
+   * Registry-scoped 连接解析（getConnectionFor / getGatewayWsUrlFor 共用）。
+   * 未知 id（含空 id）→ 抛 `No connection with id "x".` —— 上游
+   * `registryDialConnectionId`（connection-registry.ts:572-584）同款：空 id 不是
+   * `registry.primary`（上游注释给了 #90477 的理由：scoped 调用方丢 id 时会拨到
+   * 另一台机器），**不静默塌回 primary**。
+   */
+  private resolveScopedConnection(id: string): WebConnectionRecord {
+    if (!hasConnection(id)) {
+      throw new Error(`No connection with id "${String(id ?? '')}".`)
+    }
+
+    return getConnectionById(id)
+  }
+
+  /**
+   * Registry-scoped backend resolution（上游可选面 getConnectionFor）：
+   * 拨 (connectionId, profile)，打上 `connectionId` / `registryScoped`
+   * （渲染层据此区分注册表路由与 v1 别名）。profile 空值填 `'default'`
+   * （上游 main.ts:15554 同款）。空/未知 connectionId 抛错（见上）。
+   */
+  async getConnectionFor(payload: {
+    connectionId?: null | string
+    profile?: null | string
+    priority?: 'foreground' | 'background'
+  }): Promise<HermesConnection> {
+    const id = String(payload.connectionId ?? '').trim()
+
+    return toHermesConnection(this.resolveScopedConnection(id), {
+      connectionId: id,
+      profile: String(payload.profile ?? '').trim() || 'default',
+      registryScoped: true,
+    })
+  }
+
+  /**
+   * Registry-scoped 新鲜 WS URL（上游可选面 getGatewayWsUrlFor）：与
+   * getGatewayWsUrl 同契约。目标 gateway 已编码进 URL query（wsUrlFor），
+   * profile 是请求作用域、不进 WS 握手，故此处不消费。
+   * **不抛**：错误走 `{ok:false, error}`（上游 gatewayWsUrlIpcResult 同款）。
+   */
+  async getGatewayWsUrlFor(payload: {
+    connectionId?: null | string
+    profile?: null | string
+  }): Promise<GatewayWsUrlResult> {
+    try {
+      const conn = this.resolveScopedConnection(
+        String(payload.connectionId ?? '').trim(),
+      )
+
+      return { ok: true, wsUrl: wsUrlFor(conn) }
+    } catch (error) {
+      return {
+        error: error instanceof Error ? error.message : String(error),
+        ok: false,
+      }
+    }
+  }
+
+  /**
+   * 联合 agent 花名册（上游可选面 getAgentRoster）：逐条注册连接枚举
+   * `/api/profiles` 后拍平，去重/handle 规则见 roster.ts（上游纯函数移植）。
+   */
+  async getAgentRoster(): Promise<DesktopAgentRosterPayload> {
+    const registry = loadRegistry()
+    const enumerations = await enumerateRosterSources({
+      api: this.apiImpl,
+      connections: registry.connections,
+    })
+
+    return buildRosterPayload(enumerations, registry.primary)
+  }
+
+  /**
+   * 「This device」探测（上游可选面 probeLocalBackend）。Web 没有本地后端可
+   * 安装（local 连接形态在 Web 不暴露，见 web.css 的连接模式覆盖）→ 恒
+   * `bootstrapNeeded: false`：即便注册表里残留 kind='local' 的连接，切换也走
+   * 「切到已有后端」分支，不会弹安装确认（useLocalDeviceSwitch fail-closed
+   * 默认 true 会让每次点击都弹安装对话框）。
+   */
+  async probeLocalBackend(): Promise<{ bootstrapNeeded: boolean }> {
+    return { bootstrapNeeded: false }
+  }
+
+  /**
+   * 设置→模型「重启后端」（上游可选面 recycleBackend）：gateway
+   * `POST /api/gateway/restart`（web_routers/actions.py:139，可选 `?profile=`）。
+   * 桌面由 Electron 主进程重启本地后端；Web 的后端就是远端 gateway 进程，
+   * 让 gateway 自己重启即等价语义（code-skew 恢复路径）。失败向上抛，渲染层
+   * 走既有 setCaughtError 分支。
+   */
+  async recycleBackend(profile?: null | string): Promise<{ ok: boolean }> {
+    const scoped = String(profile ?? '').trim()
+    const query = scoped ? `?profile=${encodeURIComponent(scoped)}` : ''
+
+    // gateway 返回 `{ok, pid, name}`；spawn 失败走 HTTP 500（webApi 抛出）。
+    const body = await this.api<{ ok?: boolean }>({
+      method: 'POST',
+      path: `/api/gateway/restart${query}`,
+    })
+
+    return { ok: body?.ok !== false }
+  }
+
+  /** 插件仓库探测（降级实现，见 plugin-probe.ts 头注 + ADR-0027）。 */
+  async probePluginRepo(payload: {
+    identifier?: string
+    repo?: string
+  }): Promise<PluginProbeResult> {
+    return probePluginRepoInBrowser(payload)
   }
 
   async revalidateConnection(): Promise<{ ok: boolean; rebuilt: boolean }> {
@@ -605,6 +725,8 @@ export class GatewayAdapter {
     return {
       version: store.version,
       primary: store.primary,
+      launchMode: store.launchMode,
+      lastUsed: store.lastUsed,
       secureTokenStorage: true,
       connections: store.connections.map((c) => ({
         id: c.id,
@@ -632,6 +754,24 @@ export class GatewayAdapter {
     id: string,
   ): Promise<{ ok: boolean; registry: DesktopConnectionsRegistry }> {
     return { ok: true, registry: this.toRegistry(setPrimaryConnection(id)) }
+  }
+
+  /**
+   * 启动恢复策略（上游可选面 connections.setLaunchMode）：Web 无「启动」概念
+   * （每次载入都从 primary 起，见 ADR-0027），但设置页 Startup 开关需要可读
+   * 可写，写进注册表与桌面同形。
+   */
+  async connectionsSetLaunchMode(
+    mode: 'last-used' | 'primary',
+  ): Promise<{ ok: boolean; registry: DesktopConnectionsRegistry }> {
+    return { ok: true, registry: this.toRegistry(setLaunchMode(mode)) }
+  }
+
+  /** 记录最近成功打开的连接（上游可选面 connections.setLastUsed）。 */
+  async connectionsSetLastUsed(
+    id: string,
+  ): Promise<{ ok: boolean; registry: DesktopConnectionsRegistry }> {
+    return { ok: true, registry: this.toRegistry(setLastUsedConnection(id)) }
   }
 
   async connectionsTest(id: string): Promise<DesktopConnectionTestResult> {

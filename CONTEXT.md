@@ -78,6 +78,25 @@ _Avoid_: 不支持的能力（与"未实现"混淆）
 **Feature gate（已退役）**:
 用字面 `if (false)` 关闭功能入口而保留其代码的机制；gates.ts 已删（ADR-0009），Web 不再做可配置开关系统，入口按能力分类决定（browser/gateway/denied）。
 
+**Registry-scoped connection（注册表作用域拨号）**:
+按注册表里**指定的一条 Connection**（而非当前 primary）解析出的连接视图：带上
+`connectionId` 与 `registryScoped` 标志，供次级/兄弟窗口拨到正确的 Target。与 primary
+连接的区别只在解析来源，凭证模型相同（ADR-0027）。
+_Avoid_: 次级连接（含糊）、profile（那是同一 gateway 内的身份，另一维度）
+
+**Agent roster（联合 agent 花名册）**:
+跨全部注册连接的 agent 视图：逐条连接枚举 `/api/profiles` 后拍平、按 backend 身份
+（install_id）折叠同一后台的多个地址、重名 profile 加 `@name-device` 后缀。供 Bot Mode /
+capabilities scope-selector / profile rail 显示「别的机器上还有谁」（ADR-0027）。
+_Avoid_: 花名册（单指本地 profile 列表时）、agent 列表（未跨连接时）
+
+**Plugin probe（插件仓库探测）**:
+安装前判定一个插件仓库里有没有 agent 半 / desktop 半组件的能力。桌面端在 Electron 主进程
+clone 后读文件判定；Web 无 git、无任意 URL 字节读通道 → **降级实现**：保留标识符校验，
+恒报 agent 可装 / desktop 不可装（Web 无 Electron 主进程可装），并带一条说明性 warning
+（ADR-0027）。
+_Avoid_: 插件安装（探测只判组件，不装）
+
 **Blob attachment（Web 虚拟附件）**:
 浏览器 File / 粘贴图片没有 gateway 侧文件路径，渲染层又是桌面式"路径模型"，Web 桥用一条承载真实文件名的虚拟路径（`web-blob://attach/...`）指代附件，字节随用随读（File 保留引用零常驻；仅纯内存字节才落 OPFS）。虚拟路径含两段正交身份：**附件身份（blob id）**——Web 内部存储唯一键，永不随上传离开 Web；**上传文件名**——提交给 gateway 的实际文件名，与桌面端一致。二者正交（不在同一个 basename 里混着）。
 _Avoid_: 本地文件路径（Web 没有 gateway 侧等价）、临时文件（随用随读非常驻）、"文件名前缀"（指 blob id 时的歧义称呼）

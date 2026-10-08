@@ -32,13 +32,26 @@ export function buildWebBridge(
   blobStore?: AttachmentBlobStore,
 ): Bridge {
   const gateway = new GatewayAdapter(options)
+
   // ADR-0020：附件字节存储默认 OPFS；测试注入 MemoryBlobStore（jsdom 无 OPFS）。
   const browser = new BrowserAdapter(blobStore)
   const denied = new DeniedAdapter()
 
+  /**
+   * 文件 → data-url 的组合链路（浏览器虚拟路径优先，回落 gateway）。
+   * `readFileDataUrl`（预览）与 `readFileDataUrlForAttach`（附件）共用同一条：
+   * 桌面端 attach 另有更高上限，Web 侧上限由 gateway 常量决定（files.py：
+   * 预览 512KiB / 源 64MiB），桥侧无差异（ADR-0027）。
+   */
+  const readFileDataUrl = async (path: string) =>
+    (await browser.readFileDataUrl(path)) || gateway.readFileDataUrl(path)
+
   const bridge: Bridge = {
     // ── 连接面（类 2）──────────────────────────────────────────────────────
     getConnection: () => gateway.getConnection(),
+    // 上游可选面（A 组）：registry-scoped 拨号 / WS URL。
+    getConnectionFor: (payload) => gateway.getConnectionFor(payload),
+    getGatewayWsUrlFor: (payload) => gateway.getGatewayWsUrlFor(payload),
     revalidateConnection: () => gateway.revalidateConnection(),
     touchBackend: () => gateway.touchBackend(),
     getGatewayWsUrl: () => gateway.getGatewayWsUrl(),
@@ -90,6 +103,9 @@ export function buildWebBridge(
       save: (payload) => gateway.connectionsSave(payload),
       remove: (id) => gateway.connectionsRemove(id),
       setPrimary: (id) => gateway.connectionsSetPrimary(id),
+      // 上游可选面（C 组）：启动恢复策略 / 最近使用（注册表字段，见 ADR-0027）。
+      setLaunchMode: (mode) => gateway.connectionsSetLaunchMode(mode),
+      setLastUsed: (id) => gateway.connectionsSetLastUsed(id),
       test: (id) => gateway.connectionsTest(id),
       // 上游 sync 2026-08-27：注册表变更推送。浏览器等价实现（localStorage 注册表
       // + 桥内广播）；updateManaged / updateAll 为桌面主进程专有更新通道，Web 不提供。
@@ -115,6 +131,8 @@ export function buildWebBridge(
 
     // ── 版本 / bootstrap（类 2）────────────────────────────────────────────
     getVersion: () => gateway.getVersion(),
+    // A 组：首启 UI 语言推断读 locale（浏览器等价：navigator.language）。
+    getMachineProfile: () => browser.getMachineProfile(),
     getRemoteDisplayReason: () => gateway.getRemoteDisplayReason(),
     getBootstrapState: () => gateway.getBootstrapState(),
     onBootstrapEvent: (cb) => gateway.onBootstrapEvent(cb),
@@ -126,14 +144,24 @@ export function buildWebBridge(
     // 动作 + pm/venv 操作回执，均为 Electron 主进程 + 本地安装概念。
     updateHold: denied.updateHold,
     getSyncStatus: () => denied.getSyncStatus(),
+    // A 组：设置→模型「重启后端」= gateway POST /api/gateway/restart；
+    // 「This device」探测恒「无需安装」（Web 无本地后端可装）。
+    recycleBackend: (profile) => gateway.recycleBackend(profile),
+    probeLocalBackend: () => gateway.probeLocalBackend(),
 
     // ── 浏览器等价（类 1）──────────────────────────────────────────────────
     readClipboard: () => browser.readClipboard(),
     writeClipboard: (text) => browser.writeClipboard(text),
     openExternal: (url) => browser.openExternal(url),
     openPreviewInBrowser: (url) => browser.openPreviewInBrowser(url),
+    // C 组：弹窗被拦时广播（桌面 shell.openExternal 失败事件的浏览器等价）。
+    onExternalOpenFailed: (cb) => browser.onExternalOpenFailed(cb),
+    // C 组：YouTube 嵌入包装页 origin（渲染层在 http origin 下短路不调用）。
+    getEmbedHostOrigin: () => browser.getEmbedHostOrigin(),
     fetchLinkTitle: (url) => browser.fetchLinkTitle(url),
     notify: (payload) => browser.notify(payload),
+    // C 组：通知点击 → 渲染层跳转（浏览器只有点击语义，见 browser.ts）。
+    onNotificationActivate: (callback) => browser.onNotificationActivate(callback),
     selectPaths: (options) => browser.selectPaths(options),
     selectSavePath: () => browser.selectSavePath(),
     getPathForFile: () => browser.getPathForFile(),
@@ -143,6 +171,8 @@ export function buildWebBridge(
       onChanged: (cb) => browser.onZoomChanged(cb),
     },
     reportRendererError: (report) => browser.reportRendererError(report),
+    // C 组：渲染层 logLine 写入内存环形缓冲，getRecentLogs 同源读回。
+    logLine: (line) => browser.logLine(line),
     revealLogs: () => denied.revealLogs(),
     getRecentLogs: async () => browser.getRecentLogs(),
 
@@ -152,8 +182,10 @@ export function buildWebBridge(
     writeTextFile: (path, content) => gateway.writeTextFile(path, content),
     // 虚拟 blob 路径（web-blob://，ADR-0020）优先浏览器存储（File 引用 /
     // OPFS）；其余走 gateway REST。
-    readFileDataUrl: async (path) =>
-      (await browser.readFileDataUrl(path)) || gateway.readFileDataUrl(path),
+    readFileDataUrl,
+    // C 组：attach 专用读 —— 与 readFileDataUrl 同一条组合链路（见上），
+    // 渲染层本就有 `?? readFileDataUrl` 回落，这里把可选面补齐。
+    readFileDataUrlForAttach: readFileDataUrl,
     saveGatewayFile: (payload) => gateway.saveGatewayFile(payload),
     saveImageFile: (blob, name) => browser.saveImageFile(blob, name),
     releaseBlobFile: (path) => browser.releaseBlobFile(path),
@@ -192,6 +224,9 @@ export function buildWebBridge(
     saveImageFromUrl: (url) => browser.saveImageFromUrl(url),
     saveImageBuffer: (data, ext) => browser.saveImageBuffer(data, ext),
     saveClipboardImage: () => browser.saveClipboardImage(),
+    // A 组：图片右键「复制图片」（此前是死菜单项）——浏览器侧记最近一次
+    // contextmenu 手势的图片再写剪贴板（同源可行，见 browser.ts + ADR-0027）。
+    contextMenuCopyImage: () => browser.contextMenuCopyImage(),
     // 上游 2026-09-12 新增**必填** savePastedText：大段粘贴 → `.txt` 附件。
     // 浏览器等价实现（文本落 OPFS + 虚拟路径，见 browser.ts）。
     savePastedText: (text) => browser.savePastedText(text),
@@ -202,6 +237,11 @@ export function buildWebBridge(
     revealPath: (path) => denied.revealPath(path),
     openDir: (path) => denied.openDir(path),
     desktopPluginsRoot: () => denied.desktopPluginsRoot(),
+    // A 组：插件仓库探测（降级实现，见 gateway/plugin-probe.ts + ADR-0027）。
+    // 提供它才让「插件安装」弹窗脱离 phase='error' 死路：agent 半由 gateway
+    // `plugins.manage install` 真装，desktop 半在 Web 恒不可装（恒报
+    // desktop:false → 弹窗不渲染 desktop 勾选）。
+    probePluginRepo: (payload) => gateway.probePluginRepo(payload),
     // 上游 2026-09-12：`agentPluginsRoot?` 删除，代之以可选
     // `reconcileDesktopPlugins?`（把统一包里的 desktop 半重拷到 app 级 root，
     // Electron 主进程文件操作）。Web 无桌面主进程/插件 root，无浏览器等价
@@ -239,6 +279,10 @@ export function buildWebBridge(
     // shell 里按 UA fallback 误开启 glass/translucency UI。
     glassSupported: false,
     translucencySupported: false,
+    // C 组：冷启动主题闪值。桌面从本地 display.skin 读；Web 的主题偏好本就在
+    // localStorage 同步读取（themes/backend-sync.ts:37）→ 恒 null 即正确语义，
+    // 这里显式给出，避免「未实现」与「已实现且为 null」在审计里混淆。
+    localSkin: null,
     setTranslucency: (payload) => denied.setTranslucency(payload),
     setKeepAwake: (on) => denied.setKeepAwake(on),
     setPreviewShortcutActive: (active) => denied.setPreviewShortcutActive(active),
@@ -246,6 +290,9 @@ export function buildWebBridge(
     // main 新增桥面：桌面插件 profile 路由表（跨联合注册表免凭证路由）。Web 无
     // 桌面主进程/插件层，恒返回空表（类 3 空实现）。
     getProfileRoutes: async () => [],
+    // A 组：联合 agent 花名册（Bot Mode / capabilities scope-selector / profile
+    // rail 的跨连接行）——逐条注册连接枚举 /api/profiles 后拍平，见 roster.ts。
+    getAgentRoster: () => gateway.getAgentRoster(),
     readWindowBelow: async () => null,
   }
 
