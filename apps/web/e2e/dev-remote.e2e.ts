@@ -28,7 +28,9 @@ test.describe('dev-remote: no gateway, boot-failure recovery + usable settings',
         () => {
           const bar = document.querySelector('[data-slot="statusbar"]')
           const bootFailure =
-            bar && /gateway/i.test(bar.innerText) && document.body.innerText.length > 0
+            bar &&
+            /backend|gateway/i.test(bar.innerText) &&
+            document.body.innerText.length > 0
           // cdp-dev-remote 的覆盖层启发式：全屏 fixed 恢复卡。
           const overlay = [...document.querySelectorAll('.fixed.inset-0')].some(
             (e) => (e.textContent ?? '').length > 0,

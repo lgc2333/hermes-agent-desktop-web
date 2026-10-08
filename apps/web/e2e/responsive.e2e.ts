@@ -51,7 +51,7 @@ test.describe('responsive: mobile-viewport (390x844) layout invariants', () => {
       expect(bar).toBeTruthy()
       expect(bar!.width).toBeGreaterThan(0)
       expect(bar!.text).toBeTruthy()
-      expect(bar!.text).toMatch(/gateway/i)
+      expect(bar!.text).toMatch(/backend|gateway/i)
     })
 
     stopByPort(stack.tokenPort)
