@@ -8,11 +8,11 @@
 ## 1. Subtree 基准（Baseline）
 
 - 上游仓库：https://github.com/NousResearch/hermes-agent.git
-- 基准提交：`818c13be1dc4fd28987e1e881a9408224afd4535`(上游 tag **v0.21.6**，2026-10-08)
+- 基准提交：`71d34bad1045610252eda02ee79549436896e784`(上游 tag **v0.21.7**，2026-10-11)
 - vendor/hermes-desktop：上游 `apps/desktop`（含 src/ 渲染层、scripts/、vite.config.ts 等）
 - vendor/hermes-shared：上游 `apps/shared`（`@hermes/shared` 源码）
 - 引入方式：`git subtree add --squash`（对过滤提交执行，见 §2）
-- 当前子树 split：hermes-desktop: `a0049d3a90bf22f91dcd6985bfe488d82a10905d`；hermes-shared: `9cdbbb8aa1ac1ca3f4597cb107b5bd010d76a0e8`
+- 当前子树 split：hermes-desktop: `6a39f1ead9fa6f4c915038b5566f30f5bdd4f40e`；hermes-shared: `19b8775ddde494ab33c22f1e37f53b756c2c1e37`
 
 ### 2. 引入方式说明（重要）
 
@@ -197,6 +197,10 @@ ref 保护——HEAD 树不变（含补丁），其相对锚点 delta = 恰好�
     claimStartupLatency / onExternalOpenFailed / freeTierChallenge / logLine /
     agentPluginsRoot / probeLocalBackend / setPreviewGuestHidden / localSkin /
     desktopMetrics / update.takePendingRun…）；`introReveal?` 与 `skipIntro?` 上游已删。
+  - 上游 v0.21.7（2026-10-11）删掉 `updates.getBranch` / `setBranch`（源安装的更新频道改由
+    可选 `setChannel('main' | 'stable')` + `DesktopUpdateStatus.channelSelectable` 承担），
+    桥层已同步删两面、`setChannel` 按可选面不实现（Web `check()` 恒 `supported:false`
+    → `sourceUpdateTrack` 为 null，频道行不渲染）。上游再动更新面时照此对齐。
   - Electron 的 DOM augmentation 会随 vendor global.d.ts 进入 web typecheck，
     `document.createElement` 因此多出 `createElement('webview')` 重载，
     `vi.spyOn(document, 'createElement')` 会解析到该单参签名
