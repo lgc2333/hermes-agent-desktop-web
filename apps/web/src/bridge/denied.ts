@@ -360,12 +360,10 @@ export class DeniedAdapter {
     async apply(): Promise<DesktopUpdateApplyResult> {
       return { ok: false, error: 'Hermes Web: updates are managed by the deployment' }
     },
-    async getBranch(): Promise<{ branch: string }> {
-      return { branch: 'web' }
-    },
-    async setBranch(_name: string): Promise<{ branch: string }> {
-      return { branch: 'web' }
-    },
+    // 上游 v0.21.7（2026-10-11）删掉 updates.getBranch / setBranch：源安装的更新
+    // 频道改由可选的 setChannel('main' | 'stable') 承担，状态另带 status.branch。
+    // Web 侧 check() 恒 supported:false → 渲染层不显示频道行（sourceUpdateTrack
+    // 为 null），故无需 setChannel，也不再暴露已出契约的 getBranch / setBranch。
     onProgress(_callback: (payload: DesktopUpdateProgress) => void): () => void {
       return () => undefined
     },
