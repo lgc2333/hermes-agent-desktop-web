@@ -79,6 +79,9 @@ const pkg = JSON.parse(fs.readFileSync(file, "utf8"))
 const upstream = { ref: process.argv[1], commit: process.argv[2] }
 const out = {}
 for (const [key, value] of Object.entries(pkg)) {
+  // 必须跳过既有 upstream：遍历复制会把陈旧值盖回 out，使该字段只在首次写入
+  // 时更新（2026-10-12 实测：v0.21.7 同步后仍写着 v0.21.6）。
+  if (key === "upstream") continue
   out[key] = value
   if (key === "version") out.upstream = upstream
 }
