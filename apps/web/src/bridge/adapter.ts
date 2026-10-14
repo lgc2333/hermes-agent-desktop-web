@@ -280,8 +280,8 @@ export function buildWebBridge(
     glassSupported: false,
     translucencySupported: false,
     // C 组：冷启动主题闪值。桌面从本地 display.skin 读；Web 的主题偏好本就在
-    // localStorage 同步读取（themes/backend-sync.ts:37）→ 恒 null 即正确语义，
-    // 这里显式给出，避免「未实现」与「已实现且为 null」在审计里混淆。
+    // localStorage 同步读取（themes/backend-sync.ts:52 的 readJson）→ 恒 null
+    // 即正确语义，这里显式给出，避免「未实现」与「已实现且为 null」在审计里混淆。
     localSkin: null,
     setTranslucency: (payload) => denied.setTranslucency(payload),
     setKeepAwake: (on) => denied.setKeepAwake(on),

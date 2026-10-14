@@ -67,7 +67,11 @@ echo "==> 记录版本标识的上游分量（apps/web/package.json#upstream）"
 # WEB_VERSION = <项目版本 apps/web/package.json#version>+<上游版本>：release tag 用
 # tag 名，追 main 用上游提交的 7 位短 hash。落盘而非构建期读 git —— Docker 构建
 # .dockerignore 排除 .git（见 apps/web/scripts/build-version.mjs）。
-if git rev-parse --verify --quiet "refs/tags/$REF" >/dev/null; then
+# tag 判定须含远端查询：浅取（--depth=1 单个 tag）**不落** refs/tags/$REF
+# （2026-10-14 同步 v0.22.0 实测，只写 FETCH_HEAD），只看本地 ref 会把 tag 同步
+# 误写成短 hash，与发布 tag 的版本分量对不上。
+if git rev-parse --verify --quiet "refs/tags/$REF" >/dev/null ||
+  git ls-remote --tags --exit-code upstream "refs/tags/$REF" >/dev/null 2>&1; then
   UPSTREAM_REF="$REF"
 else
   UPSTREAM_REF="$(git rev-parse --short=7 "$FETCH_HEAD")"

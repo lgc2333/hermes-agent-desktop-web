@@ -83,7 +83,7 @@ export function resetLogRing(): void {
 /**
  * Web 的「平台」标识。`DesktopMachineProfile.platform` 是 NodeJS.Platform
  * （封闭字面量联合），没有浏览器成员，且渲染层**从不读它**（唯一消费点是
- * i18n/context.tsx:198 的 `machineProfile?.locale`）—— 这里显式声明一次，
+ * i18n/context.tsx:201 的 `machineProfile?.locale`）—— 这里显式声明一次，
  * 避免在方法体里散布 `as unknown as`。
  */
 const WEB_PLATFORM = 'web' as unknown as DesktopMachineProfile['platform']
@@ -396,7 +396,7 @@ export class BrowserAdapter {
 
   /**
    * 机器画像（首启 UI 语言推断）。渲染层只读 `locale`
-   * （i18n/context.tsx:198 → resolveInitialLocale）。浏览器没有桌面主进程的
+   * （i18n/context.tsx:201 → resolveInitialLocale）。浏览器没有桌面主进程的
    * 机器事实：ageDays/username/release 留空，platform 标 'web'
    * （DesktopMachineProfile.platform 是 NodeJS.Platform，Web 无此概念 →
    * 断言转换）。

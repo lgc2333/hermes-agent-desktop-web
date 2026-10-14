@@ -246,7 +246,9 @@ ref 保护——HEAD 树不变（含补丁），其相对锚点 delta = 恰好�
 (reading 'clear')`。本机只跑 typecheck/lint/build,单测与 e2e 以 CI(Node 22)为准。
 - **版本标识的上游分量由同步脚本写入**:`sync-upstream.sh` 在同步末尾写
   `apps/web/package.json#upstream`(`ref` + `commit`),构建脚本读它而非 vendor 的
-  `package.json`(Docker 构建无 `.git`,读不到 tag/hash;方案见 ADR-0026)。**手工跑同步
+  `package.json`(Docker 构建无 `.git`,读不到 tag/hash;方案见 ADR-0026)。**追 tag 时
+  浅取不落 `refs/tags/<tag>`,脚本靠 `git ls-remote --tags` 判定 tag**;`ref` 必须是
+  tag 名(与发布 tag 的版本分量逐字对齐),只有追 main 才写 7 位短 hash。**手工跑同步
   (勿手跑,见 §2/§3)时须自补该字段**,否则 WEB_VERSION 退化为 `v<项目版本>+unknown`。
 - **Electron DOM augmentation 进 web typecheck**(见 §5 bridge 条目)。
 - **e2e 别拿状态栏文本当就绪锚点**:状态栏标签是上游可改的 i18n 文案(2026-10-08
