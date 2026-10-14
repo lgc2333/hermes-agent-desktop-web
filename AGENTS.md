@@ -91,6 +91,8 @@ hermes-agent-desktop-web/
 
 - **版本 bump**：只看本项目（Web patch / 代理 / bridge / 本地代码）改动大小，不看上游 vendor 更新规模。本项目无大改 → 一律 **patch**（x.y.z → x.y.(z+1)）；本项目功能性大改 → minor；破坏性变更 → major。上游同步内容再大也不算 bump 理由。
 
+- **上游同步点**：`apps/web/package.json#upstream` 由 `sync-upstream.sh` 写入并决定用户可见的版本串（`v<项目版本>+<ref>`，构建脚本读它而非 vendor，见 ADR-0026）——追 tag 时 `ref` 必须是 tag 名（如 `v0.22.0`），追 main 才是 7 位短 hash；`commit` 是 tag peel 后的全 SHA。**提交同步结果前回读该字段核对**：写错不会让任何构建 / CI 变红，只会在 review 或用户看版本号时暴露（易漏点与坑见 PATCHES.md §7）。
+
 - **vendor 纪律**：vendor/hermes-desktop|shared 内原位改动收敛到最少；能新加文件就不改旧文件；所有 vendor 改动必须登记 PATCHES.md（含同步注意）。
 
 - **凭证模型**（ADR-0002/0023）：连接凭证只在浏览器（localStorage 注册表 + 代理域 httpOnly cookie），代理零凭证内存态、零落盘、重启无感恢复。勿往代理加持久化/落盘凭证。具体编码见 proxy 头注（main/oauth/session.ts）。
