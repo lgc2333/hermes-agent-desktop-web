@@ -164,7 +164,7 @@ export class GatewayAdapter {
    * Registry-scoped backend resolution（上游可选面 getConnectionFor）：
    * 拨 (connectionId, profile)，打上 `connectionId` / `registryScoped`
    * （渲染层据此区分注册表路由与 v1 别名）。profile 空值填 `'default'`
-   * （上游 main.ts:15554 同款）。空/未知 connectionId 抛错（见上）。
+   * （上游 main.ts:15541 同款）。空/未知 connectionId 抛错（见上）。
    */
   async getConnectionFor(payload: {
     connectionId?: null | string

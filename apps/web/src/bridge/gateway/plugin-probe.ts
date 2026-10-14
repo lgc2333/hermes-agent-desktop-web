@@ -9,8 +9,8 @@
  *
  *   1. **保留标识符校验**：`resolvePluginGitUrl` / `repoNameFromUrl` /
  *      `insecureSchemeWarnings` 逐字移植自上游（同文件），非法输入照旧报错，
- *      不再让整条安装链死在 `phase='error'`（上游 plugin-install-modal.tsx:120-131
- *      在缺 `probePluginRepo` 时无条件落 error）；
+ *      不再让整条安装链死在 `phase='error'`（上游缺 `probePluginRepo` 时自己
+ *      回 unavailableMessage 落 error，见 use-plugin-probe.ts:19-22）；
  *   2. **恒报 `agent: true` / `desktop: false`**：desktop 半是 Electron 主进程
  *      概念（复制到 `<desktop-plugins root>/<name>`），Web 里**不可能**安装，
  *      报 false 让弹窗不渲染 desktop 勾选（也顺带让

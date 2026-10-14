@@ -84,7 +84,7 @@ export function toHermesConnection(
     logs: [],
     windowButtonPosition: null,
     // getConnectionFor（registry-scoped）：带上连接身份 + profile，渲染层
-    // 据此判定「这是注册表路由」而不是 v1 别名（global.d.ts:1024）。
+    // 据此判定「这是注册表路由」而不是 v1 别名（global.d.ts:1032-1035）。
     ...(opts.connectionId ? { connectionId: opts.connectionId } : {}),
     ...(profile ? { profile } : {}),
     ...(opts.registryScoped ? { registryScoped: true } : {}),

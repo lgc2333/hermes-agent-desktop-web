@@ -1543,7 +1543,7 @@ describe('gatewayAdapter — A/C 组新增面', () => {
     const adapter = new GatewayAdapter()
     seedRemote('prod')
 
-    // profile 空值 → 'default'（上游 main.ts:15554 同款）。
+    // profile 空值 → 'default'（上游 main.ts:15541 同款）。
     expect((await adapter.getConnectionFor({ connectionId: 'prod' })).profile).toBe(
       'default',
     )
