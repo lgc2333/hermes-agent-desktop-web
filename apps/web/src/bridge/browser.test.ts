@@ -223,7 +223,6 @@ describe('browserAdapter — A/C 组新增面', () => {
     expect(profile.locale).toBeTruthy()
     expect(profile.platform).toBe('web')
     expect(profile.ageDays).toBeNull()
-    expect(profile.nvidia).toBe(false)
   })
 
   it('getEmbedHostOrigin 返回当前 origin', async () => {

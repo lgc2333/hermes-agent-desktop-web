@@ -397,17 +397,15 @@ export class BrowserAdapter {
   /**
    * 机器画像（首启 UI 语言推断）。渲染层只读 `locale`
    * （i18n/context.tsx:198 → resolveInitialLocale）。浏览器没有桌面主进程的
-   * 机器事实：ageDays/model/username/release 留空，nvidia 恒 false，
-   * platform 标 'web'（DesktopMachineProfile.platform 是 NodeJS.Platform，
-   * Web 无此概念 → 断言转换）。
+   * 机器事实：ageDays/username/release 留空，platform 标 'web'
+   * （DesktopMachineProfile.platform 是 NodeJS.Platform，Web 无此概念 →
+   * 断言转换）。
    */
   async getMachineProfile(): Promise<DesktopMachineProfile> {
     return {
       ageDays: null,
       arch: '',
       locale: navigator.language || '',
-      model: '',
-      nvidia: false,
       platform: WEB_PLATFORM,
       release: '',
       username: '',
