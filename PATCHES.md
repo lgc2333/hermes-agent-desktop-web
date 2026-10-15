@@ -8,11 +8,11 @@
 ## 1. Subtree 基准（Baseline）
 
 - 上游仓库：https://github.com/NousResearch/hermes-agent.git
-- 基准提交：`297552a9d646119871391d202509822cd86330df`(上游 tag **v0.22.1**，2026-10-14)
+- 基准提交：`d923a5eb487a17c0a68801bba9ef0f56c81040a8`(上游 tag **v0.22.2**，2026-10-15)
 - vendor/hermes-desktop：上游 `apps/desktop`（含 src/ 渲染层、scripts/、vite.config.ts 等）
 - vendor/hermes-shared：上游 `apps/shared`（`@hermes/shared` 源码）
 - 引入方式：`git subtree add --squash`（对过滤提交执行，见 §2）
-- 当前子树 split：hermes-desktop: `f1dc84c1f1cd2551d78caed900fdfe0001b8dacf`；hermes-shared: `09eb1cc27ab65ff4835f4464b8a753c7765d8b00`
+- 当前子树 split：hermes-desktop: `1e61a2f399de7ec8aec18f5e85dba6035df63af3`；hermes-shared: `f7086105453a82a8651ce9de30ed3f8df671e198`
 
 ### 2. 引入方式说明（重要）
 
@@ -223,6 +223,11 @@ ref 保护——HEAD 树不变（含补丁），其相对锚点 delta = 恰好�
     COPY 两棵子树（`apps/proxy/Dockerfile`），链接不在上下文里，须在构建阶段
     `RUN ln -s hermes-shared vendor/shared` 重建**——任何新增的选择性 COPY vendor 也要照做，
     否则镜像内 `vite build` 报 `Could not resolve '../../../shared/src/…'`。
+  - 该相对 import 在**上游两侧都有、且会随 release 增删**：`electron/` 侧一直有
+    （`../../shared/src/…`，不进 Web 构建），`src/` 侧（进构建）上游会新增又撤掉
+    （v0.22.1 有 `src/api/sessions.ts` → `session-http-mutations`，v0.22.2 撤回）。
+    **不要按「当前 `src/` 没人用」删链接或 Dockerfile 那行**——成本为零，删了下次上游
+    再引入即镜像构建失败。
 
 ## 6. 同步后必做
 
