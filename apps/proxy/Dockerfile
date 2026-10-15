@@ -33,6 +33,10 @@ RUN pnpm install --frozen-lockfile
 COPY apps/web apps/web
 COPY vendor/hermes-desktop vendor/hermes-desktop
 COPY vendor/hermes-shared vendor/hermes-shared
+# 上游自 v0.22.1 起用相对路径跨 app 引 shared（`../../../shared/src/…`），仓库里靠
+# `vendor/shared -> hermes-shared` 符号链接解析；本阶段只按路径拷两棵子树，链接不在其中，
+# 这里显式重建一次（见 PATCHES.md §5）。
+RUN ln -s hermes-shared vendor/shared
 # node:22-alpine 不自带 git——装一个供 build-version.mjs 读 commit hash
 # （ADR-0014 阶梯 2；仅构建阶段，运行时 deno 阶段不携带）。
 RUN apk add --no-cache git

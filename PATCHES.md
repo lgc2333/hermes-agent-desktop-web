@@ -219,7 +219,10 @@ ref 保护——HEAD 树不变（含补丁），其相对锚点 delta = 恰好�
     specifier；新模块也还没进 `@hermes/shared` 的 exports）。
   - 同步注意：subtree merge 只动 prefix 内，链接不会被动到；上游若把模块移到别的 app 下
     （或出现指向其它 app 的相对引用），按同一模式补链接并对齐目标。走 package 子路径
-    import（`@hermes/shared/<mod>`）的另需 exports 带该键，见 §7。
+    import（`@hermes/shared/<mod>`）的另需 exports 带该键，见 §7。**Docker 构建按路径选择性
+    COPY 两棵子树（`apps/proxy/Dockerfile`），链接不在上下文里，须在构建阶段
+    `RUN ln -s hermes-shared vendor/shared` 重建**——任何新增的选择性 COPY vendor 也要照做，
+    否则镜像内 `vite build` 报 `Could not resolve '../../../shared/src/…'`。
 
 ## 6. 同步后必做
 
