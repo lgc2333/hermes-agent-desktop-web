@@ -2,7 +2,7 @@
  * Class 2 — 走代理 RPC 的桥面（M1 直连 mock gateway，M2 换同源代理协议）。
  *
  * 职责（PLAN §3 / handoff §3）：
- *   - 连接面：getConnection/getGatewayWsUrl/revalidateConnection，
+ *   - 连接面：getConnection/getGatewayWsUrl/revalidateConnection/touchBackend，
  *     数据源 = 连接注册表（registry.ts，localStorage，ADR-0002）；
  *   - REST 面：api() 转发（rest.ts：webApi，M1 直连 baseUrl +
  *     X-Hermes-Session-Token；M2 同源代理 + X-Hermes-Target，错误形状不变）；
@@ -164,11 +164,12 @@ export class GatewayAdapter {
    * Registry-scoped backend resolution（上游可选面 getConnectionFor）：
    * 拨 (connectionId, profile)，打上 `connectionId` / `registryScoped`
    * （渲染层据此区分注册表路由与 v1 别名）。profile 空值填 `'default'`
-   * （上游 main.ts:14402 同款）。空/未知 connectionId 抛错（见上）。
+   * （上游 main.ts:15537 同款）。空/未知 connectionId 抛错（见上）。
    */
   async getConnectionFor(payload: {
     connectionId?: null | string
     profile?: null | string
+    priority?: 'foreground' | 'background'
   }): Promise<HermesConnection> {
     const id = String(payload.connectionId ?? '').trim()
 
@@ -259,6 +260,10 @@ export class GatewayAdapter {
   async revalidateConnection(): Promise<{ ok: boolean; rebuilt: boolean }> {
     // 浏览器无缓存的后端描述符可失效——注册表就是真相，永远是 fresh。
     return { ok: true, rebuilt: false }
+  }
+
+  async touchBackend(): Promise<{ ok: boolean }> {
+    return { ok: true }
   }
 
   // ── REST ─────────────────────────────────────────────────────────────────

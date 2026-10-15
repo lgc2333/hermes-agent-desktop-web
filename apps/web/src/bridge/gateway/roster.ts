@@ -243,7 +243,7 @@ export function buildAgentRoster(
   return roster
 }
 
-/** 枚举单条连接的 `/api/profiles` 响应（上游 main.ts:15297-15348 的裁剪版）。 */
+/** 枚举单条连接的 `/api/profiles` 响应（上游 main.ts:16454-16503 的裁剪版）。 */
 function parseProfiles(body: unknown): {
   profiles: string[]
   profileMetadata?: Record<string, RosterProfileMetadata>
@@ -292,7 +292,7 @@ function parseProfiles(body: unknown): {
       entry.has_avatar = row.has_avatar
     }
 
-    // 上游对**每个具名 profile** 都产出一条（可为空对象，main.ts:15304-15333）——
+    // 上游对**每个具名 profile** 都产出一条（可为空对象，main.ts:16457-16487）——
     // 别按「是否非空」裁剪，否则渲染层看到的形状与桌面端不一致。
     metadata[name] = entry
   }
