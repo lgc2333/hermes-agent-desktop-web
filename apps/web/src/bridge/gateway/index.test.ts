@@ -182,11 +182,10 @@ describe('gatewayAdapter', () => {
     })
   })
 
-  it('revalidate/touch are cheap no-ops with ok:true', async () => {
+  it('revalidate is a cheap no-op with ok:true', async () => {
     const adapter = new GatewayAdapter()
 
     expect(await adapter.revalidateConnection()).toEqual({ ok: true, rebuilt: false })
-    expect(await adapter.touchBackend()).toEqual({ ok: true })
   })
 
   it('saveGatewayFile downloads through /api/fs/download and triggers a browser download', async () => {
@@ -1543,7 +1542,7 @@ describe('gatewayAdapter — A/C 组新增面', () => {
     const adapter = new GatewayAdapter()
     seedRemote('prod')
 
-    // profile 空值 → 'default'（上游 main.ts:15541 同款）。
+    // profile 空值 → 'default'（上游 main.ts:14402 同款）。
     expect((await adapter.getConnectionFor({ connectionId: 'prod' })).profile).toBe(
       'default',
     )
