@@ -1,7 +1,7 @@
 {
   "name": "@hermes-web/web",
   "type": "module",
-  "version": "0.4.25",
+  "version": "0.4.26",
   "upstream": {
     "ref": "v0.22.1",
     "commit": "297552a9d646119871391d202509822cd86330df"
