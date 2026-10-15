@@ -8,11 +8,11 @@
 ## 1. Subtree 基准（Baseline）
 
 - 上游仓库：https://github.com/NousResearch/hermes-agent.git
-- 基准提交：`e06df9c2eae6901f4c88f464e0ae6e753c0428b8`(上游 tag **v0.22.0**，2026-10-13)
+- 基准提交：`297552a9d646119871391d202509822cd86330df`(上游 tag **v0.22.1**，2026-10-14)
 - vendor/hermes-desktop：上游 `apps/desktop`（含 src/ 渲染层、scripts/、vite.config.ts 等）
 - vendor/hermes-shared：上游 `apps/shared`（`@hermes/shared` 源码）
 - 引入方式：`git subtree add --squash`（对过滤提交执行，见 §2）
-- 当前子树 split：hermes-desktop: `ce0a97d520c14d67d93d72e5a97a817b24f43234`；hermes-shared: `a4f0e04b2f400cf431baf11050be2eec5591c4d6`
+- 当前子树 split：hermes-desktop: `f1dc84c1f1cd2551d78caed900fdfe0001b8dacf`；hermes-shared: `09eb1cc27ab65ff4835f4464b8a753c7765d8b00`
 
 ### 2. 引入方式说明（重要）
 
@@ -180,8 +180,12 @@ ref 保护——HEAD 树不变（含补丁），其相对锚点 delta = 恰好�
     **可选**面（`?`，Electron 窗口/主进程专属）一律不实现，渲染层
     optional-chain 兜底；**必填**面 Web 有等价路径就实现（如 `savePastedText`
     → 文本落 OPFS + 返回 `web-blob://` 虚拟路径），无等价路径按拒绝类默认值 /
-    no-op 回读（如 `getPoolLimits`/`setPoolLimits`，语义权威 =
-    vendor store/pool-limits.ts 头注）。
+    no-op 回读（如 `getSecretStorageEncryption` → `{ on: false }`）。
+  - 上游删掉的必填面要**一起删桥层实现**，不能留着当兼容层：`const bridge: Bridge = {…}`
+    是全新对象字面量，多出的成员会触发 excess property 报错（typecheck 红）。
+    已知的删除：pooled-backend 面 `touchBackend` / `getPoolLimits` / `setPoolLimits` /
+    `onPoolBackendRetiring`（pool 相关 vendor 文件已整体移除）；更早的 `updates.getBranch` /
+    `setBranch`。上游若重新引入 pool 面，按上面「默认值 / no-op 回读」语义补回。
   - 桥面类型从成员派生，勿直接 import vendor 内部类型：`HermesNotification`
     在 `vendor/hermes-desktop/electron/notification-types.ts`（`@` 别名树外）
     → 用 `Parameters<Window['hermesDesktop']['notify']>[0]`，勿
@@ -205,6 +209,17 @@ ref 保护——HEAD 树不变（含补丁），其相对锚点 delta = 恰好�
     `document.createElement` 因此多出 `createElement('webview')` 重载，
     `vi.spyOn(document, 'createElement')` 会解析到该单参签名
     （adapter.test.ts 已就地 cast）。
+
+- vendor/shared（**符号链接** → `hermes-shared`，不是 subtree）
+  - 上游 `apps/desktop/src` 里有跨 app 的**相对** import（`../../../shared/src/<mod>`，
+    例如 `session-http-mutations`）。本仓把 desktop / shared 分别 vendoring 到
+    `vendor/hermes-desktop` / `vendor/hermes-shared`，该相对路径会解析到不存在的
+    `vendor/shared`。符号链接把上游 `apps/shared` 的可达位置镜像出来：vite 与 tsc
+    都按文件系统解析，链接一次即覆盖该类引用（无别名可用——TS `paths` 不作用于相对
+    specifier；新模块也还没进 `@hermes/shared` 的 exports）。
+  - 同步注意：subtree merge 只动 prefix 内，链接不会被动到；上游若把模块移到别的 app 下
+    （或出现指向其它 app 的相对引用），按同一模式补链接并对齐目标。走 package 子路径
+    import（`@hermes/shared/<mod>`）的另需 exports 带该键，见 §7。
 
 ## 6. 同步后必做
 
