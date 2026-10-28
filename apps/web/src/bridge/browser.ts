@@ -49,7 +49,7 @@ const LOG_RING_MAX = 500
 const logRing: string[] = []
 
 /**
- * 通知「点击激活」负载（上游 global.d.ts:605 `onNotificationActivate`）。
+ * 通知「点击激活」负载（上游 global.d.ts:615 `onNotificationActivate`）。
  * `actionId` 恒不派发：页内 `new Notification` 没有按钮语义（那是 ServiceWorker
  * `registration.showNotification` 的能力），见 onNotificationActivate 注释。
  */

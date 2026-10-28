@@ -20,6 +20,14 @@ export interface SaveGatewayFileResult {
   saved: boolean
 }
 
+/** 渲染层传给桌面 saveTextFileAs 的请求形状（vendor global.d.ts）。 */
+export interface SaveTextFileAsRequest {
+  content: string
+  defaultPath?: string
+  filters?: Array<{ extensions: string[]; name: string }>
+  title?: string
+}
+
 function gatewayFilePath(rawPath: unknown): string {
   const value = String(rawPath || '').trim()
 
@@ -121,7 +129,34 @@ function downloadBlob(blob: Blob, filename: string): void {
   window.setTimeout(() => URL.revokeObjectURL(href), 30_000)
 }
 
+function textBlobType(filename: string): string {
+  const ext = filename.split('.').pop()?.toLowerCase() ?? ''
+
+  if (ext === 'json') {
+    return 'application/json'
+  }
+
+  return ext === 'md' ? 'text/markdown' : 'text/plain'
+}
+
 export class GatewayFileDownloader {
+  /**
+   * 桌面 saveTextFileAs = 保存对话框 + 主进程写盘（渲染层 `/save` 用）。浏览器的
+   * 等价物只有下载：交给下载管理器，落盘位置由浏览器决定，故返回的 `path` 只是
+   * 文件名（渲染层据此渲染「已保存到 …」，与桌面同一句文案）。
+   */
+  async saveTextFileAs(request: SaveTextFileAsRequest): Promise<SaveGatewayFileResult> {
+    const filename =
+      basename(String(request.defaultPath || '').trim()) || 'download.txt'
+
+    downloadBlob(
+      new Blob([request.content], { type: textBlobType(filename) }),
+      filename,
+    )
+
+    return { path: filename, saved: true }
+  }
+
   async saveGatewayFile(
     payload: SaveGatewayFilePayload,
   ): Promise<SaveGatewayFileResult> {

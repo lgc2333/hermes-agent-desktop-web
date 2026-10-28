@@ -2,7 +2,7 @@
  * Class 2 — 走代理 RPC 的桥面（M1 直连 mock gateway，M2 换同源代理协议）。
  *
  * 职责（PLAN §3 / handoff §3）：
- *   - 连接面：getConnection/getGatewayWsUrl/revalidateConnection/touchBackend，
+ *   - 连接面：getConnection/getGatewayWsUrl/revalidateConnection，
  *     数据源 = 连接注册表（registry.ts，localStorage，ADR-0002）；
  *   - REST 面：api() 转发（rest.ts：webApi，M1 直连 baseUrl +
  *     X-Hermes-Session-Token；M2 同源代理 + X-Hermes-Target，错误形状不变）；
@@ -58,6 +58,7 @@ import {
 import type { WebConnectionRecord } from '../registry'
 
 import { GatewayFileDownloader } from './download'
+import type { SaveTextFileAsRequest } from './download'
 import { RemoteFsGit } from './fs-git'
 import { OauthBroker } from './oauth'
 import { probePluginRepoInBrowser } from './plugin-probe'
@@ -148,7 +149,7 @@ export class GatewayAdapter {
   /**
    * Registry-scoped 连接解析（getConnectionFor / getGatewayWsUrlFor 共用）。
    * 未知 id（含空 id）→ 抛 `No connection with id "x".` —— 上游
-   * `registryDialConnectionId`（connection-registry.ts:572-584）同款：空 id 不是
+   * `registryDialConnectionId`（connection-registry.ts:575-584）同款：空 id 不是
    * `registry.primary`（上游注释给了 #90477 的理由：scoped 调用方丢 id 时会拨到
    * 另一台机器），**不静默塌回 primary**。
    */
@@ -164,12 +165,11 @@ export class GatewayAdapter {
    * Registry-scoped backend resolution（上游可选面 getConnectionFor）：
    * 拨 (connectionId, profile)，打上 `connectionId` / `registryScoped`
    * （渲染层据此区分注册表路由与 v1 别名）。profile 空值填 `'default'`
-   * （上游 main.ts:15537 同款）。空/未知 connectionId 抛错（见上）。
+   * （上游 main.ts:14171 同款）。空/未知 connectionId 抛错（见上）。
    */
   async getConnectionFor(payload: {
     connectionId?: null | string
     profile?: null | string
-    priority?: 'foreground' | 'background'
   }): Promise<HermesConnection> {
     const id = String(payload.connectionId ?? '').trim()
 
@@ -260,10 +260,6 @@ export class GatewayAdapter {
   async revalidateConnection(): Promise<{ ok: boolean; rebuilt: boolean }> {
     // 浏览器无缓存的后端描述符可失效——注册表就是真相，永远是 fresh。
     return { ok: true, rebuilt: false }
-  }
-
-  async touchBackend(): Promise<{ ok: boolean }> {
-    return { ok: true }
   }
 
   // ── REST ─────────────────────────────────────────────────────────────────
@@ -863,6 +859,11 @@ export class GatewayAdapter {
     suggestedName?: string
   }) {
     return this.downloader.saveGatewayFile(payload)
+  }
+
+  /** 上游可选面 saveTextFileAs（`/save` 命令）：浏览器等价 = Blob 下载。 */
+  saveTextFileAs(request: SaveTextFileAsRequest) {
+    return this.downloader.saveTextFileAs(request)
   }
 
   gitRoot(path: string) {

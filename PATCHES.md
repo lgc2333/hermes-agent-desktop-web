@@ -8,11 +8,11 @@
 ## 1. Subtree 基准（Baseline）
 
 - 上游仓库：https://github.com/NousResearch/hermes-agent.git
-- 基准提交：`d923a5eb487a17c0a68801bba9ef0f56c81040a8`(上游 tag **v0.22.2**，2026-10-15)
+- 基准提交：`bf0203a794a07aac3ff764972ab9087baa4e4f4e`(上游 tag **v0.22.5**，2026-10-22)
 - vendor/hermes-desktop：上游 `apps/desktop`（含 src/ 渲染层、scripts/、vite.config.ts 等）
 - vendor/hermes-shared：上游 `apps/shared`（`@hermes/shared` 源码）
 - 引入方式：`git subtree add --squash`（对过滤提交执行，见 §2）
-- 当前子树 split：hermes-desktop: `1e61a2f399de7ec8aec18f5e85dba6035df63af3`；hermes-shared: `f7086105453a82a8651ce9de30ed3f8df671e198`
+- 当前子树 split：hermes-desktop: `402ce781878bcc1da4f2e9d38e9f6795209b5754`；hermes-shared: `40d1e6f2eba200dbb94978a662161be889cab802`
 
 ### 2. 引入方式说明（重要）
 
@@ -183,9 +183,17 @@ ref 保护——HEAD 树不变（含补丁），其相对锚点 delta = 恰好�
     no-op 回读（如 `getSecretStorageEncryption` → `{ on: false }`）。
   - 上游删掉的必填面要**一起删桥层实现**，不能留着当兼容层：`const bridge: Bridge = {…}`
     是全新对象字面量，多出的成员会触发 excess property 报错（typecheck 红）。
-    已知的删除：pooled-backend 面 `touchBackend` / `getPoolLimits` / `setPoolLimits` /
-    `onPoolBackendRetiring`（pool 相关 vendor 文件已整体移除）；更早的 `updates.getBranch` /
-    `setBranch`。上游若重新引入 pool 面，按上面「默认值 / no-op 回读」语义补回。
+    **pool 面随 release 反复增删**（v0.22.1 删 → v0.22.2 回 → v0.22.5 再删，同名
+    `touchBackend` / `getPoolLimits` / `setPoolLimits` / `onPoolBackendRetiring`），
+    `getConnection` / `getConnectionFor` 的可选 `priority` 参数同样反复出现又消失——
+    每轮同步一律以 `global.d.ts` 为准重算，别把上一轮的实现当兼容层留着。更早删掉的：
+    `updates.getBranch` / `setBranch`。
+  - 上游新增的**可选**面默认不实现，但「浏览器有等价物」的实现：`saveTextFileAs`
+    （`/save` 命令的落盘腿，桌面 = 保存对话框 + 主进程写盘）→ Web 用 Blob 下载
+    （`gateway/download.ts#saveTextFileAs`，返回的 `path` 只是文件名）。其余新增可选面
+    按下方默认不实现：`getPluginWsUrl`（只服务 `authMode: 'native'` 的本机网关，Web
+    连接恒为 token/oauth）、`preparedSubmissions`（上游自带 localStorage 回退，桌面
+    main 进程只是可选加速）。
   - 桥面类型从成员派生，勿直接 import vendor 内部类型：`HermesNotification`
     在 `vendor/hermes-desktop/electron/notification-types.ts`（`@` 别名树外）
     → 用 `Parameters<Window['hermesDesktop']['notify']>[0]`，勿
@@ -264,9 +272,11 @@ ref 保护——HEAD 树不变（含补丁），其相对锚点 delta = 恰好�
   (秒级;重跑无 diff 即一致),不要跑全量 `pnpm install` —— 全量在本机曾于
   link 阶段卡死(事件循环空转、无 IO/socket、非交互等待)。CI 自行全量安装。
 - **本机 vitest 全红 ≠ 代码坏**: 本机 Node 26 自带实验性 `localStorage`(未带
-  `--localstorage-file` 时为 undefined),遮蔽 jsdom 的实现 → 所有用
+  `--localstorage-file` 时为 undefined)，遮蔽 jsdom 的实现 → 所有用
   `window.localStorage` 的桥层测试报 `Cannot read properties of undefined
-(reading 'clear')`。本机只跑 typecheck/lint/build,单测与 e2e 以 CI(Node 22)为准。
+(reading 'clear')`。本机默认只跑 typecheck/lint/build，单测与 e2e 以 CI(Node 22)为准；
+  需要本地跑全量桥单测时加 `NODE_OPTIONS="--localstorage-file=$TMPDIR/ls.json"`
+  （实测 195 例全绿，含 `window.open` 的 jsdom "Not implemented" 噪声属预期）。
 - **版本标识的上游分量由同步脚本写入**:`sync-upstream.sh` 在同步末尾写
   `apps/web/package.json#upstream`(`ref` + `commit`),构建脚本读它而非 vendor 的
   `package.json`(Docker 构建无 `.git`,读不到 tag/hash;方案见 ADR-0026)。**追 tag 时

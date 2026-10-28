@@ -21,7 +21,7 @@
  *     拉取：mount / focus / 注册表变更，非定时轮询）；
  *   - 无 `remoteProfile`（桌面 SSH 连接的 profile 覆盖）—— `WebConnectionRecord`
  *     没有该字段，故 `targetProfile` 恒等于 `profile`；
- *   - 不移植 `shouldDeferLocalEnumeration`（connection-registry.ts:594-609）：那条
+ *   - 不移植 `shouldDeferLocalEnumeration`（connection-registry.ts:594-606）：那条
  *     是「本地后端池 + 延迟拨号」的守卫（避免枚举时凭空 spawn 一个本地 backend、
  *     造出幻影 `default` agent）。Web 没有池、也不 spawn——枚举就是对该连接注册的
  *     URL 发请求，不可达即上报 unreachable。且 Web 里唯一那条 local 形态连接
@@ -67,7 +67,7 @@ export interface DesktopAgentRosterPayload extends DesktopAgentRoster {
   primaryConnectionId: string
 }
 
-/** 上游 `labelSlug`（connection-registry.ts:145-156）逐字移植。 */
+/** 上游 `labelSlug`（connection-registry.ts:147-156）逐字移植。 */
 export function labelSlug(label: string): string {
   const slug = String(label || '')
     .trim()
@@ -243,7 +243,7 @@ export function buildAgentRoster(
   return roster
 }
 
-/** 枚举单条连接的 `/api/profiles` 响应（上游 main.ts:16454-16503 的裁剪版）。 */
+/** 枚举单条连接的 `/api/profiles` 响应（上游 main.ts:15029-15074 的裁剪版）。 */
 function parseProfiles(body: unknown): {
   profiles: string[]
   profileMetadata?: Record<string, RosterProfileMetadata>
@@ -292,7 +292,7 @@ function parseProfiles(body: unknown): {
       entry.has_avatar = row.has_avatar
     }
 
-    // 上游对**每个具名 profile** 都产出一条（可为空对象，main.ts:16457-16487）——
+    // 上游对**每个具名 profile** 都产出一条（可为空对象，main.ts:15036-15066）——
     // 别按「是否非空」裁剪，否则渲染层看到的形状与桌面端不一致。
     metadata[name] = entry
   }
