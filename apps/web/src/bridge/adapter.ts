@@ -24,6 +24,7 @@ import type { AttachmentBlobStore } from './blob-store'
 import { DeniedAdapter } from './denied'
 import { GatewayAdapter } from './gateway'
 import type { WebBridgeOptions } from './gateway'
+import { createWebUiPreferences } from './gateway/ui-preferences'
 
 type Bridge = Window['hermesDesktop']
 
@@ -57,6 +58,9 @@ export function buildWebBridge(
 
     // ── REST（类 2）────────────────────────────────────────────────────────
     api: <T>(request: HermesApiRequest) => gateway.api<T>(request),
+    // 上游 2026-11-03 新增可选面：本机 UI 偏好共享存储（主题/键位等）。浏览器
+    // 等价 = gateway 的 /api/ui-preferences 经代理读写，见 ui-preferences.ts。
+    uiPreferences: createWebUiPreferences(),
 
     // ── boot 面（类 2）─────────────────────────────────────────────────────
     getBootProgress: () => gateway.getBootProgress(),

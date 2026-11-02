@@ -19,7 +19,7 @@ describe('buildWebBridge / installWebBridge', () => {
     expect(typeof bridge.getConnection).toBe('function')
     expect(typeof bridge.api).toBe('function')
     expect(typeof bridge.getBootProgress).toBe('function')
-    expect(typeof bridge.petOverlay.open).toBe('function')
+    expect(typeof bridge.petOverlay!.open).toBe('function')
     expect(typeof bridge.git!.review.list).toBe('function')
     expect(typeof bridge.terminal.start).toBe('function')
     expect(typeof bridge.saveGatewayFile).toBe('function')
@@ -45,8 +45,8 @@ describe('buildWebBridge / installWebBridge', () => {
   it('denied members return safe empty shapes instead of undefined', async () => {
     const bridge = buildWebBridge()
 
-    expect(await bridge.petOverlay.open({} as never)).toEqual({ ok: false })
-    expect(await bridge.quickEntry.getSettings()).toMatchObject({ enabled: false })
+    expect(await bridge.petOverlay!.open({} as never)).toEqual({ ok: false })
+    expect(await bridge.quickEntry!.getSettings()).toMatchObject({ enabled: false })
     expect(await bridge.updates.check()).toMatchObject({ supported: false })
     expect(await bridge.requestMicrophoneAccess()).toBe(false)
     // directories 对浏览器本地文件无意义 → 不开文件框、直接返回空。
@@ -123,7 +123,7 @@ describe('buildWebBridge / installWebBridge', () => {
 
     expect(typeof bridge.onBootProgress(() => undefined)).toBe('function')
     expect(typeof bridge.onBackendExit(() => undefined)).toBe('function')
-    expect(typeof bridge.petOverlay.onState(() => undefined)).toBe('function')
+    expect(typeof bridge.petOverlay!.onState(() => undefined)).toBe('function')
     expect(bridge.hud?.nativeDrag).toBe(false)
     expect(bridge.hud?.windowing).toEqual({
       clientPlacement: false,
@@ -137,7 +137,7 @@ describe('buildWebBridge / installWebBridge', () => {
     expect(typeof bridge.hud?.setWorkspaceTransfer).toBe('function')
     expect(typeof bridge.hud?.resetLayout).toBe('function')
     expect(typeof bridge.hud?.onGameOverlay(() => undefined)).toBe('function')
-    expect(typeof bridge.quickEntry.onSubmit(() => undefined)).toBe('function')
+    expect(typeof bridge.quickEntry!.onSubmit(() => undefined)).toBe('function')
   })
 
   it('browser-native members work without throwing', async () => {
@@ -180,10 +180,10 @@ describe('buildWebBridge / installWebBridge', () => {
     expect(typeof bridge.readFileDataUrlForAttach).toBe('function')
     expect(typeof bridge.onExternalOpenFailed!(() => undefined)).toBe('function')
     expect(typeof bridge.onNotificationActivate!(() => undefined)).toBe('function')
-    expect(typeof bridge.connections.setLaunchMode).toBe('function')
-    expect(typeof bridge.connections.setLastUsed).toBe('function')
+    expect(typeof bridge.connections!.setLaunchMode).toBe('function')
+    expect(typeof bridge.connections!.setLastUsed).toBe('function')
 
-    const registry = await bridge.connections.setLaunchMode!('last-used')
+    const registry = await bridge.connections!.setLaunchMode!('last-used')
     expect(registry.registry.launchMode).toBe('last-used')
   })
 
@@ -195,8 +195,8 @@ describe('buildWebBridge / installWebBridge', () => {
       expect(typeof bridge.openWindow).toBe('function')
       expect(typeof bridge.openBrowserWindow).toBe('function')
       expect(typeof bridge.onBrowserPopoutClosed).toBe('function')
-      expect(await bridge.getSecretStorageEncryption()).toEqual({ on: false })
-      expect(await bridge.setSecretStorageEncryption(true)).toEqual({ on: false })
+      expect(await bridge.getSecretStorageEncryption!()).toEqual({ on: false })
+      expect(await bridge.setSecretStorageEncryption!(true)).toEqual({ on: false })
       expect(typeof bridge.profile.remember).toBe('function')
     })
 
@@ -320,7 +320,7 @@ describe('buildWebBridge / installWebBridge', () => {
       vi.stubGlobal('BroadcastChannel', MockBroadcastChannel)
       const bridge = buildWebBridge()
 
-      const result = await bridge.openBrowserWindow('tab 1')
+      const result = await bridge.openBrowserWindow!('tab 1')
 
       expect(result).toEqual({ ok: true })
       expect(openMock.mock.calls[0][0]).toBe(
@@ -339,7 +339,7 @@ describe('buildWebBridge / installWebBridge', () => {
     it('openBrowserWindow returns ok:false for an empty tab id', async () => {
       const bridge = buildWebBridge()
 
-      await expect(bridge.openBrowserWindow('  ')).resolves.toEqual({
+      await expect(bridge.openBrowserWindow!('  ')).resolves.toEqual({
         ok: false,
         error: 'invalid-tab-id',
       })

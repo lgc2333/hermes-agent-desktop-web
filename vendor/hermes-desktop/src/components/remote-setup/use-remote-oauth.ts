@@ -193,12 +193,13 @@ export function useRemoteOAuth(options: RemoteOAuthOptions): RemoteOAuth {
         return
       }
 
-      const result = await window.hermesDesktop.passwordLoginConnectionConfig(
-        url,
-        passwordProvider ?? '',
-        username.trim(),
-        password
-      )
+      const login = window.hermesDesktop.passwordLoginConnectionConfig
+
+      if (!login) {
+        throw new Error('Password sign-in is unavailable in this shell')
+      }
+
+      const result = await login(url, passwordProvider ?? '', username.trim(), password)
 
       if (!current()) {
         return
@@ -244,7 +245,13 @@ export function useRemoteOAuth(options: RemoteOAuthOptions): RemoteOAuth {
         return
       }
 
-      const result = await window.hermesDesktop.oauthPasteConnectionConfig(url, pasted)
+      const paste = window.hermesDesktop.oauthPasteConnectionConfig
+
+      if (!paste) {
+        throw new Error('OAuth paste sign-in is unavailable in this shell')
+      }
+
+      const result = await paste(url, pasted)
 
       if (!current()) {
         return

@@ -210,8 +210,8 @@ export function unknownConnectionIdError(id: string): Error {
 
 /**
  * 切换 primary。**只改 primary**（上游 `setPrimaryConnection`
- * connection-registry.ts:1561-1567 同款）：`lastUsed` 由渲染层在成功切换后
- * 单独调 `setLastUsed` 记录（store/connections.ts:176-190），不在这里代劳。
+ * connection-registry.ts:1560-1566 同款）：`lastUsed` 由渲染层在成功切换后
+ * 单独调 `setLastUsed` 记录（store/connections.ts:284-295），不在这里代劳。
  * 未知 id 抛错（上游同款），调用点都有 try/catch（connections-registry.tsx:444）。
  */
 export function setPrimaryConnection(id: string): WebConnectionsStore {
@@ -243,7 +243,7 @@ export function setLaunchMode(mode: string): WebConnectionsStore {
 /**
  * 记下最近成功打开的连接（`launchMode='last-used'` 的落点）。未知 id 抛错
  * （上游 `setLastUsedConnection` connection-registry.ts:1570-1576 同款）；
- * 渲染层调用点本就吞错（store/connections.ts:184-190），不会把成功切换判成失败。
+ * 渲染层调用点本就吞错（store/connections.ts:284-295），不会把成功切换判成失败。
  */
 export function setLastUsedConnection(id: string): WebConnectionsStore {
   if (!hasConnection(id)) {

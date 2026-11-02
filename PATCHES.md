@@ -8,11 +8,11 @@
 ## 1. Subtree 基准（Baseline）
 
 - 上游仓库：https://github.com/NousResearch/hermes-agent.git
-- 基准提交：`bf0203a794a07aac3ff764972ab9087baa4e4f4e`(上游 tag **v0.22.5**，2026-10-22)
+- 基准提交：`f0d94882e89ab8d4098b5bb2f166adfb9ee0a0ab`(上游 tag **v0.22.6**，2026-11-02)
 - vendor/hermes-desktop：上游 `apps/desktop`（含 src/ 渲染层、scripts/、vite.config.ts 等）
 - vendor/hermes-shared：上游 `apps/shared`（`@hermes/shared` 源码）
 - 引入方式：`git subtree add --squash`（对过滤提交执行，见 §2）
-- 当前子树 split：hermes-desktop: `402ce781878bcc1da4f2e9d38e9f6795209b5754`；hermes-shared: `40d1e6f2eba200dbb94978a662161be889cab802`
+- 当前子树 split：hermes-desktop: `51730934a787e8cb46af6047b45d69635d1acadb`；hermes-shared: `a08017115c6d1746af0d3755b57212e3c920589d`
 
 ### 2. 引入方式说明（重要）
 
@@ -78,14 +78,16 @@ ref 保护——HEAD 树不变（含补丁），其相对锚点 delta = 恰好�
 - vendor/hermes-desktop/src/global.d.ts
   - 改动：新增 `DesktopPasswordLoginResult` 接口 + `hermesDesktop.passwordLoginConnectionConfig` 表面（M5 密码 "dashboard login"）；新增 `oauthPasteConnectionConfig(remoteUrl, pasted)` 表面（M6 paste-back，ADR-0017）。`oauthLoginConnectionConfig` 保持上游 2026-10-08 的新签名 `(remoteUrl, options?: DesktopOauthLoginOptions)` 并保留 paste 面（两处改动同段，合并时取上游签名 + 追加 paste）
   - 原因：Web 端密码门禁登录走代理 /api/proxy/session/login（ADR-0013）；远端部署 OAuth 需粘贴回跳（ADR-0017）。桌面端均不实现（桥面存在但桌面 main 进程不注册，渲染层仅在 Web 分支调用）
-  - 同步注意：上游若改动 hermesDesktop 表面或 oauth 登录签名，按 M5/M6 语义合并（该能力是 Web 专有扩展）；`DesktopOauthLoginOptions` 由上游新增，合并时勿丢
+  - 同步注意：上游若改动 hermesDesktop 表面或 oauth 登录签名，按 M5/M6 语义合并（该能力是 Web 专有扩展）；`DesktopOauthLoginOptions` 由上游新增，合并时勿丢。两个扩展面**必须是可选成员**（`?`）：上游 `src/lib/browser-desktop-bridge.ts` 是穷尽实现 `window.hermesDesktop` 的对象字面量，Web 专有必填面会让它 missing-property 报错；调用点（`use-remote-oauth.ts` 的 passwordSignIn / pasteSignIn）用「取到函数再调用，缺面抛错」写法，别改回直接调用
 
 - vendor/hermes-desktop/src/components/boot-failure-overlay.tsx
   - 改动：signInRemote 统一路由到嵌入式 Gateway settings 视图（setView('connect')）——M5 起密码 reauth 如此；M6 起 OAuth reauth 同样如此（paste 提示只在 Settings/首启表单一处，无第三份并行副本）
   - 原因：Web 端 reauth 的唯一入口是设置面板里的凭据表单/登录按钮（远端浏览器够不到代理 loopback，必须经 paste）
   - 同步注意：上游若改 reauth 动作列表（如新增 cloud 直连登录流），保留该路由——
     Web 无 desktop.cloud 表面，一律走嵌入式 Gateway settings 面板；已删除 overlay
-    内直连 OAuth 弹窗路径
+    内直连 OAuth 弹窗路径。上游在 `signInRemote` 里追加的 cloud 阶梯
+    （`reestablishCloudAgentSession`）被该路由取代 → 其 import 须一并删掉，否则
+    typecheck 报未使用导入
 
 - vendor/hermes-desktop/src/i18n/en.ts / zh.ts / types.ts
   - 改动：settings.gateway 与 install 两节新增 authUsername / authPassword（install 另有 authNeedsPassword，M5）；新增 authPasteHint / authPastePlaceholder / authPasteSubmit（M6，两节同键）；types.ts 同步声明
@@ -105,7 +107,7 @@ ref 保护——HEAD 树不变（含补丁），其相对锚点 delta = 恰好�
 - vendor/hermes-desktop/src/app/chat/hooks/use-composer-actions.ts
   - 改动：三处（ADR-0020）——① attachImageBlob 去掉无条件 arrayBuffer()，改为优先调 `window.hermesDesktop.saveImageFile(blob, name)`（Web：File 保留引用 / Blob 落 OPFS），桌面端无该表面时回落旧 `saveImageBuffer` bytes 路径；② 新增 `attachFileBlob(file)`：`saveImageFile(file) → attachContextFilePath(虚拟路径)`，attachDroppedItems 非图片分支在 `!filePath`（浏览器 File 无路径）时调用；③ removeAttachment 对 `web-blob://` 前缀路径附件调 `releaseBlobFile` 显式释放本地字节
   - 原因：Web 端非图片文件拖拽恢复可用（ADR-0020），图片迁移到 File 引用 / OPFS；chip 移除释放字节，残留由页面刷新兜底
-  - 同步注意：桌面构建 `saveImageFile` 为 undefined → 走原 saveImageBuffer 路径，行为不变；上游若重构 attach 链路（如新增桥面方法），按"Web 专有扩展可选 + 窄回退"语义合并；`attachFileBlob` 仅浏览器 File 无路径分支生效，不触及桌面路径附加
+  - 同步注意：桌面构建 `saveImageFile` 为 undefined → 走原 saveImageBuffer 路径，行为不变；上游若重构 attach 链路（如新增桥面方法），按"Web 专有扩展可选 + 窄回退"语义合并；`attachFileBlob` 仅浏览器 File 无路径分支生效，不触及桌面路径附加。上游的失败收集在 `stageDropForChip` 之后是 `failures.push(staged.failure)`（无 `lastFailure` 变量），Web 分支插在该行**之前**，别把整段替换成 `lastFailure = …`
 
 - vendor/hermes-desktop/src/global.d.ts
   - 改动：`hermesDesktop` 表面新增**可选** `streamMediaUrl(path): Promise<null|string>`（ADR-0022，媒体播放入口）。桌面端 main 进程不注册该表面（保持可选）→ 桌面 `resolveMediaPlaybackSrc` 走回 `hermes-media://` 协议，行为不变；Web 桥面 adapter.ts 实现（返回同源代理流 URL）
@@ -190,10 +192,18 @@ ref 保护——HEAD 树不变（含补丁），其相对锚点 delta = 恰好�
     `updates.getBranch` / `setBranch`。
   - 上游新增的**可选**面默认不实现，但「浏览器有等价物」的实现：`saveTextFileAs`
     （`/save` 命令的落盘腿，桌面 = 保存对话框 + 主进程写盘）→ Web 用 Blob 下载
-    （`gateway/download.ts#saveTextFileAs`，返回的 `path` 只是文件名）。其余新增可选面
-    按下方默认不实现：`getPluginWsUrl`（只服务 `authMode: 'native'` 的本机网关，Web
-    连接恒为 token/oauth）、`preparedSubmissions`（上游自带 localStorage 回退，桌面
-    main 进程只是可选加速）。
+    （`gateway/download.ts#saveTextFileAs`，返回的 `path` 只是文件名）；`uiPreferences`
+    （本机 UI 偏好共享存储，桌面 = preload IPC）→ `gateway/ui-preferences.ts` 读写
+    gateway `/api/ui-preferences`（GET/PATCH 经代理，聚焦+可见轮询代替推送）。
+    其余新增可选面按下方默认不实现：`getPluginWsUrl`（只服务 `authMode: 'native'`
+    的本机网关，Web 连接恒为 token/oauth）、`preparedSubmissions`（上游自带
+    localStorage 回退，桌面 main 进程只是可选加速）、`getAudioWsUrl`（voice 面在
+    Web 归 denied，无消费方）、`refreshServedProfile`（本仓 roster 直接问 gateway
+    `profiles.list`，不缓存「已服务 profile 集」）、`getGatewayFileStreamUrl` 与
+    `stageFileForAttach` / `getStagedFileForAttach` / `getStagedFileDisplayName`
+    （浏览器媒体/附件已由 `streamMediaUrl` + `saveImageFile`/`web-blob://` 覆盖，
+    ADR-0020/0022）、`pluginFiles` / `spellcheckDictionary`（Electron 主进程 owns
+    授权/webview 会话）。
   - 桥面类型从成员派生，勿直接 import vendor 内部类型：`HermesNotification`
     在 `vendor/hermes-desktop/electron/notification-types.ts`（`@` 别名树外）
     → 用 `Parameters<Window['hermesDesktop']['notify']>[0]`，勿
@@ -271,6 +281,9 @@ ref 保护——HEAD 树不变（含补丁），其相对锚点 delta = 恰好�
 - **本机同步只需 lockfile**: 依赖有增删时跑 `pnpm install --lockfile-only`
   (秒级;重跑无 diff 即一致),不要跑全量 `pnpm install` —— 全量在本机曾于
   link 阶段卡死(事件循环空转、无 IO/socket、非交互等待)。CI 自行全量安装。
+  **上游改 pin 版本后旧 lockfile 会留下双份同包副本**(如 `@codemirror/view`
+  同时 6.43.6/6.43.14 → 两套私有类型 → TS2322): 跑一次 `pnpm dedupe` 收敛，
+  再把 lockfile 一起提交。
 - **本机 vitest 全红 ≠ 代码坏**: 本机 Node 26 自带实验性 `localStorage`(未带
   `--localstorage-file` 时为 undefined)，遮蔽 jsdom 的实现 → 所有用
   `window.localStorage` 的桥层测试报 `Cannot read properties of undefined

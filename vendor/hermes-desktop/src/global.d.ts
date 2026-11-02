@@ -273,7 +273,9 @@ declare global {
       // ADR-0017: remote deployments can't reach the proxy's loopback redirect —
       // the user pastes the address-bar callback URL (or bare ?code=..&state=..)
       // and the proxy completes the same code exchange.
-      oauthPasteConnectionConfig: (
+      // Web-only surface (PATCHES.md §4): native Desktop and the upstream browser
+      // bridge don't register it, so it stays optional.
+      oauthPasteConnectionConfig?: (
         remoteUrl: string,
         pasted: string
       ) => Promise<DesktopOauthLoginResult>
@@ -281,7 +283,8 @@ declare global {
       // M5: username/password ("dashboard login") gateways — the app sends the
       // credentials once; the proxy holds the gateway session cookie in memory
       // (same lifecycle as OAuth tokens: lost on proxy restart, never on disk).
-      passwordLoginConnectionConfig: (
+      // Web-only surface, optional for the same reason as the paste extension.
+      passwordLoginConnectionConfig?: (
         remoteUrl: string,
         provider: string,
         username: string,
