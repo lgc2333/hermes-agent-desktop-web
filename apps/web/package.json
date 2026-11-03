@@ -3,8 +3,8 @@
   "type": "module",
   "version": "0.4.29",
   "upstream": {
-    "ref": "v0.22.6",
-    "commit": "f0d94882e89ab8d4098b5bb2f166adfb9ee0a0ab"
+    "ref": "v0.22.7",
+    "commit": "b200f5bc60e31588ba2cb60e288029c4a54ba5fa"
   },
   "private": true,
   "engines": {
