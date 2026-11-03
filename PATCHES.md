@@ -197,8 +197,11 @@ ref 保护——HEAD 树不变（含补丁），其相对锚点 delta = 恰好�
     gateway `/api/ui-preferences`（GET/PATCH 经代理，聚焦+可见轮询代替推送）。
     其余新增可选面按下方默认不实现：`getPluginWsUrl`（只服务 `authMode: 'native'`
     的本机网关，Web 连接恒为 token/oauth）、`preparedSubmissions`（上游自带
-    localStorage 回退，桌面 main 进程只是可选加速）、`getAudioWsUrl`（voice 面在
-    Web 归 denied，无消费方）、`refreshServedProfile`（本仓 roster 直接问 gateway
+    localStorage 回退，桌面 main 进程只是可选加速）、`getAudioWsUrl`（voice 消费方
+    是有的——朗读/听写/语音对话，ADR-0022 已放行麦克风；但回退路径等价：vendor 把
+    `getGatewayWsUrl` 的 `/api/ws` 换成 `/api/audio/*-stream`，代理 relay 透传
+    pathname，`/api/auth/ws-ticket` 签的是无名票、能开 voice stream。只有宿主自签
+    socket 专用票时才必须实现）、`refreshServedProfile`（本仓 roster 直接问 gateway
     `profiles.list`，不缓存「已服务 profile 集」）、`getGatewayFileStreamUrl` 与
     `stageFileForAttach` / `getStagedFileForAttach` / `getStagedFileDisplayName`
     （浏览器媒体/附件已由 `streamMediaUrl` + `saveImageFile`/`web-blob://` 覆盖，
