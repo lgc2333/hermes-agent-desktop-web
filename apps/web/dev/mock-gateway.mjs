@@ -441,6 +441,18 @@ const RPC_HANDLERS = {
   'wake.pause': () => ({ ok: true }),
 }
 
+// v0.23.0 的 dial readiness：socket 打开后必须先收到一条 gateway.ready，
+// 否则客户端 15s 后以 readiness timeout 失败（见 dial-readiness.ts）。
+function sendGatewayReady(socket) {
+  socket.send(
+    JSON.stringify({
+      jsonrpc: '2.0',
+      method: 'event',
+      params: { type: 'gateway.ready', payload: {} },
+    }),
+  )
+}
+
 function handleRpc(socket, frame) {
   const handler = RPC_HANDLERS[frame.method]
 
@@ -910,6 +922,13 @@ wss.on('connection', (socket, request) => {
   }
 
   console.log('[mock-gateway] client connected')
+
+  // v0.23.0 起客户端 dial 要等一条 `gateway.ready` 才认为连接可用（protocol
+  // readiness，见 vendor/hermes-desktop/src/api/dial-readiness.ts）：只连上不发的
+  // 对端会以 "Hermes gateway protocol readiness timed out" 失败，boot 卡在
+  // connecting。真 gateway 在 socket 打开后立即推这条事件，mock 同样照发。
+  // payload 保持最小：skin 缺省不切换主题，change_events 缺省让前端沿用轮询。
+  sendGatewayReady(socket)
 
   socket.on('message', (raw) => {
     let frame

@@ -21,7 +21,7 @@
  *     拉取：mount / focus / 注册表变更，非定时轮询）；
  *   - 无 `remoteProfile`（桌面 SSH 连接的 profile 覆盖）—— `WebConnectionRecord`
  *     没有该字段，故 `targetProfile` 恒等于 `profile`；
- *   - 不移植 `shouldDeferLocalEnumeration`（connection-registry.ts:594-606）：那条
+ *   - 不移植 `shouldDeferLocalEnumeration`（connection-registry.ts:597-609）：那条
  *     是「本地后端池 + 延迟拨号」的守卫（避免枚举时凭空 spawn 一个本地 backend、
  *     造出幻影 `default` agent）。Web 没有池、也不 spawn——枚举就是对该连接注册的
  *     URL 发请求，不可达即上报 unreachable。且 Web 里唯一那条 local 形态连接
@@ -38,9 +38,10 @@ import type {
 
 import type { WebConnectionRecord } from '../registry'
 
-/** 上游 `RosterProfileMetadata`（connection-registry.ts:642-647）。 */
+/** 上游 `RosterProfileMetadata`（connection-registry.ts:645-651）。 */
 export interface RosterProfileMetadata {
   display_name?: string
+  description?: string
   title?: string
   ui_meta?: Record<string, unknown>
   has_avatar?: boolean
@@ -51,7 +52,7 @@ export interface RosterAgent extends DesktopRosterAgent {
   profileMetadata?: RosterProfileMetadata
 }
 
-/** 上游 `ConnectionAgents`（connection-registry.ts:610-626）。 */
+/** 上游 `ConnectionAgents`（connection-registry.ts:613-629）。 */
 export interface RosterSourceAgents {
   connection: WebConnectionRecord
   /** 枚举到的 profile 名；`null` = 不可达（与上游同语义）。 */
@@ -67,7 +68,7 @@ export interface DesktopAgentRosterPayload extends DesktopAgentRoster {
   primaryConnectionId: string
 }
 
-/** 上游 `labelSlug`（connection-registry.ts:147-156）逐字移植。 */
+/** 上游 `labelSlug`（connection-registry.ts:150-159）逐字移植。 */
 export function labelSlug(label: string): string {
   const slug = String(label || '')
     .trim()
@@ -87,7 +88,7 @@ function normalizeProfileName(profile: string): string {
   return String(profile || '').trim() || 'default'
 }
 
-/** 上游 `agentHandle`（connection-registry.ts:163-167）逐字移植。 */
+/** 上游 `agentHandle`（connection-registry.ts:166-170）逐字移植。 */
 export function agentHandle(
   profile: string,
   connectionLabel: string,
@@ -113,7 +114,7 @@ export function rosterSourceStatus(source: {
   }
 }
 
-/** 上游 `CANONICAL_KIND_PRIORITY`（connection-registry.ts:823）。 */
+/** 上游 `CANONICAL_KIND_PRIORITY`（connection-registry.ts:871）。 */
 const CANONICAL_KIND_PRIORITY: Record<DesktopConnectionKind, number> = {
   cloud: 3,
   local: 0,
@@ -122,7 +123,7 @@ const CANONICAL_KIND_PRIORITY: Record<DesktopConnectionKind, number> = {
 }
 
 /**
- * 上游 `pickCanonicalConnection`（connection-registry.ts:831-845）逐字移植：
+ * 上游 `pickCanonicalConnection`（connection-registry.ts:879-893）逐字移植：
  * 折叠后的同一 backend 行由哪条连接代表 —— 优先当前 primary，其次 kind
  * 优先级（local < ssh < remote < cloud），再次注册顺序。
  */
@@ -145,7 +146,7 @@ function pickCanonicalConnection<
 }
 
 /**
- * 上游 `buildAgentRoster`（connection-registry.ts:733-819）逐字移植：把逐连接
+ * 上游 `buildAgentRoster`（connection-registry.ts:781-867）逐字移植：把逐连接
  * 枚举拍平成联合花名册，去重策略（同连接+profile 折叠 → 同 install_id 折叠 →
  * `@name-device` handle）与桌面端完全一致。
  */
@@ -243,7 +244,7 @@ export function buildAgentRoster(
   return roster
 }
 
-/** 枚举单条连接的 `/api/profiles` 响应（上游 main.ts:14830-15018 的裁剪版）。 */
+/** 枚举单条连接的 `/api/profiles` 响应（上游 main.ts:14810-14965 的裁剪版）。 */
 function parseProfiles(body: unknown): {
   profiles: string[]
   profileMetadata?: Record<string, RosterProfileMetadata>
@@ -268,6 +269,7 @@ function parseProfiles(body: unknown): {
 
     const row = raw as {
       bot_title?: unknown
+      description?: unknown
       display_name?: unknown
       has_avatar?: unknown
       ui_meta?: unknown
@@ -276,6 +278,11 @@ function parseProfiles(body: unknown): {
 
     if (typeof row.display_name === 'string' && row.display_name.trim()) {
       entry.display_name = row.display_name.trim()
+    }
+
+    // 上游 profileMetadataFromApiProfiles 同款：description 空串也带上（清陈旧值）。
+    if (typeof row.description === 'string') {
+      entry.description = row.description.trim()
     }
 
     // `/api/profiles` 把 Bot Mode 标题叫 `bot_title`；空串也要带上——
@@ -292,7 +299,7 @@ function parseProfiles(body: unknown): {
       entry.has_avatar = row.has_avatar
     }
 
-    // 上游对**每个具名 profile** 都产出一条（可为空对象，main.ts:14965-14980）——
+    // 上游对**每个具名 profile** 都产出一条（可为空对象，connection-registry.ts:656-695 `profileMetadataFromApiProfiles`）——
     // 别按「是否非空」裁剪，否则渲染层看到的形状与桌面端不一致。
     metadata[name] = entry
   }

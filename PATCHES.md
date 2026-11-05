@@ -8,11 +8,11 @@
 ## 1. Subtree 基准（Baseline）
 
 - 上游仓库：https://github.com/NousResearch/hermes-agent.git
-- 基准提交：`b200f5bc60e31588ba2cb60e288029c4a54ba5fa`(上游 tag **v0.22.7**，2026-11-03)
+- 基准提交：`2bd378ed1b8d6bf2192cb26e0a55ff3091e6bd19`(上游 tag **v0.23.0**，2026-11-05)
 - vendor/hermes-desktop：上游 `apps/desktop`（含 src/ 渲染层、scripts/、vite.config.ts 等）
 - vendor/hermes-shared：上游 `apps/shared`（`@hermes/shared` 源码）
 - 引入方式：`git subtree add --squash`（对过滤提交执行，见 §2）
-- 当前子树 split：hermes-desktop: `52d999bd1d8fee23298bc547fc189ee8300d37f1`；hermes-shared: `b0a24714ec46ccf58030bde7f7d64ef5d67d91e8`
+- 当前子树 split：hermes-desktop: `7528acb5527f968c95597d77dd4e5a61ada5701f`；hermes-shared: `d9b9ab534a46134e7643997a0233d23f40b65127`
 
 ### 2. 引入方式说明（重要）
 
@@ -173,6 +173,14 @@ ref 保护——HEAD 树不变（含补丁），其相对锚点 delta = 恰好�
     文件；上游在 vendored vite.config.ts 用 resolve.alias 指到真实 sibling，
     我们 apps/web/vite.config.ts 同样需镜像该别名（+ optimizeDeps.exclude）。
     缺失则 rolldown 构建报 `"./dist/driver.js.iife.js" is not exported`。
+
+- apps/web/tsconfig.json `lib`
+  - 上游渲染层直接用较新 lib 特性（v0.23.0 起 `Promise.withResolvers`，见
+    `src/lib/voice-level-meter.ts` / `src/app/chat/right-rail/preview-*.ts`）：
+    `lib` 要跟着 vendor tsconfig（现含 `ES2024.Promise`），否则 typecheck 报 TS2550。
+  - 运行时兜底在 `apps/web/src/polyfills.ts`（Vite 只降级语法、不 polyfill API；
+    该 API 要 Chrome 119 / Safari 17.4）。同步注意：上游再用更晚的特性时，先补
+    lib 类型，再判断是否要加运行时兜底。
 
 - apps/web/src/bridge/
   - WebCapabilityAdapter 实现 window.hermesDesktop 表面，签名以

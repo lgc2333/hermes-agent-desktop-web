@@ -189,7 +189,12 @@ describe('enumerateRosterSources', () => {
 
         return {
           profiles: [
-            { name: 'research', bot_title: 'Researcher', has_avatar: true },
+            {
+              name: 'research',
+              bot_title: 'Researcher',
+              description: 'Deep research',
+              has_avatar: true,
+            },
             { name: '' },
           ],
         }
@@ -204,7 +209,13 @@ describe('enumerateRosterSources', () => {
     expect(sources[0]).toMatchObject({
       profiles: ['default', 'research'],
       installId: 'id-ok',
-      profileMetadata: { research: { title: 'Researcher', has_avatar: true } },
+      profileMetadata: {
+        research: {
+          title: 'Researcher',
+          description: 'Deep research',
+          has_avatar: true,
+        },
+      },
     })
     expect(sources[1]).toMatchObject({
       profiles: null,

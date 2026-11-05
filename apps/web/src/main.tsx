@@ -14,6 +14,9 @@
 import { installContextMenuInterceptor } from './context-menu-interceptor'
 import { installWebBridge } from './bridge/adapter'
 
+// 浏览器兼容兜底（Promise.withResolvers 等），必须先于 vendor 渲染树求值。
+import './polyfills'
+
 // Web 响应式覆盖层（移动端状态栏等；独立于 vendor 渲染树，见 web.css 头注）。
 import './web.css'
 
