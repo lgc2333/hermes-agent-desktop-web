@@ -312,6 +312,10 @@ ref 保护——HEAD 树不变（含补丁），其相对锚点 delta = 恰好�
   gateway 项 `Gateway` → `Backend`,见 `src/lib/gateway-health-pill.ts`),硬编码
   `waitForBodyText(page,'Gateway')` 会随上游改名集体超时。用
   `waitForGatewayStatus()`(判 `[data-slot="statusbar"]` 文本)。
+- **mock gateway 必须回 `gateway.ready`**(v0.23.0 起):客户端 dial readiness 等这条事件
+  (`vendor/hermes-desktop/src/api/dial-readiness.ts`),只连不发的对端 15s 超时、boot 卡在
+  connecting。症状是 e2e 全线"收不到回复"而 typecheck/lint/单测全绿 —— 别去翻业务回归,
+  先看 mock 有没有发这一帧。
 
 ## 8. 同步记录
 
