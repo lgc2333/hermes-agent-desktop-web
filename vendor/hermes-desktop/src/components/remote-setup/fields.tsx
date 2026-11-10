@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { ReactElement, ReactNode } from 'react'
 
 import { ListRow, Pill } from '@/app/settings/primitives'
+import { WebappOauthPasteField } from '@/app/settings/webapp-oauth-paste-field'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -174,6 +175,7 @@ export function RemoteSetupFields({
           )}
         </Field>
       ) : null}
+      <WebappOauthPasteField />
       {/* ADR-0017 (PATCHES.md §4): tunnel-free fallback — a remote browser lands
           on a failed 127.0.0.1 page after signing in (expected). Paste the
           address-bar URL here; the proxy completes the same code exchange. */}
