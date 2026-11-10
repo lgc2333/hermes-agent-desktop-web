@@ -244,7 +244,7 @@ export function buildAgentRoster(
   return roster
 }
 
-/** 枚举单条连接的 `/api/profiles` 响应（上游 main.ts:14810-14965 的裁剪版）。 */
+/** 枚举单条连接的 `/api/profiles` 响应（上游 main.ts 的 enumerateRegistryAgentSources 裁剪版）。 */
 function parseProfiles(body: unknown): {
   profiles: string[]
   profileMetadata?: Record<string, RosterProfileMetadata>

@@ -2,7 +2,7 @@
  * 插件仓库探测（`probePluginRepo`）—— 类 2 的**降级实现**（ADR-0027）。
  *
  * 桌面端在 Electron 主进程里 `git clone --depth 1` 后读仓库文件判组件
- * （electron/desktop-plugin-install.ts:365-409 `probePluginRepo` → `detectPluginComponents`）。
+ * （electron/desktop-plugin-install.ts 的 `probePluginRepo` → `detectPluginComponents`）。
  * 浏览器里既没有 git 也没有任意 URL 的字节读通道，远端 gateway 也没有 probe 端点
  * （只有 `plugins.manage install`，见 tui_gateway/contracts/tools_mcp_plugins.py:765）
  * —— 所以 Web 侧：
@@ -38,7 +38,7 @@ export interface PluginProbeResult {
 
 const GITHUB_BROWSER_SEGMENTS = new Set(['tree', 'blob', 'commit'])
 
-/** 上游 `resolvePluginGitUrl`（desktop-plugin-install.ts:49-105）逐字移植。 */
+/** 上游 desktop-plugin-install.ts 的 `resolvePluginGitUrl` 逐字移植。 */
 export function resolvePluginGitUrl(identifier: string): ResolvedPluginGitUrl {
   const trimmed = identifier.trim()
 
@@ -103,7 +103,7 @@ export function resolvePluginGitUrl(identifier: string): ResolvedPluginGitUrl {
   )
 }
 
-/** 上游 `repoNameFromUrl`（desktop-plugin-install.ts:107-122）逐字移植。 */
+/** 上游 desktop-plugin-install.ts 的 `repoNameFromUrl` 逐字移植。 */
 export function repoNameFromUrl(url: string): string {
   let name = url.replace(/\/+$/, '')
 
@@ -121,7 +121,7 @@ export function repoNameFromUrl(url: string): string {
   return name
 }
 
-/** 上游 `insecureSchemeWarnings`（desktop-plugin-install.ts:355-364）逐字移植。 */
+/** 上游 desktop-plugin-install.ts 的 `insecureSchemeWarnings` 逐字移植。 */
 export function insecureSchemeWarnings(gitUrl: string): {
   warnings: string[]
   insecure: boolean
@@ -156,7 +156,7 @@ export function probePluginRepoInBrowser(payload: {
     const { gitUrl } = resolvePluginGitUrl(identifier)
     const { warnings, insecure } = insecureSchemeWarnings(gitUrl)
     // 上游 agentName = `detected.agentName ?? repoNameFromUrl(gitUrl)`
-    // （desktop-plugin-install.ts:392）：我们无法 clone 读插件清单，故恒用
+    // （desktop-plugin-install.ts 的 probePluginRepo）：我们无法 clone 读插件清单，故恒用
     // 上游的 fallback —— **仓库名**（不是 subdir 的 basename）。
     const agentName = repoNameFromUrl(gitUrl)
 
