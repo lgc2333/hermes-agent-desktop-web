@@ -245,6 +245,69 @@ describe('gatewayAdapter', () => {
     expect(revokeObjectUrl).toHaveBeenCalledWith('blob:download')
   })
 
+  it('saveGatewayFile uses the backup host route with the selected connection and profile', async () => {
+    upsertConnection({
+      id: 'backup',
+      label: 'Backup',
+      kind: 'remote',
+      url: 'https://backup.example',
+      authMode: 'token',
+      token: 'backup-token',
+    })
+    const fetchMock = vi.fn().mockResolvedValue(textResponse(200, 'archive'))
+    vi.stubGlobal('fetch', fetchMock)
+    const { click } = stubBrowserDownload('blob:backup')
+
+    await expect(
+      new GatewayAdapter().saveGatewayFile({
+        connectionId: 'backup',
+        path: '/backups/agent.tar.gz',
+        profile: 'reviewer',
+        downloadPath: '/api/ops/backup/download?archive=%2Fbackups%2Fagent.tar.gz',
+      }),
+    ).resolves.toEqual({ path: 'agent.tar.gz', saved: true })
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe(
+      `${window.location.origin}/api/ops/backup/download?archive=%2Fbackups%2Fagent.tar.gz&profile=reviewer`,
+    )
+    expect(init.headers['X-Hermes-Target']).toBe('https://backup.example')
+    expect(init.headers['X-Hermes-Session-Token']).toBe('backup-token')
+    expect(click).toHaveBeenCalledOnce()
+  })
+
+  it.each([
+    'https://evil.example/api/ops/backup/download?archive=x',
+    '//evil.example/api/ops/backup/download?archive=x',
+    '/api/status?archive=x',
+    '/api/ops/backup/download',
+    '/api/ops/backup/download?archive=',
+    '/api/ops/backup/download?archive=x&profile=other',
+  ])(
+    'saveGatewayFile rejects unsupported explicit routes before fetching: %s',
+    async (downloadPath) => {
+      const fetchMock = vi.fn()
+      vi.stubGlobal('fetch', fetchMock)
+      await expect(
+        new GatewayAdapter().saveGatewayFile({ path: '/backup.tar.gz', downloadPath }),
+      ).rejects.toThrow('Unsupported gateway download route')
+      expect(fetchMock).not.toHaveBeenCalled()
+    },
+  )
+
+  it('saveGatewayFile never falls back to workspace reads for a missing backup route', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(jsonResponse(404, { detail: 'missing' }))
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(
+      new GatewayAdapter().saveGatewayFile({
+        path: '/backup.tar.gz',
+        downloadPath: '/api/ops/backup/download?archive=x',
+      }),
+    ).rejects.toThrow('404:')
+    expect(fetchMock).toHaveBeenCalledOnce()
+  })
+
   it('saveGatewayFile falls back to read-data-url only when /api/fs/download is missing', async () => {
     const fetchMock = vi
       .fn()

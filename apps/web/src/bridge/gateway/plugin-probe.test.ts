@@ -95,7 +95,7 @@ describe('probePluginRepoInBrowser (degraded Web probe)', () => {
   })
 
   it('uses the repo name as agentName even with a subdirectory', () => {
-    // 上游 fallback = repoNameFromUrl(gitUrl)（desktop-plugin-install.ts:392），
+    // 上游 fallback = repoNameFromUrl(gitUrl)（desktop-plugin-install.ts 的 probePluginRepo），
     // 不是 subdir 的 basename。
     expect(
       probePluginRepoInBrowser({

@@ -9,6 +9,7 @@ import { apiError, gatewayBaseUrl, proxyFetch } from './rest'
 
 export interface SaveGatewayFilePayload {
   connectionId?: null | string
+  downloadPath?: string
   path: string
   profile?: null | string
   suggestedName?: string
@@ -110,6 +111,26 @@ function gatewayFsPath(
   return `/api/fs/${route}?${params.toString()}`
 }
 
+/** Port of electron/gateway-file-download.ts:explicitDownloadPath; never fetch arbitrary routes. */
+function explicitDownloadPath(raw: string, profile?: null | string): string {
+  const parsed = new URL(raw, 'http://hermes.local')
+
+  if (
+    parsed.origin !== 'http://hermes.local' ||
+    parsed.pathname !== '/api/ops/backup/download' ||
+    [...parsed.searchParams.keys()].some((key) => key !== 'archive') ||
+    !parsed.searchParams.get('archive')
+  ) {
+    throw new Error('Unsupported gateway download route')
+  }
+
+  if (profile) {
+    parsed.searchParams.set('profile', profile)
+  }
+
+  return `${parsed.pathname}${parsed.search}`
+}
+
 async function responseError(res: Response, path: string): Promise<Error> {
   const body = await res.text().catch(() => '')
 
@@ -170,10 +191,13 @@ export class GatewayFileDownloader {
     const fallbackName = basename(filePath) || suggested || 'download'
     const profile =
       payload.profile === undefined ? readProfilePreference() : payload.profile
-    const downloadPath = gatewayFsPath('download', filePath, profile)
+    const explicit = Boolean(payload.downloadPath)
+    const downloadPath = explicit
+      ? explicitDownloadPath(payload.downloadPath!, profile)
+      : gatewayFsPath('download', filePath, profile)
     const res = await this.fetchGateway(downloadPath, payload.connectionId)
 
-    if (res.status === 404) {
+    if (res.status === 404 && !explicit) {
       return this.saveViaDataUrl(
         filePath,
         suggested || fallbackName,
