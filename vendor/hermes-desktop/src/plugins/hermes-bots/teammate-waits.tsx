@@ -117,7 +117,8 @@ const compactAge = (since: number, now: number) => {
 
 export async function listDeliveries(sender: RosterRow): Promise<TeammateDelivery[]> {
   try {
-    const res = await requestForBot<{ deliveries?: TeammateDelivery[] }>(sender, 'bot_delivery.list', {})
+    // Web gateways can serve several profiles on one URL; the socket alone doesn't select the sender.
+    const res = await requestForBot<{ deliveries?: TeammateDelivery[] }>(sender, 'bot_delivery.list', { profile: sender.name })
 
     return Array.isArray(res?.deliveries) ? res.deliveries : []
   } catch (error) {

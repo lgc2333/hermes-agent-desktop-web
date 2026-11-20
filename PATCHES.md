@@ -124,6 +124,10 @@ ref 保护——HEAD 树不变（含补丁），其相对锚点 delta = 恰好�
   - 原因：Web 端内置预览面板渲染 Electron `<webview>`、preview 桥面归 denied → 默认"点击开内置预览"等于打开一个永远空白的面板；该设置短路在 `openLink` 的修饰键判定之前，开启即"一切链接点击一律外部"（ADR-0028）
   - 同步注意：上游若改该 store 的默认值/持久化键，按「Web 构建默认 true、桌面默认 false」恢复；设置行保持可见，用户关掉后回到上游语义
 
+- vendor/hermes-desktop/src/plugins/hermes-bots/teammate-waits.tsx
+  - `listDeliveries` 显式传发送方 `profile`：Web 的多个 profile 共用网关 URL，次级 socket 不会自动限定 RPC 的 profile，`requestForBot` 仅在参数含该字段时改写别名。
+  - 同步注意：若上游已按发送方 profile 查询，移除此补丁；回归见 `apps/web/src/teammate-waits.test.ts`。
+
 ## 5. 需注意的上游联动
 
 非 vendor 但依赖 vendor/上游结构、subtree pull 后需核对的 Web 侧文件：
