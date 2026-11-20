@@ -11,7 +11,7 @@ vi.mock('@/plugins/hermes-bots/data', () => ({}))
 vi.mock('@/plugins/hermes-bots/i18n', () => ({}))
 vi.mock('@/plugins/hermes-bots/roster-actions', () => ({}))
 
-describe('Bot Chat teammate waits', () => {
+describe('teammate waits in Bot Chat', () => {
   it('scopes the query to the sending Bot even on an unscoped roster row', async () => {
     vi.mocked(host.request).mockResolvedValue({ deliveries: [] })
 
