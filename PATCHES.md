@@ -8,11 +8,11 @@
 ## 1. Subtree 基准（Baseline）
 
 - 上游仓库：https://github.com/NousResearch/hermes-agent.git
-- 基准提交：`ae2a81ccc00e9b7c06301523e5bb09608397149c`(上游 tag **v0.23.2**，2026-11-16)
+- 基准提交：`caafe5389ae585ef77387a962aee05b1bcf17029`(上游 tag **v0.23.3**，2026-11-19)
 - vendor/hermes-desktop：上游 `apps/desktop`（含 src/ 渲染层、scripts/、vite.config.ts 等）
 - vendor/hermes-shared：上游 `apps/shared`（`@hermes/shared` 源码）
 - 引入方式：`git subtree add --squash`（对过滤提交执行，见 §2）
-- 当前子树 split：hermes-desktop: `34a784a7f4d4467ac8c7817891038c35e5b510e9`；hermes-shared: `c5d2828e46bf92cba5632cc72512ca239c18369e`
+- 当前子树 split：hermes-desktop: `d75599a96348818c8f8005665267e39e10e5ac77`；hermes-shared: `671be9ecf809001e474945e50c8f6ac575230675`
 
 ### 2. 引入方式说明（重要）
 
