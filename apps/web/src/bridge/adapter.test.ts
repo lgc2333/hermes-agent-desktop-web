@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { desktopClientIdentity } from '@/lib/client-identity'
+import { hostHas } from '@/lib/host-capabilities'
 
 import { buildWebBridge, installWebBridge } from './adapter'
 import { MemoryBlobStore } from './blob-store'
@@ -31,6 +33,40 @@ describe('buildWebBridge / installWebBridge', () => {
     const bridge = buildWebBridge()
     const typed: Bridge = bridge
     expect(typed).toBeDefined()
+  })
+
+  it('reports Web client identity without opting into the serving-origin host', async () => {
+    const bridge = installWebBridge()
+    const { appVersion } = await bridge.getVersion()
+
+    expect(document.documentElement.dataset.hermesDesktopHost).toBeUndefined()
+    expect(hostHas('gatewayManagement')).toBe(true)
+    expect(hostHas('servingOriginConnection')).toBe(false)
+    expect(hostHas('browserNotifications')).toBe(true)
+    await expect(desktopClientIdentity()).resolves.toEqual({
+      kind: 'webapp',
+      name: 'hermes-webapp',
+      version: appVersion,
+    })
+  })
+
+  it('checks granted notification support without requesting permission', async () => {
+    const bridge = buildWebBridge()
+    const requestPermission = vi.fn()
+    const notification = { permission: 'default', requestPermission }
+    vi.stubGlobal('isSecureContext', true)
+    vi.stubGlobal('Notification', notification)
+
+    try {
+      await expect(bridge.notifySupported!()).resolves.toBe(false)
+      notification.permission = 'granted'
+      await expect(bridge.notifySupported!()).resolves.toBe(true)
+      vi.stubGlobal('isSecureContext', false)
+      await expect(bridge.notifySupported!()).resolves.toBe(false)
+      expect(requestPermission).not.toHaveBeenCalled()
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 
   it('getConnection returns the seeded mock connection', async () => {

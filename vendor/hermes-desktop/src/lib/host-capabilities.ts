@@ -80,5 +80,8 @@ export const HOST_CAPABILITIES = Object.freeze({
 export type HostCapability = keyof typeof HOST_CAPABILITIES
 
 export function hostHas(capability: HostCapability): boolean {
+  if (capability === 'browserNotifications' && import.meta.env.VITE_WEB_BUILD === '1') {
+    return true
+  }
   return (HOST_CAPABILITIES[capability] === 'browser') === isBrowserHostedDesktop()
 }

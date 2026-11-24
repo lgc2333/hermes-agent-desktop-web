@@ -19,6 +19,7 @@ import type {
   DesktopBootProgress,
 } from '@/global'
 
+import { browserNotificationsAllowed } from '@/lib/browser-notifications'
 import { BrowserAdapter } from './browser'
 import type { AttachmentBlobStore } from './blob-store'
 import { DeniedAdapter } from './denied'
@@ -151,6 +152,7 @@ export function buildWebBridge(
     getEmbedHostOrigin: () => browser.getEmbedHostOrigin(),
     fetchLinkTitle: (url) => browser.fetchLinkTitle(url),
     notify: (payload) => browser.notify(payload),
+    notifySupported: async () => browserNotificationsAllowed(),
     // C 组：通知点击 → 渲染层跳转（浏览器只有点击语义，见 browser.ts）。
     onNotificationActivate: (callback) => browser.onNotificationActivate(callback),
     selectPaths: (options) => browser.selectPaths(options),

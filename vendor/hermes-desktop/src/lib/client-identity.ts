@@ -46,7 +46,8 @@ function versionWithin(ms: number): Promise<string> {
  * app or the same renderer behind the browser bridge. A label for attribution only; it grants nothing.
  */
 export async function desktopClientIdentity(): Promise<CanonicalClientIdentity> {
-  const client: CanonicalClientIdentity = isBrowserHostedDesktop()
+  // The standalone Web build manages remote gateways, not the serving origin.
+  const client: CanonicalClientIdentity = import.meta.env.VITE_WEB_BUILD === '1' || isBrowserHostedDesktop()
     ? { kind: 'webapp', name: 'hermes-webapp' }
     : { kind: 'desktop', name: 'hermes-desktop' }
 

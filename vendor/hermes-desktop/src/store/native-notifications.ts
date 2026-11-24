@@ -3,7 +3,7 @@ import { atom } from 'nanostores'
 import { translateNow } from '@/i18n'
 import { browserNotificationsAllowed } from '@/lib/browser-notifications'
 import { type HermesOpenTarget, resolveHermesOpenPath } from '@/lib/hermes-open-target'
-import { isBrowserHostedDesktop } from '@/lib/platform'
+import { hostHas } from '@/lib/host-capabilities'
 import { persistString, storedString } from '@/lib/storage'
 
 import { recordFeatureToggle } from './desktop-metrics'
@@ -242,7 +242,7 @@ const hostNotifySupport = new WeakMap<NonNullable<Window['hermesDesktop']>, { kn
 export function readHostNotifySupport(): Promise<void> | undefined {
   const bridge = window.hermesDesktop
 
-  if (!bridge?.notify || isBrowserHostedDesktop()) {
+  if (!bridge?.notify || hostHas('browserNotifications')) {
     return undefined
   }
 
@@ -268,7 +268,7 @@ function hostCanNotify(): boolean {
     return false
   }
 
-  if (isBrowserHostedDesktop()) {
+  if (hostHas('browserNotifications')) {
     return browserNotificationsAllowed()
   }
 

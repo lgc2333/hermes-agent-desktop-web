@@ -8,11 +8,11 @@
 ## 1. Subtree 基准（Baseline）
 
 - 上游仓库：https://github.com/NousResearch/hermes-agent.git
-- 基准提交：`caafe5389ae585ef77387a962aee05b1bcf17029`(上游 tag **v0.23.3**，2026-11-19)
+- 基准提交：`8fc0374447313e276f6b9a2764bfc750190c966a`(上游 tag **v0.23.4**，2026-11-24)
 - vendor/hermes-desktop：上游 `apps/desktop`（含 src/ 渲染层、scripts/、vite.config.ts 等）
 - vendor/hermes-shared：上游 `apps/shared`（`@hermes/shared` 源码）
 - 引入方式：`git subtree add --squash`（对过滤提交执行，见 §2）
-- 当前子树 split：hermes-desktop: `d75599a96348818c8f8005665267e39e10e5ac77`；hermes-shared: `671be9ecf809001e474945e50c8f6ac575230675`
+- 当前子树 split：hermes-desktop: `4aa4bc564a38e2c405310d10f5c6bc695a7725f0`；hermes-shared: `b2d48379108af6f7f1c331fa1b735d931fc84e81`
 
 ### 2. 引入方式说明（重要）
 
@@ -127,6 +127,10 @@ ref 保护——HEAD 树不变（含补丁），其相对锚点 delta = 恰好�
 - vendor/hermes-desktop/src/plugins/hermes-bots/teammate-waits.tsx
   - `listDeliveries` 显式传发送方 `profile`：Web 的多个 profile 共用网关 URL，次级 socket 不会自动限定 RPC 的 profile，`requestForBot` 仅在参数含该字段时改写别名。
   - 同步注意：若上游已按发送方 profile 查询，移除此补丁；回归见 `apps/web/src/teammate-waits.test.ts`。
+
+- vendor/hermes-desktop/src/lib/client-identity.ts、src/lib/host-capabilities.ts、src/store/native-notifications.ts
+  - `VITE_WEB_BUILD` 只启用 Web 客户端标识及浏览器通知权限；通知预测与设置共用 `browserNotifications` 能力。
+  - 同步注意：不要设置 `data-hermes-desktop-host="browser"`；上游该标记还会切到同源单网关模式并关闭连接管理。保留按能力分流。
 
 ## 5. 需注意的上游联动
 
